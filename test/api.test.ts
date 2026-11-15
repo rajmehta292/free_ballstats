@@ -467,6 +467,124 @@ test('StreamFree API Streamer Suite', async (t) => {
     assert.ok(rzHud.redzoneIntel && Array.isArray(rzHud.smartCards));
   });
 
+  await t.test('RedZone Event Feed & Smart Cards never attach a non-scoring subsequent drive play or wrong-team defender headshot to a Touchdown/PAT card', async () => {
+    const sfLogo = 'https://a.espncdn.com/i/teamlogos/nfl/500/sf.png';
+    const dalLogo = 'https://a.espncdn.com/i/teamlogos/nfl/500/dal.png';
+    const sfDefenderHeadshot = 'https://a.espncdn.com/i/headshots/nfl/players/full/sf-stout.png';
+    const dalQbHeadshot = 'https://a.espncdn.com/i/headshots/nfl/players/full/dal-dak.png';
+    const sfWrHeadshot = 'https://a.espncdn.com/i/headshots/nfl/players/full/sf-rice.png';
+
+    const makeSfDalEvent = (sfScore: number, dalScore: number, lastPlay: any, possId = '6') => ([
+      {
+        id: 'evt-sf-dal-bugcheck',
+        shortName: 'SF @ DAL',
+        name: 'San Francisco 49ers at Dallas Cowboys',
+        date: '2026-11-15T21:25Z',
+        status: { displayClock: '8:12', period: 4, type: { state: 'in', shortDetail: '8:12 - 4th' } },
+        competitions: [{
+          competitors: [
+            { homeAway: 'away', score: String(sfScore), team: { id: '25', abbreviation: 'SF', shortDisplayName: '49ers', displayName: 'San Francisco 49ers', logo: sfLogo } },
+            { homeAway: 'home', score: String(dalScore), team: { id: '6', abbreviation: 'DAL', shortDisplayName: 'Cowboys', displayName: 'Dallas Cowboys', logo: dalLogo } },
+          ],
+          situation: {
+            isRedZone: false,
+            down: 1,
+            distance: 10,
+            possession: possId,
+            possessionText: 'SF 48',
+            downDistanceText: '1st & 10 at SF 48',
+            lastPlay,
+          },
+          leaders: [],
+        }],
+      },
+    ]);
+
+    // Poll 1: SF 24 - DAL 19
+    await redZoneIntelService.buildSlateFromEvents(
+      makeSfDalEvent(24, 19, {
+        id: 'p-sf-1',
+        text: 'M.Wishnowsky punts 44 yards to DAL 25.',
+        type: { text: 'Punt' },
+        statYardage: 44,
+        scoreValue: 0,
+        team: { id: '25' },
+        probability: { homeWinPercentage: 0.25 },
+      })
+    );
+
+    // Poll 2: SF jumps to 31, while ESPN lastPlay has already moved on to DAL's subsequent pass play
+    // and athletesInvolved[0] is SF defender U.Stout.
+    const slateAfterScoreLag = await redZoneIntelService.buildSlateFromEvents(
+      makeSfDalEvent(31, 19, {
+        id: 'p-dal-next',
+        text: '(Shotgun) D.Prescott pass short middle to L.Schoonmaker to SF 48 for 12 yards (U.Stout; F.Warner).',
+        type: { text: 'Pass Reception' },
+        statYardage: 12,
+        scoreValue: 0,
+        team: { id: '6' },
+        athletesInvolved: [
+          { id: 'u-stout', displayName: 'U.Stout', headshot: sfDefenderHeadshot, position: 'CB', team: { id: '25' } },
+          { id: 'd-prescott', displayName: 'Dak Prescott', shortName: 'D.Prescott', headshot: dalQbHeadshot, position: 'QB', team: { id: '6' } },
+        ],
+        probability: { homeWinPercentage: 0.16 },
+      })
+    );
+
+    const laggedNode = slateAfterScoreLag.games.find((g) => g.eventId === 'evt-sf-dal-bugcheck');
+    assert.ok(laggedNode?.lastPlay);
+    assert.equal(laggedNode.lastPlay?.athleteName, 'Dak Prescott', 'Primary athlete on DAL pass must be Dak Prescott, not defender U.Stout at index 0');
+    assert.equal(laggedNode.lastPlay?.athleteHeadshot, dalQbHeadshot);
+
+    const sfTdFeed = slateAfterScoreLag.eventFeed.find(
+      (f) => f.eventId === 'evt-sf-dal-bugcheck' && f.type === 'TOUCHDOWN'
+    );
+    assert.ok(sfTdFeed, 'Should emit TOUCHDOWN feed item for SF 24 -> 31 score jump');
+    assert.ok(!sfTdFeed.detail.includes('D.Prescott'), 'SF TD card detail must NEVER contain DAL non-scoring pass text');
+    assert.ok(!sfTdFeed.detail.includes('L.Schoonmaker'), 'SF TD card detail must NEVER contain DAL receiver text');
+    assert.equal(sfTdFeed.playerHeadshot, sfLogo, 'When lastPlay moved to DAL drive, SF TD card must fall back to SF logo instead of opposing/defender headshot');
+
+    // Poll 3: Direct TD play with defender listed at index 0 and actual SF scorer at index 1
+    const slateDirectTd = await redZoneIntelService.buildSlateFromEvents(
+      makeSfDalEvent(37, 19, {
+        id: 'p-sf-td-2',
+        text: 'B.Purdy pass deep left to J.Jennings for 24 yards, TOUCHDOWN (T.Diggs).',
+        type: { text: 'Passing Touchdown' },
+        statYardage: 24,
+        scoreValue: 6,
+        team: { id: '25' },
+        athletesInvolved: [
+          { id: 't-diggs', displayName: 'Trevon Diggs', headshot: dalQbHeadshot, position: 'CB', team: { id: '6' } },
+          { id: 'j-jennings', displayName: 'Jauan Jennings', shortName: 'J.Jennings', headshot: sfWrHeadshot, position: 'WR', team: { id: '25' } },
+        ],
+        probability: { homeWinPercentage: 0.05 },
+      }, '25')
+    );
+
+    const sfDirectTd = slateDirectTd.eventFeed.find((f) => f.id.includes('p-sf-td-2'));
+    assert.ok(sfDirectTd && sfDirectTd.type === 'TOUCHDOWN');
+    assert.equal(sfDirectTd.playerHeadshot, sfWrHeadshot, 'Direct TD card must pick SF scorer headshot over DAL defender at index 0');
+    assert.ok(sfDirectTd.detail.includes('B.Purdy pass deep left to J.Jennings'));
+
+    // Poll 4: Extra point (+1) must NEVER produce a false TOUCHDOWN or FIELD_GOAL entry
+    const slatePat = await redZoneIntelService.buildSlateFromEvents(
+      makeSfDalEvent(38, 19, {
+        id: 'p-sf-pat',
+        text: 'J.Moody extra point is GOOD.',
+        type: { text: 'Extra Point Good' },
+        statYardage: 0,
+        scoreValue: 1,
+        team: { id: '25' },
+        probability: { homeWinPercentage: 0.04 },
+      }, '25')
+    );
+
+    const patItem = slatePat.eventFeed.find((f) => f.id.includes('p-sf-pat'));
+    assert.ok(patItem, 'PAT should be tracked cleanly');
+    assert.equal(patItem.type, 'EXTRA_POINT', 'PAT +1 must classify as EXTRA_POINT, never TOUCHDOWN or FIELD_GOAL');
+    assert.ok(!slatePat.smartCards.some((c) => c.id.includes('p-sf-pat') && c.badge.includes('TOUCHDOWN')));
+  });
+
   await server.close();
 });
 

@@ -46,11 +46,13 @@ export interface RedZoneLastPlay {
   typeText: string;
   statYardage: number;
   scoreValue: number;
+  teamId?: string;
   driveDescription: string;
   wpSwingPct: number;
   athleteName?: string;
   athleteHeadshot?: string;
   athletePosition?: string;
+  athleteTeamId?: string;
 }
 
 export interface RedZoneLeaderLine {
@@ -99,7 +101,7 @@ export interface RedZoneEventFeedItem {
   matchup: string;
   timestamp: number;
   clockLabel: string;
-  type: 'TOUCHDOWN' | 'RED_ZONE' | 'TURNOVER' | 'FIELD_GOAL' | 'EXPLOSIVE_PLAY' | 'WITCHING_HOUR';
+  type: 'TOUCHDOWN' | 'RED_ZONE' | 'TURNOVER' | 'FIELD_GOAL' | 'EXTRA_POINT' | 'SCORE' | 'EXPLOSIVE_PLAY' | 'WITCHING_HOUR';
   badge: string;
   headline: string;
   detail: string;
@@ -233,6 +235,64 @@ function resolveYardsToEndZone(
     return Math.max(1, Math.min(99, rawYardLine));
   }
   return null;
+}
+
+/**
+ * Select the primary offensive / playmaking athlete from ESPN's `athletesInvolved` array.
+ * ESPN frequently places a tackling defender (e.g., `(U.Stout; F.Warner)`) at index 0.
+ * Prefer athletes belonging to the play's team (`lp.team.id` or `fallbackTeamId`), and
+ * rank by earliest appearance in the action clause (with trailing tackler parentheses stripped).
+ */
+function pickPrimaryPlayAthlete(lp: any, fallbackTeamId: string | null): any | null {
+  const list: any[] = Array.isArray(lp?.athletesInvolved) ? lp.athletesInvolved : [];
+  if (list.length === 0) return null;
+
+  const primaryTeamId = lp?.team?.id ? String(lp.team.id) : fallbackTeamId;
+  const onTeam = primaryTeamId
+    ? list.filter((a) => a?.team?.id && String(a.team.id) === String(primaryTeamId))
+    : [];
+
+  // If ESPN explicitly tagged team IDs on athletes and NONE belong to primaryTeamId,
+  // avoid returning an opposing defender's headshot.
+  const anyHaveTeamId = list.some((a) => Boolean(a?.team?.id));
+  if (primaryTeamId && anyHaveTeamId && onTeam.length === 0) {
+    return null;
+  }
+
+  const candidates = onTeam.length > 0 ? onTeam : list;
+  const rawText = String(lp?.text || '');
+  const actionClause = rawText
+    .replace(/(?:\s*\([^)]*\))+\s*\.?\s*$/g, '')
+    .replace(/^(?:\s*\([^)]*\)\s*)+/g, '')
+    .toLowerCase();
+
+  let best = candidates[0];
+  let bestPos = Number.POSITIVE_INFINITY;
+
+  for (const ath of candidates) {
+    const fullName = String(ath?.displayName || '').trim();
+    const shortName = String(ath?.shortName || '').trim().toLowerCase();
+    const parts = fullName.split(/\s+/).filter(Boolean);
+    const lastName = (parts[parts.length - 1] || '').toLowerCase();
+
+    let pos = Number.POSITIVE_INFINITY;
+    if (shortName && actionClause.includes(shortName)) {
+      pos = actionClause.indexOf(shortName);
+    } else if (lastName && lastName.length >= 2) {
+      const escaped = lastName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const m = actionClause.match(new RegExp(`(?:[a-z]\\.\\s*)?${escaped}\\b`, 'i'));
+      if (m && typeof m.index === 'number') {
+        pos = m.index;
+      }
+    }
+
+    if (pos < bestPos) {
+      bestPos = pos;
+      best = ath;
+    }
+  }
+
+  return best || null;
 }
 
 class RedZoneIntelService {
@@ -539,9 +599,9 @@ class RedZoneIntelService {
 
     const lp = sit.lastPlay;
     const prevState = this.prevStateByEvent.get(String(ev.id));
-    const wpSwingPct = prevState ? Math.abs(homeWinPct - prevState.homeWp) : lp?.scoreValue ? 14 : 0;
+    const wpSwingPct = prevState ? Math.abs(homeWinPct - prevState.homeWp) : lp?.scoreValue ? Math.min(18, Number(lp.scoreValue) * 2) : 0;
 
-    const firstAth = Array.isArray(lp?.athletesInvolved) ? lp.athletesInvolved[0] : null;
+    const firstAth = lp ? pickPrimaryPlayAthlete(lp, possTeamId) : null;
     const lastPlay: RedZoneLastPlay | null = lp
       ? {
           id: String(lp.id || `${ev.id}_${lp.text || ''}`),
@@ -549,11 +609,13 @@ class RedZoneIntelService {
           typeText: String(lp.type?.text || 'Play'),
           statYardage: Number(lp.statYardage || 0),
           scoreValue: Number(lp.scoreValue || 0),
+          teamId: lp.team?.id ? String(lp.team.id) : undefined,
           driveDescription: String(lp.drive?.description || ''),
           wpSwingPct,
           athleteName: firstAth?.displayName,
           athleteHeadshot: firstAth?.headshot,
           athletePosition: firstAth?.position,
+          athleteTeamId: firstAth?.team?.id ? String(firstAth.team.id) : undefined,
         }
       : null;
 
@@ -656,30 +718,129 @@ class RedZoneIntelService {
       const scoreSum = g.away.score + g.home.score;
 
       // 1. Score change / Scoring play detection
-      if (g.gameState === 'in' && ((prev && scoreSum > prev.scoreSum) || (g.lastPlay && g.lastPlay.scoreValue > 0))) {
-        const diff = prev ? scoreSum - prev.scoreSum : g.lastPlay?.scoreValue || 6;
-        const playKey = `score_${g.eventId}_${g.away.score}_${g.home.score}_${g.lastPlay?.id || ''}`;
-        if (!this.seenPlayKeys.has(playKey)) {
+      const scoreIncreased = Boolean(prev && scoreSum > prev.scoreSum);
+      const livePlayScored = Boolean(g.lastPlay && g.lastPlay.scoreValue > 0);
+      if (g.gameState === 'in' && (scoreIncreased || livePlayScored)) {
+        const scoreDiff = prev ? Math.max(0, scoreSum - prev.scoreSum) : Number(g.lastPlay?.scoreValue || 6);
+        const awayDelta = prev ? Math.max(0, g.away.score - prev.awayScore) : 0;
+        const homeDelta = prev ? Math.max(0, g.home.score - prev.homeScore) : 0;
+
+        // Identify the actual scoring team cleanly: score delta first, then lastPlay.teamId; never blindly post-kickoff possession
+        let scoringSide = g.home;
+        if (scoreIncreased && awayDelta > 0 && homeDelta === 0) {
+          scoringSide = g.away;
+        } else if (scoreIncreased && homeDelta > 0 && awayDelta === 0) {
+          scoringSide = g.home;
+        } else if (g.lastPlay?.teamId === g.away.id) {
+          scoringSide = g.away;
+        } else if (g.lastPlay?.teamId === g.home.id) {
+          scoringSide = g.home;
+        } else if (g.situation.possessionTeamId === g.away.id) {
+          scoringSide = g.away;
+        }
+
+        const effectivePoints = scoreIncreased ? scoreDiff : Number(g.lastPlay?.scoreValue || 6);
+
+        // Verify whether g.lastPlay actually describes THIS scoring event!
+        // When ESPN updates team scores while lastPlay has already moved to the next drive (scoreValue === 0),
+        // OR holds an unrelated team's play, NEVER attach that play text or athlete headshot to the card.
+        const isDefensiveReturnScore =
+          /intercept|fumble|blocked/i.test(g.lastPlay?.text || '') &&
+          /touchdown|safety/i.test(g.lastPlay?.text || '');
+        const pointsMismatch =
+          scoreIncreased && effectivePoints === 3 && (g.lastPlay?.scoreValue || 0) >= 6;
+        const isLastPlayTheScore = Boolean(
+          livePlayScored &&
+          !pointsMismatch &&
+          g.lastPlay &&
+          (!g.lastPlay.teamId || g.lastPlay.teamId === scoringSide.id || isDefensiveReturnScore)
+        );
+
+        const lpTypeAndText = isLastPlayTheScore
+          ? `${g.lastPlay?.typeText || ''} ${g.lastPlay?.text || ''}`
+          : '';
+
+        const isExtraPoint =
+          effectivePoints === 1 ||
+          (isLastPlayTheScore && /extra point|pat/i.test(lpTypeAndText) && !/touchdown/i.test(lpTypeAndText));
+        const isTwoPointOrSafety =
+          !isExtraPoint &&
+          (effectivePoints === 2 || (isLastPlayTheScore && /two-point|2-pt|safety/i.test(lpTypeAndText)));
+        const isTd =
+          !isExtraPoint &&
+          !isTwoPointOrSafety &&
+          (effectivePoints >= 6 || (isLastPlayTheScore && /touchdown/i.test(lpTypeAndText)));
+        const isFg =
+          !isExtraPoint &&
+          !isTwoPointOrSafety &&
+          !isTd &&
+          (effectivePoints === 3 || (isLastPlayTheScore && /field goal/i.test(lpTypeAndText)));
+
+        const playKey = isLastPlayTheScore
+          ? `score_${g.eventId}_${g.away.score}_${g.home.score}_${g.lastPlay?.id || ''}`
+          : `score_${g.eventId}_${g.away.score}_${g.home.score}`;
+
+        if (!this.seenPlayKeys.has(playKey) && effectivePoints > 0) {
           this.seenPlayKeys.add(playKey);
-          const isTd = diff >= 6 || /touchdown/i.test(g.lastPlay?.text || g.lastPlay?.typeText || '');
-          const isAwayScored = prev ? g.away.score > prev.awayScore : g.situation.possessionTeamAbbr === g.away.abbr;
-          const scoringSide = isAwayScored ? g.away : g.home;
+
+          const type: RedZoneEventFeedItem['type'] = isTd
+            ? 'TOUCHDOWN'
+            : isFg
+            ? 'FIELD_GOAL'
+            : isExtraPoint
+            ? 'EXTRA_POINT'
+            : 'SCORE';
+
+          const badge = isTd
+            ? '🏈 TOUCHDOWN'
+            : isFg
+            ? '🥅 FIELD GOAL'
+            : isExtraPoint
+            ? '🎯 EXTRA POINT'
+            : '🔥 +2 PTS';
+
+          const headline = isTd
+            ? `${g.shortName}: ${scoringSide.abbr} Touchdown! (${g.away.abbr} ${g.away.score} - ${g.home.abbr} ${g.home.score})`
+            : isFg
+            ? `${g.shortName}: ${scoringSide.abbr} Field Goal GOOD (${g.away.abbr} ${g.away.score} - ${g.home.abbr} ${g.home.score})`
+            : isExtraPoint
+            ? `${g.shortName}: ${scoringSide.abbr} Extra Point GOOD (${g.away.abbr} ${g.away.score} - ${g.home.abbr} ${g.home.score})`
+            : `${g.shortName}: ${scoringSide.abbr} +${effectivePoints} PTS (${g.away.abbr} ${g.away.score} - ${g.home.abbr} ${g.home.score})`;
+
+          const detail = isLastPlayTheScore && g.lastPlay?.text
+            ? g.lastPlay.text
+            : isTd
+            ? effectivePoints >= 7
+              ? `${scoringSide.displayName} Touchdown + Extra Point (${g.statusDetail}).`
+              : `${scoringSide.displayName} Touchdown — +${effectivePoints} PTS (${g.statusDetail}).`
+            : `${scoringSide.displayName} added +${effectivePoints} PTS (${g.statusDetail}).`;
+
+          const validHeadshot =
+            isLastPlayTheScore &&
+            g.lastPlay?.athleteHeadshot &&
+            (!g.lastPlay.athleteTeamId || g.lastPlay.athleteTeamId === scoringSide.id)
+              ? g.lastPlay.athleteHeadshot
+              : scoringSide.logo;
+
           this.rollingEventFeed.unshift({
             id: playKey,
             eventId: g.eventId,
             matchup: g.shortName,
             timestamp: now,
             clockLabel: g.statusDetail,
-            type: isTd ? 'TOUCHDOWN' : 'FIELD_GOAL',
-            badge: isTd ? '🏈 TOUCHDOWN' : '🥅 FIELD GOAL',
-            headline: `${g.shortName}: ${scoringSide.abbr} ${isTd ? 'Touchdown!' : 'Scores'} (${g.away.abbr} ${g.away.score} - ${g.home.abbr} ${g.home.score})`,
-            detail: g.lastPlay?.text || `${scoringSide.displayName} added ${diff} points.`,
-            wpSwingText: g.lastPlay?.wpSwingPct ? `+${g.lastPlay.wpSwingPct}% WP Swing` : `${scoringSide.abbr} Scoring Drive`,
-            playerHeadshot: g.lastPlay?.athleteHeadshot,
+            type,
+            badge,
+            headline,
+            detail,
+            wpSwingText:
+              g.lastPlay?.wpSwingPct && isLastPlayTheScore
+                ? `+${g.lastPlay.wpSwingPct}% WP Swing`
+                : `${scoringSide.abbr} +${effectivePoints} PTS`,
+            playerHeadshot: validHeadshot,
             teamLogo: scoringSide.logo,
             teamAbbr: scoringSide.abbr,
             scoreBadge: `${g.away.abbr} ${g.away.score} - ${g.home.abbr} ${g.home.score}`,
-            accentColor: isTd ? 'gold' : 'green',
+            accentColor: isTd ? 'gold' : isFg ? 'green' : 'cyan',
           });
         }
       }
@@ -690,6 +851,11 @@ class RedZoneIntelService {
         if (!this.seenPlayKeys.has(rzKey)) {
           this.seenPlayKeys.add(rzKey);
           const offenseSide = g.situation.possessionTeamId === g.away.id ? g.away : g.home;
+          const rzHeadshot =
+            g.lastPlay?.athleteHeadshot &&
+            (!g.lastPlay.athleteTeamId || g.lastPlay.athleteTeamId === offenseSide.id)
+              ? g.lastPlay.athleteHeadshot
+              : offenseSide.logo;
           this.rollingEventFeed.unshift({
             id: rzKey,
             eventId: g.eventId,
@@ -701,7 +867,7 @@ class RedZoneIntelService {
             headline: `${offenseSide.abbr} threatens inside the ${g.situation.yardsToEndZone || 20}!`,
             detail: `${g.situation.downDistanceText || 'Inside the 20'}${g.lastPlay?.driveDescription ? ` • Drive: ${g.lastPlay.driveDescription}` : ''}`,
             wpSwingText: `${g.winProbability.leverageIndex}x LI`,
-            playerHeadshot: g.lastPlay?.athleteHeadshot,
+            playerHeadshot: rzHeadshot,
             teamLogo: offenseSide.logo,
             teamAbbr: offenseSide.abbr,
             scoreBadge: `${g.away.abbr} ${g.away.score} - ${g.home.abbr} ${g.home.score}`,
@@ -710,14 +876,26 @@ class RedZoneIntelService {
         }
       }
 
-      // 3. Turnovers / Explosive Plays (20+ yards)
-      if (g.gameState === 'in' && g.lastPlay) {
+      // 3. Turnovers / Explosive Plays (20+ yards, avoiding duplicate card if this play already scored)
+      if (g.gameState === 'in' && g.lastPlay && !livePlayScored) {
         const lpKey = `lp_${g.eventId}_${g.lastPlay.id}`;
         const isTurnover = /interception|fumble|turnover/i.test(g.lastPlay.typeText + ' ' + g.lastPlay.text);
         const isExplosive = Math.abs(g.lastPlay.statYardage) >= 20;
         if (!this.seenPlayKeys.has(lpKey) && (isTurnover || isExplosive)) {
           this.seenPlayKeys.add(lpKey);
-          const offenseSide = g.situation.possessionTeamId === g.away.id ? g.away : g.home;
+          const playSide =
+            g.lastPlay.teamId === g.away.id
+              ? g.away
+              : g.lastPlay.teamId === g.home.id
+              ? g.home
+              : g.situation.possessionTeamId === g.away.id
+              ? g.away
+              : g.home;
+          const validLpHeadshot =
+            g.lastPlay.athleteHeadshot &&
+            (!g.lastPlay.athleteTeamId || g.lastPlay.athleteTeamId === playSide.id)
+              ? g.lastPlay.athleteHeadshot
+              : playSide.logo;
           this.rollingEventFeed.unshift({
             id: lpKey,
             eventId: g.eventId,
@@ -731,9 +909,9 @@ class RedZoneIntelService {
               : `${g.shortName}: Explosive ${g.lastPlay.statYardage}-yard gain (${g.lastPlay.typeText})`,
             detail: g.lastPlay.text,
             wpSwingText: `${g.winProbability.leverageIndex}x LI`,
-            playerHeadshot: g.lastPlay.athleteHeadshot,
-            teamLogo: offenseSide.logo,
-            teamAbbr: offenseSide.abbr,
+            playerHeadshot: validLpHeadshot,
+            teamLogo: playSide.logo,
+            teamAbbr: playSide.abbr,
             scoreBadge: `${g.away.abbr} ${g.away.score} - ${g.home.abbr} ${g.home.score}`,
             accentColor: isTurnover ? 'purple' : 'cyan',
           });
@@ -796,18 +974,30 @@ class RedZoneIntelService {
     const witchGames = liveGames.filter((g) => g.situation.isWitchingHour);
 
     for (const g of rzGames.slice(0, 2)) {
-      const offAbbr = g.situation.possessionTeamAbbr || g.away.abbr;
+      const offSide = g.situation.possessionTeamId === g.away.id ? g.away : g.home;
+      const offAbbr = g.situation.possessionTeamAbbr || offSide.abbr;
+      const lastPlayMatchesOffense = Boolean(
+        g.lastPlay?.text && (!g.lastPlay.teamId || g.lastPlay.teamId === g.situation.possessionTeamId)
+      );
+      const validRzHeadshot =
+        lastPlayMatchesOffense &&
+        g.lastPlay?.athleteHeadshot &&
+        (!g.lastPlay.athleteTeamId || g.lastPlay.athleteTeamId === offSide.id)
+          ? g.lastPlay.athleteHeadshot
+          : offSide.logo;
+
       cards.push({
         id: `sc_rz_${g.eventId}`,
         category: 'Red Zone Threat',
         badge: g.situation.isGoalToGo ? '🚨 GOAL-TO-GO ALERT' : '🚨 RED ZONE THREAT',
         headline: `${g.shortName}: ${offAbbr} at OPP ${g.situation.yardsToEndZone ?? '<20'} (${g.situation.downDistanceText || 'Inside 20'})`,
-        detail: g.lastPlay?.text
-          ? `${g.lastPlay.driveDescription ? `Drive (${g.lastPlay.driveDescription}) • ` : ''}${g.lastPlay.text}`
-          : `${g.away.abbr} ${g.away.score} - ${g.home.abbr} ${g.home.score} (${g.statusDetail})`,
+        detail:
+          lastPlayMatchesOffense && g.lastPlay?.text
+            ? `${g.lastPlay.driveDescription ? `Drive (${g.lastPlay.driveDescription}) • ` : ''}${g.lastPlay.text}`
+            : `${g.away.abbr} ${g.away.score} - ${g.home.abbr} ${g.home.score} (${g.statusDetail})`,
         metricHighlight: `${g.winProbability.leverageIndex}x LI`,
         accentColor: 'red',
-        playerHeadshot: g.lastPlay?.athleteHeadshot,
+        playerHeadshot: validRzHeadshot,
         eventId: g.eventId,
       });
     }
