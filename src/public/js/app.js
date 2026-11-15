@@ -536,6 +536,9 @@ function renderGamecastIntel(intel) {
   // 4. Tab 0: Box Score (Player by Player with Category Pills)
   renderBoxScore(intel.boxscore);
 
+  // 4.5. Quarter-by-Quarter Linescore & In-Game Supporting Analytics (Four Factors, Unit Splits, Insights)
+  renderInGameAnalytics(intel);
+
   // 5. Tab 0.5: Team Rosters
   renderRosters(intel.rosters);
 
@@ -605,6 +608,69 @@ function renderGamecastIntel(intel) {
   } else {
     newsContainer.innerHTML = `<div style="text-align: center; color: var(--text-dim); padding: 16px;">No recent editorial news found for this match.</div>`;
   }
+}
+
+function renderInGameAnalytics(intel) {
+  const lsStrip = document.getElementById('sb-linescore-strip');
+  if (lsStrip && intel.linescore && intel.linescore.periodHeaders) {
+    lsStrip.style.display = 'block';
+    const headers = intel.linescore.periodHeaders.map(h => `<th style="padding:3px 8px;color:var(--text-dim);">${escapeHtml(h)}</th>`).join('');
+    const t1Cells = (intel.linescore.team1Quarters || []).map(q => `<td style="padding:3px 8px;font-family:monospace;">${q}</td>`).join('');
+    const t2Cells = (intel.linescore.team2Quarters || []).map(q => `<td style="padding:3px 8px;font-family:monospace;">${q}</td>`).join('');
+    lsStrip.innerHTML = `
+      <table style="width:100%;font-size:11px;text-align:center;border-collapse:collapse;">
+        <thead><tr><th style="text-align:left;padding:3px 8px;color:var(--text-dim);">LINESCORE</th>${headers}<th style="padding:3px 8px;color:#00f2fe;">TOT</th></tr></thead>
+        <tbody>
+          <tr><td style="text-align:left;padding:3px 8px;font-weight:700;">${escapeHtml(intel.scoreboard?.team1?.name || 'Team 1')}</td>${t1Cells}<td style="padding:3px 8px;font-weight:800;color:#00f2fe;">${intel.linescore.team1Total}</td></tr>
+          <tr><td style="text-align:left;padding:3px 8px;font-weight:700;">${escapeHtml(intel.scoreboard?.team2?.name || 'Team 2')}</td>${t2Cells}<td style="padding:3px 8px;font-weight:800;color:#00f2fe;">${intel.linescore.team2Total}</td></tr>
+        </tbody>
+      </table>
+    `;
+  } else if (lsStrip) {
+    lsStrip.style.display = 'none';
+  }
+
+  const container = document.getElementById('modal-ingame-analytics-container');
+  if (!container) return;
+  const ba = intel.basketballAnalytics;
+  if (!ba) {
+    container.innerHTML = `<div style="padding:16px;text-align:center;color:var(--text-dim);">Full Basketball Four Factors & Rotation Splits are active on NBA/Basketball broadcasts. <a href="/basketball.html" style="color:#00f2fe;font-weight:700;">Open Dedicated Basketball Research Lab &rarr;</a></div>`;
+    return;
+  }
+
+  const t1 = ba.team1Analytics;
+  const t2 = ba.team2Analytics;
+  container.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">
+      <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-color);border-radius:10px;padding:12px;">
+        <div style="font-size:12px;font-weight:800;color:#00f2fe;margin-bottom:8px;">📐 DEAN OLIVER'S FOUR FACTORS</div>
+        <div style="font-size:12px;display:flex;flex-direction:column;gap:6px;">
+          <div style="display:flex;justify-content:space-between;"><span>Effective FG% (eFG%) [40%]</span><strong>${t1.abbreviation} ${t1.fourFactors.efgPct}% vs ${t2.abbreviation} ${t2.fourFactors.efgPct}%</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>Turnover Rate (TOV%) [25%]</span><strong>${t1.abbreviation} ${t1.fourFactors.tovPct}% vs ${t2.abbreviation} ${t2.fourFactors.tovPct}%</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>Offensive Reb % (ORB%) [20%]</span><strong>${t1.abbreviation} ${t1.fourFactors.orbPct}% vs ${t2.abbreviation} ${t2.fourFactors.orbPct}%</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>Free Throw Rate (FTR) [15%]</span><strong>${t1.abbreviation} ${t1.fourFactors.ftRate}% vs ${t2.abbreviation} ${t2.fourFactors.ftRate}%</strong></div>
+        </div>
+      </div>
+      <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-color);border-radius:10px;padding:12px;">
+        <div style="font-size:12px;font-weight:800;color:#a78bfa;margin-bottom:8px;">🔄 STARTERS VS. BENCH ROTATION SPLITS</div>
+        <div style="font-size:12px;display:flex;flex-direction:column;gap:6px;">
+          <div style="display:flex;justify-content:space-between;"><span>Starters Scoring</span><strong>${t1.abbreviation} ${t1.unitSplits.startersPts} PTS | ${t2.abbreviation} ${t2.unitSplits.startersPts} PTS</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>Bench Scoring (2nd Unit)</span><strong>${t1.abbreviation} ${t1.unitSplits.benchPts} PTS | ${t2.abbreviation} ${t2.unitSplits.benchPts} PTS</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>Pace / 48-Min Projection</span><strong>${ba.projectedPaceScore.pace48} Poss (${ba.projectedPaceScore.team1Projected}-${ba.projectedPaceScore.team2Projected})</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>Offensive Rating (ORTG)</span><strong>${t1.abbreviation} ${t1.ortg} | ${t2.abbreviation} ${t2.ortg}</strong></div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;">
+      ${(ba.inGameInsights || []).map(ins => `
+        <div style="background:rgba(145,70,255,0.07);border:1px solid rgba(145,70,255,0.25);border-radius:8px;padding:10px;font-size:12px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:#c4b5fd;font-weight:700;font-size:10px;">${escapeHtml(ins.category)}</span><span style="color:#00f2fe;font-weight:800;font-size:10px;">${escapeHtml(ins.metricBadge)}</span></div>
+          <div style="font-weight:700;margin-bottom:3px;">${escapeHtml(ins.title)}</div>
+          <div style="color:var(--text-dim);font-size:11px;">${escapeHtml(ins.detail)}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
 }
 
 // Render Box Score Component

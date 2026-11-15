@@ -3,6 +3,7 @@ import { streamFreeClient } from '../services/streamfree-client.js';
 import { customStreamsService } from '../services/custom-streams.js';
 import { sseService } from '../services/sse-service.js';
 import { sportsIntelService } from '../services/sports-intel-service.js';
+import { basketballResearchService } from '../services/basketball-research-service.js';
 import type { FeedbackInput, StreamItem } from '../types/stream.js';
 
 export const apiRoutes: FastifyPluginAsync = async (fastify) => {
@@ -201,11 +202,12 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
     let stream: StreamItem | null = await streamFreeClient.getStreamByKey(stream_key);
     if (!stream) {
       const cleanKey = decodeURIComponent(stream_key).replace(/[-_]/g, ' ');
+      const isBasketballKey = /lakers|celtics|warriors|knicks|pistons|bulls|heat|bucks|suns|nuggets|mavericks|clippers|76ers|sixers|thunder|cavaliers|cavs|magic|pacers|hawks|nets|raptors|hornets|wizards|spurs|rockets|grizzlies|pelicans|timberwolves|wolves|kings|blazers|jazz|nba|basketball/i.test(cleanKey);
       stream = {
         id: stream_key,
         name: cleanKey.replace(/\b\w/g, l => l.toUpperCase()),
-        category: 'football',
-        league: 'NFL',
+        category: isBasketballKey ? 'basketball' : 'football',
+        league: isBasketballKey ? 'NBA' : 'NFL',
         stream_key,
         match_timestamp: Math.floor(Date.now() / 1000),
         sources: [],
@@ -214,6 +216,91 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
 
     const intel = await sportsIntelService.getGamecastIntel(stream);
     return reply.send(intel);
+  });
+
+  /**
+   * GET /api/v1/basketball/hub
+   * Dedicated Basketball Research Hub: Live/Recent NBA games with Four Factors, Unit Splits, Standings, Leaders, Glossary
+   */
+  fastify.get('/basketball/hub', {
+    schema: {
+      description: 'Get complete Basketball Research Lab hub data (Four Factors, In-Game Supporting Stats, Standings, Leaders, Glossary)',
+      tags: ['Basketball Research'],
+    },
+  }, async (_request, reply) => {
+    const hub = await basketballResearchService.getResearchHub();
+    return reply.send(hub);
+  });
+
+  /**
+   * GET /api/v1/basketball/game/:event_id
+   * Deep basketball analytics for a specific game (Linescore, Four Factors, Unit Splits, Shot Diet, In-Game Insights)
+   */
+  fastify.get<{
+    Params: { event_id: string };
+  }>('/basketball/game/:event_id', {
+    schema: {
+      description: 'Get deep basketball analytics for a game including Four Factors, Starters vs Bench splits, Shot Diet, and Hollinger GmSc',
+      tags: ['Basketball Research'],
+      params: {
+        type: 'object',
+        properties: {
+          event_id: { type: 'string' },
+        },
+        required: ['event_id'],
+      },
+    },
+  }, async (request, reply) => {
+    const data = await basketballResearchService.getGameDeepAnalytics(request.params.event_id);
+    return reply.send(data);
+  });
+
+  /**
+   * GET /api/v1/basketball/players
+   * Sortable and filterable NBA Advanced Player Leaderboard Matrix
+   */
+  fastify.get<{
+    Querystring: { sort?: string; position?: string; search?: string };
+  }>('/basketball/players', {
+    schema: {
+      description: 'Get NBA players with advanced metrics (TS%, eFG%, PER, BPM, VORP, USG%, NetRTG, GmSc)',
+      tags: ['Basketball Research'],
+    },
+  }, async (request, reply) => {
+    const players = basketballResearchService.getPlayers(request.query);
+    return reply.send({ count: players.length, players });
+  });
+
+  /**
+   * GET /api/v1/basketball/compare
+   * Head-to-Head Player Comparison Lab with 6-axis radar percentiles and category edges
+   */
+  fastify.get<{
+    Querystring: { p1?: string; p2?: string };
+  }>('/basketball/compare', {
+    schema: {
+      description: 'Compare two NBA players across traditional and advanced metrics with radar percentiles',
+      tags: ['Basketball Research'],
+    },
+  }, async (request, reply) => {
+    const result = basketballResearchService.comparePlayers(request.query.p1, request.query.p2);
+    return reply.send(result);
+  });
+
+  /**
+   * GET /api/v1/basketball/query
+   * StatMuse-style Natural Language Basketball Research Query Engine
+   */
+  fastify.get<{
+    Querystring: { q?: string };
+  }>('/basketball/query', {
+    schema: {
+      description: 'Execute a natural-language basketball analytics query (StatMuse / Basketball-Reference style)',
+      tags: ['Basketball Research'],
+    },
+  }, async (request, reply) => {
+    const result = await basketballResearchService.queryResearch(request.query.q || '');
+    return reply.send(result);
   });
 
   /**

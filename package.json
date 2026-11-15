@@ -1,7 +1,7 @@
 {
-  "name": "streamfree-api-streamer",
-  "version": "1.0.0",
-  "description": "High-performance custom streaming application and API streamer implementing the full StreamFree API specification with mirror failover, multi-view, and ad-free custom players.",
+  "name": "free_ballstats",
+  "version": "2.0.0",
+  "description": "Free_BallStats — Advanced Basketball Research, In-Game Analytics (Four Factors, TS%, Hollinger GmSc, Pace, Shot Diet, Unit Splits), and Live Sports Streaming Intelligence Platform.",
   "type": "module",
   "main": "dist/server.js",
   "scripts": {

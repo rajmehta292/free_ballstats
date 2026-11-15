@@ -160,6 +160,95 @@ test('StreamFree API Streamer Suite', async (t) => {
     assert.ok(Array.isArray(data.overviewStats));
   });
 
+  await t.test('GET /api/v1/intel/:stream_key for basketball returns Four Factors, Linescore, and Advanced Boxscore', async () => {
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/v1/intel/nba-lakers-vs-celtics',
+    });
+    assert.equal(res.statusCode, 200);
+    const data = res.json();
+    assert.ok(data.linescore);
+    assert.ok(Array.isArray(data.linescore.periodHeaders));
+    assert.ok(data.basketballAnalytics);
+    assert.ok(data.basketballAnalytics.team1Analytics.fourFactors);
+    assert.ok(typeof data.basketballAnalytics.team1Analytics.fourFactors.efgPct === 'number');
+    assert.ok(Array.isArray(data.basketballAnalytics.inGameInsights));
+    const advCat = data.boxscore?.team1?.categories?.find((c: any) => c.name === 'advanced');
+    assert.ok(advCat, 'Expected Advanced Analytics boxscore category for basketball game');
+  });
+
+  await t.test('GET /api/v1/basketball/hub returns full Basketball Research Lab payload', async () => {
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/v1/basketball/hub',
+    });
+    assert.equal(res.statusCode, 200);
+    const data = res.json();
+    assert.ok(Array.isArray(data.games) && data.games.length > 0);
+    assert.ok(Array.isArray(data.players) && data.players.length >= 10);
+    assert.ok(data.standings?.eastern && data.standings?.western);
+    assert.ok(Array.isArray(data.glossary) && data.glossary.length > 0);
+  });
+
+  await t.test('GET /api/v1/basketball/game/:event_id returns deep game analytics', async () => {
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/v1/basketball/game/sim_lal_bos_2026',
+    });
+    assert.equal(res.statusCode, 200);
+    const data = res.json();
+    assert.equal(data.eventId, 'sim_lal_bos_2026');
+    assert.ok(data.team1Analytics.fourFactors.efgPct > 0);
+    assert.ok(data.team1Analytics.unitSplits.startersPts > 0);
+    assert.ok(data.mvpPerformer && typeof data.mvpPerformer.gameScore === 'number');
+  });
+
+  await t.test('GET /api/v1/basketball/players supports sorting and position filtering', async () => {
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/v1/basketball/players?sort=tspct&position=C',
+    });
+    assert.equal(res.statusCode, 200);
+    const data = res.json();
+    assert.ok(data.count > 0);
+    assert.equal(data.players[0].position, 'C');
+  });
+
+  await t.test('GET /api/v1/basketball/compare compares two NBA players head-to-head', async () => {
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/v1/basketball/compare?p1=Nikola%20Jokic&p2=Luka%20Doncic',
+    });
+    assert.equal(res.statusCode, 200);
+    const data = res.json();
+    assert.equal(data.player1.name, 'Nikola Jokic');
+    assert.equal(data.player2.name, 'Luka Doncic');
+    assert.ok(Array.isArray(data.metricsComparison) && data.metricsComparison.length >= 10);
+    assert.ok(data.summaryVerdict);
+  });
+
+  await t.test('GET /api/v1/basketball/query executes StatMuse-style natural language queries', async () => {
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/v1/basketball/query?q=True%20Shooting%20leaders',
+    });
+    assert.equal(res.statusCode, 200);
+    const data = res.json();
+    assert.ok(data.headline);
+    assert.ok(data.narrative);
+    assert.ok(Array.isArray(data.tableRows) && data.tableRows.length > 0);
+  });
+
+  await t.test('GET /basketball serves the Basketball Research Lab HTML page', async () => {
+    const res = await server.inject({
+      method: 'GET',
+      url: '/basketball',
+    });
+    assert.equal(res.statusCode, 200);
+    assert.match(res.headers['content-type'] || '', /text\/html/);
+    assert.ok(res.body.includes('Basketball Research'));
+  });
+
   await server.close();
 });
 

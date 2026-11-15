@@ -1,5 +1,6 @@
 import { LRUCache } from 'lru-cache';
 import type { StreamItem } from '../types/stream.js';
+import { basketballResearchService, type BasketballGameDeepAnalytics, type PlayerAdvancedBoxRow } from './basketball-research-service.js';
 
 export interface AthleteInfo {
   id: string;
@@ -86,6 +87,14 @@ export interface SportsGamecastIntel {
     image?: string;
     published?: string;
   }>;
+  linescore?: {
+    periodHeaders: string[];
+    team1Quarters: number[];
+    team2Quarters: number[];
+    team1Total: number;
+    team2Total: number;
+  };
+  basketballAnalytics?: BasketballGameDeepAnalytics;
 }
 
 export interface AthleteProfileDetails {
@@ -148,6 +157,9 @@ class SportsIntelService {
     const cached = this.athleteCache.get(cacheKey);
     if (cached) return cached;
 
+    // Check curated NBA advanced profile database first for instant rich metrics
+    const curatedNba = basketballResearchService.getPlayers().find(p => p.id === athleteId);
+
     try {
       const url = `https://site.api.espn.com/apis/common/v3/sports/${sport}/${league}/athletes/${athleteId}`;
       const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
@@ -166,24 +178,35 @@ class SportsIntelService {
           }
         }
 
+        if (curatedNba) {
+          overviewStats.push(
+            { label: 'True Shooting (TS%)', value: `${curatedNba.tsPct}%` },
+            { label: 'Effective FG (eFG%)', value: `${curatedNba.efgPct}%` },
+            { label: 'PER / BPM / VORP', value: `${curatedNba.per} / +${curatedNba.bpm} / ${curatedNba.vorp}` },
+            { label: 'Usage Rate (USG%)', value: `${curatedNba.usgPct}%` },
+          );
+        }
+
         const profile: AthleteProfileDetails = {
           id: athleteId,
-          name: a.displayName || `${a.firstName || ''} ${a.lastName || ''}`.trim() || 'Player Profile',
+          name: a.displayName || `${a.firstName || ''} ${a.lastName || ''}`.trim() || curatedNba?.name || 'Player Profile',
           firstName: a.firstName,
           lastName: a.lastName,
-          jersey: a.jersey,
-          position: a.position?.name || a.position?.displayName || a.position?.abbreviation,
-          height: a.displayHeight,
-          weight: a.displayWeight,
-          age: a.age,
-          college: a.college?.name,
+          jersey: a.jersey || curatedNba?.jersey,
+          position: a.position?.name || a.position?.displayName || a.position?.abbreviation || curatedNba?.position,
+          height: a.displayHeight || curatedNba?.height,
+          weight: a.displayWeight || curatedNba?.weight,
+          age: a.age || curatedNba?.age,
+          college: a.college?.name || curatedNba?.college,
           experience: a.experience?.years !== undefined ? (a.experience.years === 0 ? 'Rookie' : `${a.experience.years} yrs`) : undefined,
-          headshot: a.headshot?.href || 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=260&h=190',
-          teamName: a.team?.displayName,
+          headshot: a.headshot?.href || curatedNba?.headshot || 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=260&h=190',
+          teamName: a.team?.displayName || curatedNba?.team,
           teamLogo: a.team?.logos?.[0]?.href,
           statsSummary: data.statsSummary,
           overviewStats,
-          biography: a.debutYear ? `Drafted / Debuted in ${a.debutYear}. Attended ${a.college?.name || 'collegiate athletics'}.` : undefined,
+          biography: curatedNba
+            ? `${curatedNba.archetype} — ${curatedNba.signatureStat}.`
+            : (a.debutYear ? `Drafted / Debuted in ${a.debutYear}. Attended ${a.college?.name || 'collegiate athletics'}.` : undefined),
         };
 
         this.athleteCache.set(cacheKey, profile);
@@ -191,17 +214,45 @@ class SportsIntelService {
       }
     } catch (err) {}
 
+    if (curatedNba) {
+      const nbaProfile: AthleteProfileDetails = {
+        id: curatedNba.id,
+        name: curatedNba.name,
+        jersey: curatedNba.jersey,
+        position: curatedNba.position,
+        height: curatedNba.height,
+        weight: curatedNba.weight,
+        age: curatedNba.age,
+        college: curatedNba.college,
+        headshot: curatedNba.headshot,
+        teamName: curatedNba.team,
+        overviewStats: [
+          { label: 'PPG / RPG / APG', value: `${curatedNba.ppg} / ${curatedNba.rpg} / ${curatedNba.apg}` },
+          { label: 'True Shooting (TS%)', value: `${curatedNba.tsPct}%` },
+          { label: 'Effective FG (eFG%)', value: `${curatedNba.efgPct}%` },
+          { label: 'PER / BPM / VORP', value: `${curatedNba.per} / +${curatedNba.bpm} / ${curatedNba.vorp}` },
+          { label: 'Usage Rate (USG%)', value: `${curatedNba.usgPct}%` },
+          { label: 'Hollinger GmSc Avg', value: `${curatedNba.gameScoreAvg}` },
+        ],
+        biography: `${curatedNba.archetype} — ${curatedNba.signatureStat}.`,
+      };
+      this.athleteCache.set(cacheKey, nbaProfile);
+      return nbaProfile;
+    }
+
     // Fallback profile if simulated or not found
     const fallbackProfile: AthleteProfileDetails = {
       id: athleteId,
       name: 'Athlete Profile',
       position: 'Starter',
-      height: `6' 2"`,
+      height: `6' 4"`,
       weight: '215 lbs',
       headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=260&h=190',
       overviewStats: [
-        { label: 'Rating', value: '88.5' },
-        { label: 'Efficiency', value: '+14' },
+        { label: 'True Shooting (TS%)', value: '60.4%' },
+        { label: 'Effective FG (eFG%)', value: '56.8%' },
+        { label: 'Hollinger GmSc', value: '19.4' },
+        { label: 'Net Rating', value: '+8.2' },
       ],
     };
     return fallbackProfile;
@@ -404,19 +455,25 @@ class SportsIntelService {
     let parsedBoxScore: { team1: TeamBoxScore; team2: TeamBoxScore } | undefined;
     const team1Roster: AthleteInfo[] = [];
     const team2Roster: AthleteInfo[] = [];
+    const advPlayersT1: PlayerAdvancedBoxRow[] = [];
+    const advPlayersT2: PlayerAdvancedBoxRow[] = [];
 
     if (summary.boxscore?.players && Array.isArray(summary.boxscore.players)) {
       const p1Obj = summary.boxscore.players.find((p: any) => p.team?.id === comp1.team?.id) || summary.boxscore.players[0];
       const p2Obj = summary.boxscore.players.find((p: any) => p.team?.id === comp2.team?.id) || summary.boxscore.players[1];
 
-      const parsePlayerTeam = (pObj: any, rosterArr: AthleteInfo[]): TeamBoxScore => {
+      const parsePlayerTeam = (pObj: any, rosterArr: AthleteInfo[], advRowsOut: PlayerAdvancedBoxRow[]): TeamBoxScore => {
         const cats: BoxScoreCategory[] = [];
         const seenAthletes = new Set<string>();
+        const teamName = pObj?.team?.displayName || 'Team';
+        const teamAbbr = pObj?.team?.abbreviation || teamName.slice(0, 3).toUpperCase();
 
         for (const statCat of (pObj?.statistics || [])) {
           const catAthletes: AthleteInfo[] = [];
           const starters: AthleteInfo[] = [];
           const bench: AthleteInfo[] = [];
+          const advancedAthletes: AthleteInfo[] = [];
+          const labels: string[] = statCat.labels || [];
 
           for (const aObj of (statCat.athletes || [])) {
             const a = aObj.athlete || {};
@@ -427,7 +484,7 @@ class SportsIntelService {
               position: a.position?.abbreviation || a.position?.name,
               headshot: a.headshot?.href || 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90',
               stats: aObj.stats || [],
-              teamName: pObj.team?.displayName,
+              teamName,
             };
             catAthletes.push(athInfo);
 
@@ -435,6 +492,25 @@ class SportsIntelService {
               starters.push(athInfo);
             } else if (aObj.starter === false) {
               bench.push(athInfo);
+            }
+
+            if (sportPath === 'basketball/nba' && Array.isArray(aObj.stats) && aObj.stats.length > 0 && !aObj.didNotPlay) {
+              const advRow = basketballResearchService.buildPlayerAdvancedRow(aObj, labels, teamName, teamAbbr);
+              advRowsOut.push(advRow);
+              advancedAthletes.push({
+                ...athInfo,
+                stats: [
+                  String(advRow.min),
+                  String(advRow.pts),
+                  String(advRow.gameScore),
+                  `${advRow.tsPct}%`,
+                  `${advRow.efgPct}%`,
+                  `${advRow.usgPct}%`,
+                  String(advRow.astToRatio),
+                  String(advRow.stocks),
+                  advRow.plusMinus > 0 ? `+${advRow.plusMinus}` : String(advRow.plusMinus),
+                ],
+              });
             }
 
             if (a.id && !seenAthletes.has(a.id)) {
@@ -447,41 +523,57 @@ class SportsIntelService {
             cats.push({
               name: 'starters',
               displayName: 'Starters',
-              labels: statCat.labels || [],
+              labels,
               athletes: starters,
             });
             cats.push({
               name: 'bench',
               displayName: 'Bench',
-              labels: statCat.labels || [],
+              labels,
               athletes: bench,
             });
+            if (advancedAthletes.length > 0) {
+              cats.push({
+                name: 'advanced',
+                displayName: 'Advanced Analytics',
+                labels: ['MIN', 'PTS', 'GmSc', 'TS%', 'eFG%', 'USG%', 'AST/TO', 'STOCKS', '+/-'],
+                athletes: advancedAthletes,
+              });
+            }
             cats.push({
               name: 'all',
               displayName: 'All Players',
-              labels: statCat.labels || [],
+              labels,
               athletes: catAthletes,
             });
           } else {
             cats.push({
               name: statCat.name || statCat.type || 'stats',
               displayName: statCat.displayName || (statCat.name ? statCat.name.toUpperCase() : 'Full Team Stats'),
-              labels: statCat.labels || [],
+              labels,
               athletes: catAthletes,
             });
+            if (advancedAthletes.length > 0) {
+              cats.push({
+                name: 'advanced',
+                displayName: 'Advanced Analytics',
+                labels: ['MIN', 'PTS', 'GmSc', 'TS%', 'eFG%', 'USG%', 'AST/TO', 'STOCKS', '+/-'],
+                athletes: advancedAthletes,
+              });
+            }
           }
         }
 
         return {
-          teamName: pObj?.team?.displayName || 'Team',
+          teamName,
           teamLogo: pObj?.team?.logo || '',
           categories: cats,
         };
       };
 
       parsedBoxScore = {
-        team1: parsePlayerTeam(p1Obj, team1Roster),
-        team2: parsePlayerTeam(p2Obj, team2Roster),
+        team1: parsePlayerTeam(p1Obj, team1Roster, advPlayersT1),
+        team2: parsePlayerTeam(p2Obj, team2Roster, advPlayersT2),
       };
     }
 
@@ -527,10 +619,76 @@ class SportsIntelService {
       city: summary.gameInfo?.venue?.address?.city || comp.venue?.address?.city || '',
       attendance: summary.gameInfo?.attendance ? Number(summary.gameInfo.attendance).toLocaleString() : undefined,
       weather: summary.gameInfo?.weather?.displayValue,
-      broadcast: comp.broadcasts?.[0]?.names?.join(', ') || 'StreamFree HD Stream',
+      broadcast: comp.broadcasts?.[0]?.names?.join(', ') || 'Free_BallStats HD Stream',
       odds: summary.odds?.[0]?.details || summary.pickcenter?.[0]?.details,
       overUnder: summary.odds?.[0]?.overUnder ? `O/U ${summary.odds[0].overUnder}` : undefined,
     };
+
+    const parseCompLinescores = (c: any): number[] => {
+      if (Array.isArray(c?.linescores) && c.linescores.length > 0) {
+        return c.linescores.map((ls: any) => Number(ls.displayValue || ls.value || 0));
+      }
+      return [];
+    };
+
+    const t1QuartersRaw = parseCompLinescores(comp1);
+    const t2QuartersRaw = parseCompLinescores(comp2);
+
+    let basketballAnalytics: BasketballGameDeepAnalytics | undefined;
+    if (sportPath === 'basketball/nba' || stream.category === 'basketball') {
+      basketballAnalytics = basketballResearchService.buildGameAnalyticsFromPlayers({
+        eventId: String(matchedEvent.id || stream.stream_key),
+        status: matchedEvent.status?.type?.detail || 'Live Broadcast',
+        detail: matchedEvent.status?.type?.shortDetail || 'LIVE',
+        isLive: matchedEvent.status?.type?.state === 'in',
+        venue: gameInfoObj.venue || 'NBA Arena',
+        broadcast: gameInfoObj.broadcast || 'NBA Broadcast',
+        team1Meta: {
+          id: String(comp1?.team?.id || '1'),
+          name: comp1?.team?.displayName || stream.team1?.name || 'Team 1',
+          abbr: comp1?.team?.abbreviation || 'TM1',
+          logo: comp1?.team?.logo || stream.team1?.logo || '',
+          score: Number(comp1?.score || 0),
+          quarters: t1QuartersRaw.length > 0 ? t1QuartersRaw : undefined,
+        },
+        team2Meta: {
+          id: String(comp2?.team?.id || '2'),
+          name: comp2?.team?.displayName || stream.team2?.name || 'Team 2',
+          abbr: comp2?.team?.abbreviation || 'TM2',
+          logo: comp2?.team?.logo || stream.team2?.logo || '',
+          score: Number(comp2?.score || 0),
+          quarters: t2QuartersRaw.length > 0 ? t2QuartersRaw : undefined,
+        },
+        rawPlayers1: advPlayersT1,
+        rawPlayers2: advPlayersT2,
+      });
+    }
+
+    const linescoreObj = basketballAnalytics
+      ? {
+          periodHeaders: basketballAnalytics.linescore.periodHeaders,
+          team1Quarters: basketballAnalytics.linescore.team1.quarters,
+          team2Quarters: basketballAnalytics.linescore.team2.quarters,
+          team1Total: basketballAnalytics.linescore.team1.total,
+          team2Total: basketballAnalytics.linescore.team2.total,
+        }
+      : t1QuartersRaw.length > 0
+      ? {
+          periodHeaders: t1QuartersRaw.map((_, idx) => (idx < 4 ? `Q${idx + 1}` : `OT${idx - 3}`)),
+          team1Quarters: t1QuartersRaw,
+          team2Quarters: t2QuartersRaw,
+          team1Total: Number(comp1?.score || 0),
+          team2Total: Number(comp2?.score || 0),
+        }
+      : undefined;
+
+    const fallbackForMissing = (!parsedBoxScore || (team1Roster.length === 0 && team2Roster.length === 0))
+      ? this.generateComprehensiveFallback({
+          ...stream,
+          team1: { name: comp1?.team?.displayName || stream.team1?.name || 'Team 1', logo: comp1?.team?.logo || '' },
+          team2: { name: comp2?.team?.displayName || stream.team2?.name || 'Team 2', logo: comp2?.team?.logo || '' },
+        })
+      : null;
 
     return {
       stream_key: stream.stream_key,
@@ -559,12 +717,18 @@ class SportsIntelService {
       },
       winProbability: winProb,
       stats: statsList.length > 0 ? statsList : this.getCategoryDefaultStats(stream.category),
-      leaders: leadersList,
-      boxscore: parsedBoxScore,
-      rosters: (team1Roster.length > 0 || team2Roster.length > 0) ? { team1: team1Roster, team2: team2Roster } : undefined,
+      leaders: leadersList.length > 0 ? leadersList : (fallbackForMissing?.leaders || []),
+      boxscore: (parsedBoxScore && (parsedBoxScore.team1.categories.length > 0 || parsedBoxScore.team2.categories.length > 0))
+        ? parsedBoxScore
+        : fallbackForMissing?.boxscore,
+      rosters: (team1Roster.length > 0 || team2Roster.length > 0)
+        ? { team1: team1Roster, team2: team2Roster }
+        : fallbackForMissing?.rosters,
       scoringPlays: scoringPlaysList,
       gameInfo: gameInfoObj,
       news: newsArticles,
+      linescore: linescoreObj,
+      basketballAnalytics: basketballAnalytics || fallbackForMissing?.basketballAnalytics,
     };
   }
 
@@ -601,27 +765,124 @@ class SportsIntelService {
     let mockAthletesT2: AthleteInfo[] = [];
     let t1Categories: BoxScoreCategory[] = [];
     let t2Categories: BoxScoreCategory[] = [];
+    let fallbackBasketballAnalytics: BasketballGameDeepAnalytics | undefined;
+    let fallbackLinescore: SportsGamecastIntel['linescore'] | undefined;
 
     if (isBasketball) {
+      const nbaLabels = ['MIN', 'PTS', 'FG', '3PT', 'FT', 'REB', 'AST', 'TO', 'STL', 'BLK', '+/-'];
       mockAthletesT1 = [
-        { id: 'ath_b1', name: `${t1Name} Point Guard`, jersey: '3', position: 'PG', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['28', '22', '8-15', '3-6', '3-4', '4', '8'], teamName: t1Name },
-        { id: 'ath_b2', name: `${t1Name} Shooting Guard`, jersey: '11', position: 'SG', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['31', '18', '6-12', '4-7', '2-2', '3', '3'], teamName: t1Name },
-        { id: 'ath_b3', name: `${t1Name} Small Forward`, jersey: '23', position: 'SF', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['32', '19', '7-14', '2-4', '3-5', '7', '5'], teamName: t1Name },
-        { id: 'ath_b4', name: `${t1Name} Power Forward`, jersey: '15', position: 'PF', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['26', '12', '5-9', '0-1', '2-2', '9', '2'], teamName: t1Name },
-        { id: 'ath_b5', name: `${t1Name} Center`, jersey: '33', position: 'C', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['29', '14', '6-8', '0-0', '2-3', '11', '1'], teamName: t1Name },
+        { id: '3945274', name: `${t1Name} Lead Guard`, jersey: '77', position: 'PG', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['33', '26', '9-17', '4-8', '4-5', '7', '9', '2', '2', '0', '+8'], teamName: t1Name },
+        { id: '4396971', name: `${t1Name} Combo Guard`, jersey: '15', position: 'SG', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['31', '18', '6-12', '4-7', '2-2', '4', '5', '1', '1', '0', '+6'], teamName: t1Name },
+        { id: '1966', name: `${t1Name} All-Star Wing`, jersey: '23', position: 'SF', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['32', '21', '8-14', '2-4', '3-4', '8', '7', '2', '1', '1', '+7'], teamName: t1Name },
+        { id: '4066648', name: `${t1Name} Stretch Forward`, jersey: '28', position: 'PF', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['27', '12', '5-9', '1-3', '1-2', '6', '2', '1', '1', '1', '+4'], teamName: t1Name },
+        { id: '4278051', name: `${t1Name} Rim Anchor`, jersey: '11', position: 'C', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['28', '11', '5-7', '0-0', '1-2', '10', '2', '1', '0', '2', '+5'], teamName: t1Name },
+      ];
+      const benchT1: AthleteInfo[] = [
+        { id: '4395651', name: `${t1Name} Sixth Man`, jersey: '4', position: 'SG', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['21', '11', '4-8', '3-6', '0-0', '3', '2', '1', '1', '0', '+2'], teamName: t1Name },
+        { id: '3913174', name: `${t1Name} 3&D Wing`, jersey: '17', position: 'PF', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['19', '7', '3-6', '1-3', '0-0', '4', '1', '0', '1', '1', '+2'], teamName: t1Name },
       ];
 
       mockAthletesT2 = [
-        { id: 'ath_b6', name: `${t2Name} Point Guard`, jersey: '2', position: 'PG', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['30', '24', '9-17', '2-5', '4-4', '5', '7'], teamName: t2Name },
-        { id: 'ath_b7', name: `${t2Name} Shooting Guard`, jersey: '5', position: 'SG', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['29', '16', '6-13', '3-6', '1-2', '2', '4'], teamName: t2Name },
-        { id: 'ath_b8', name: `${t2Name} Small Forward`, jersey: '8', position: 'SF', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['28', '14', '5-11', '1-3', '3-3', '6', '2'], teamName: t2Name },
-        { id: 'ath_b9', name: `${t2Name} Power Forward`, jersey: '21', position: 'PF', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['27', '11', '4-8', '0-0', '3-4', '8', '1'], teamName: t2Name },
-        { id: 'ath_b10', name: `${t2Name} Center`, jersey: '0', position: 'C', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['31', '17', '7-10', '0-0', '3-5', '13', '2'], teamName: t2Name },
+        { id: '4432166', name: `${t2Name} Floor General`, jersey: '2', position: 'PG', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['34', '25', '9-19', '3-7', '4-4', '5', '8', '3', '1', '1', '-4'], teamName: t2Name },
+        { id: '4594268', name: `${t2Name} Scoring Guard`, jersey: '5', position: 'SG', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['30', '17', '6-13', '3-6', '2-2', '3', '4', '2', '1', '0', '-5'], teamName: t2Name },
+        { id: '4065648', name: `${t2Name} Two-Way Wing`, jersey: '8', position: 'SF', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['29', '15', '6-12', '2-5', '1-2', '6', '3', '2', '1', '0', '-4'], teamName: t2Name },
+        { id: '3202', name: `${t2Name} Power Forward`, jersey: '21', position: 'PF', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['27', '12', '5-10', '1-3', '1-2', '8', '2', '1', '0', '1', '-3'], teamName: t2Name },
+        { id: '6583', name: `${t2Name} Center`, jersey: '0', position: 'C', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['31', '16', '7-11', '0-0', '2-3', '12', '2', '2', '1', '2', '-5'], teamName: t2Name },
+      ];
+      const benchT2: AthleteInfo[] = [
+        { id: '4395725', name: `${t2Name} Sparkplug Guard`, jersey: '11', position: 'PG', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['20', '9', '3-7', '3-5', '0-0', '2', '3', '1', '1', '0', '-2'], teamName: t2Name },
+        { id: '3908845', name: `${t2Name} Reserve Forward`, jersey: '9', position: 'PF', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['18', '6', '2-5', '1-2', '1-2', '4', '1', '1', '1', '0', '-1'], teamName: t2Name },
       ];
 
-      const nbaLabels = ['MIN', 'PTS', 'FG', '3PT', 'FT', 'REB', 'AST'];
-      t1Categories = [{ name: 'starters', displayName: 'Starters', labels: nbaLabels, athletes: mockAthletesT1 }];
-      t2Categories = [{ name: 'starters', displayName: 'Starters', labels: nbaLabels, athletes: mockAthletesT2 }];
+      const t1Abbr = t1Name.slice(0, 3).toUpperCase();
+      const t2Abbr = t2Name.slice(0, 3).toUpperCase();
+
+      const buildAdvRows = (starters: AthleteInfo[], bench: AthleteInfo[], tName: string, tAbbr: string) => [
+        ...starters.map(a => basketballResearchService.buildPlayerAdvancedRow({ ...a, starter: true }, nbaLabels, tName, tAbbr)),
+        ...bench.map(a => basketballResearchService.buildPlayerAdvancedRow({ ...a, starter: false }, nbaLabels, tName, tAbbr)),
+      ];
+
+      const advRows1 = buildAdvRows(mockAthletesT1, benchT1, t1Name, t1Abbr);
+      const advRows2 = buildAdvRows(mockAthletesT2, benchT2, t2Name, t2Abbr);
+
+      const toAdvCategory = (rows: PlayerAdvancedBoxRow[], tName: string): BoxScoreCategory => ({
+        name: 'advanced',
+        displayName: 'Advanced Analytics',
+        labels: ['MIN', 'PTS', 'GmSc', 'TS%', 'eFG%', 'USG%', 'AST/TO', 'STOCKS', '+/-'],
+        athletes: rows.map(r => ({
+          id: r.id,
+          name: r.name,
+          jersey: r.jersey,
+          position: r.position,
+          headshot: r.headshot,
+          teamName: tName,
+          stats: [
+            String(r.min),
+            String(r.pts),
+            String(r.gameScore),
+            `${r.tsPct}%`,
+            `${r.efgPct}%`,
+            `${r.usgPct}%`,
+            String(r.astToRatio),
+            String(r.stocks),
+            r.plusMinus > 0 ? `+${r.plusMinus}` : String(r.plusMinus),
+          ],
+        })),
+      });
+
+      const allT1 = [...mockAthletesT1, ...benchT1];
+      const allT2 = [...mockAthletesT2, ...benchT2];
+
+      t1Categories = [
+        { name: 'starters', displayName: 'Starters', labels: nbaLabels, athletes: mockAthletesT1 },
+        { name: 'bench', displayName: 'Bench', labels: nbaLabels, athletes: benchT1 },
+        toAdvCategory(advRows1, t1Name),
+        { name: 'all', displayName: 'All Players', labels: nbaLabels, athletes: allT1 },
+      ];
+      t2Categories = [
+        { name: 'starters', displayName: 'Starters', labels: nbaLabels, athletes: mockAthletesT2 },
+        { name: 'bench', displayName: 'Bench', labels: nbaLabels, athletes: benchT2 },
+        toAdvCategory(advRows2, t2Name),
+        { name: 'all', displayName: 'All Players', labels: nbaLabels, athletes: allT2 },
+      ];
+
+      mockAthletesT1 = allT1;
+      mockAthletesT2 = allT2;
+
+      fallbackBasketballAnalytics = basketballResearchService.buildGameAnalyticsFromPlayers({
+        eventId: stream.stream_key,
+        status: '4th Quarter • 4:18 Remaining',
+        detail: 'LIVE Q4',
+        isLive: true,
+        venue: 'NBA Championship Arena',
+        broadcast: 'Free_BallStats Live Analytics Feed',
+        team1Meta: {
+          id: '1',
+          name: t1Name,
+          abbr: t1Abbr,
+          logo: stream.team1?.logo || '',
+          score: 106,
+          quarters: [28, 26, 27, 25],
+        },
+        team2Meta: {
+          id: '2',
+          name: t2Name,
+          abbr: t2Abbr,
+          logo: stream.team2?.logo || '',
+          score: 100,
+          quarters: [25, 27, 24, 24],
+        },
+        rawPlayers1: advRows1,
+        rawPlayers2: advRows2,
+      });
+
+      fallbackLinescore = {
+        periodHeaders: ['Q1', 'Q2', 'Q3', 'Q4'],
+        team1Quarters: [28, 26, 27, 25],
+        team2Quarters: [25, 27, 24, 24],
+        team1Total: 106,
+        team2Total: 100,
+      };
     } else if (isSoccer) {
       mockAthletesT1 = [
         { id: 'ath_s1', name: `${t1Name} Striker`, jersey: '9', position: 'FW', headshot: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90', stats: ['90', '1', '0', '4', '2'], teamName: t1Name },
@@ -659,38 +920,38 @@ class SportsIntelService {
         team1: {
           name: t1Name,
           logo: stream.team1?.logo || 'https://via.placeholder.com/80/9146ff/fff?text=' + t1Name.slice(0, 3).toUpperCase(),
-          score: isBasketball ? '88' : (isFootball ? '21' : '1'),
+          score: isBasketball ? '106' : (isFootball ? '21' : '1'),
           record: '10-4',
           isHome: true,
         },
         team2: {
           name: t2Name,
           logo: stream.team2?.logo || 'https://via.placeholder.com/80/00f2fe/000?text=' + t2Name.slice(0, 3).toUpperCase(),
-          score: isBasketball ? '84' : (isFootball ? '17' : '0'),
+          score: isBasketball ? '100' : (isFootball ? '17' : '0'),
           record: '8-6',
           isHome: false,
         },
-        status: 'In Progress • 2nd Half',
+        status: isBasketball ? '4th Quarter • 4:18 Remaining' : 'In Progress • 2nd Half',
         detail: 'LIVE BROADCAST',
-        clock: '34:20',
-        period: 2,
+        clock: isBasketball ? '4:18' : '34:20',
+        period: isBasketball ? 4 : 2,
       },
       winProbability: {
-        team1Percentage: 62,
-        team2Percentage: 38,
+        team1Percentage: 68,
+        team2Percentage: 32,
       },
       stats: this.getCategoryDefaultStats(stream.category),
       leaders: [
         {
-          category: isBasketball ? 'Top Scorer' : (isFootball ? 'Passing Leader' : 'Key Attacker'),
+          category: isBasketball ? 'Top Scorer (31.4 GmSc)' : (isFootball ? 'Passing Leader' : 'Key Attacker'),
           athlete: mockAthletesT1[0],
-          statline: isBasketball ? '22 PTS, 8 AST' : (isFootball ? '270 YDS, 2 TD' : '1 Goal, 4 Shots'),
+          statline: isBasketball ? '26 PTS, 9 AST, 67.7% TS' : (isFootball ? '270 YDS, 2 TD' : '1 Goal, 4 Shots'),
           teamName: t1Name,
         },
         {
-          category: isBasketball ? 'Top Scorer' : (isFootball ? 'Passing Leader' : 'Midfield Anchor'),
+          category: isBasketball ? 'Top Scorer (22.8 GmSc)' : (isFootball ? 'Passing Leader' : 'Midfield Anchor'),
           athlete: mockAthletesT2[0],
-          statline: isBasketball ? '24 PTS, 7 AST' : (isFootball ? '215 YDS, 1 TD' : '90% Pass Accuracy'),
+          statline: isBasketball ? '25 PTS, 8 AST, 60.2% TS' : (isFootball ? '215 YDS, 1 TD' : '90% Pass Accuracy'),
           teamName: t2Name,
         },
       ],
@@ -712,39 +973,41 @@ class SportsIntelService {
       },
       scoringPlays: [
         {
-          period: '1st Half',
-          clock: '12:40',
+          period: isBasketball ? 'Q1' : '1st Half',
+          clock: '8:40',
           teamName: t1Name,
-          score: isBasketball ? '12 - 8' : (isFootball ? '7 - 0' : '1 - 0'),
-          description: `Opening score by ${t1Name} on clinical transition drive.`,
+          score: isBasketball ? '18 - 12' : (isFootball ? '7 - 0' : '1 - 0'),
+          description: isBasketball ? `${t1Name} 9-2 run sparked by transition 3-pointer and paint rim-run.` : `Opening score by ${t1Name} on clinical transition drive.`,
         },
         {
-          period: '2nd Half',
-          clock: '28:15',
-          teamName: t2Name,
-          score: isBasketball ? '65 - 60' : (isFootball ? '14 - 10' : '1 - 0'),
-          description: `Field score response by ${t2Name} keeping the margin close.`,
+          period: isBasketball ? 'Q4' : '2nd Half',
+          clock: '4:18',
+          teamName: t1Name,
+          score: isBasketball ? '106 - 100' : (isFootball ? '14 - 10' : '1 - 0'),
+          description: isBasketball ? `Step-back 3PT dagger extends ${t1Name} lead to 6 in crunch time.` : `Field score response by ${t2Name} keeping the margin close.`,
         },
       ],
       gameInfo: {
         venue: 'Official Arena',
         city: 'Metropolitan Center',
-        broadcast: 'StreamFree Live Stream',
+        broadcast: 'Free_BallStats Live Stream',
         odds: `${t1Name} -3.5`,
         overUnder: isBasketball ? 'O/U 224.5' : (isFootball ? 'O/U 46.5' : 'O/U 2.5'),
       },
       news: [
         {
-          title: `${t1Name} vs ${t2Name}: Tactical Breakdown and In-Game Match Factors`,
-          description: 'Key matchups, possession efficiency, and live personnel rotations.',
-          link: 'https://espn.com',
+          title: `${t1Name} vs ${t2Name}: Four Factors & In-Game Possession Breakdown`,
+          description: 'Dean Oliver Four Factors (eFG%, TOV%, ORB%, FTR), rotation splits, and True Shooting trends.',
+          link: 'https://www.basketball-reference.com',
         },
         {
-          title: `Statistical Deep Dive: Advanced Metrics & Win Shares`,
-          description: 'Offensive and defensive efficiency metrics according to sports analytics.',
+          title: `Statistical Deep Dive: Hollinger Game Score & Pace-Adjusted Ratings`,
+          description: 'Offensive and defensive efficiency per 100 possessions and live lineup net ratings.',
           link: 'https://statmuse.com',
         },
       ],
+      linescore: fallbackLinescore,
+      basketballAnalytics: fallbackBasketballAnalytics,
     };
   }
 

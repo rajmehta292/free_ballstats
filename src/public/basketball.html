@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Free_BallStats — Advanced Basketball Research & In-Game Analytics Lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <!-- Top Navigation Bar -->
+  <header class="navbar">
+    <div class="nav-left">
+      <a href="/" class="brand">
+        <div class="brand-logo">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="url(#bballGrad)" stroke-width="2.2"/>
+            <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" stroke="url(#bballGrad)" stroke-width="1.8"/>
+            <defs>
+              <linearGradient id="bballGrad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#f97316"/>
+                <stop offset="0.5" stop-color="#9146ff"/>
+                <stop offset="1" stop-color="#00f2fe"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <span class="brand-title">FREE_<span class="accent">BALLSTATS</span></span>
+        <span class="badge-pro">RESEARCH v2.0</span>
+      </a>
+
+      <nav class="nav-links">
+        <a href="/" class="nav-link">Live Streams</a>
+        <a href="/basketball.html" class="nav-link active nav-link-bball">🏀 Basketball Research Lab</a>
+        <a href="/multiview.html" class="nav-link">Multi-View <span class="badge-mini">4x</span></a>
+        <a href="/docs" target="_blank" class="nav-link">API Docs</a>
+      </nav>
+    </div>
+
+    <div class="nav-right">
+      <div class="status-pill" title="ESPN + Basketball Reference + Cleaning the Glass Engine">
+        <span class="pulse-dot online"></span>
+        <span>NBA ANALYTICS ENGINE: LIVE</span>
+      </div>
+      <a href="/" class="btn btn-secondary btn-sm">📺 Watch Live Streams</a>
+    </div>
+  </header>
+
+  <main class="bball-lab-container">
+    <!-- Hero & Natural Language StatMuse/Reference Query Bar -->
+    <section class="bball-hero">
+      <div class="bball-hero-header">
+        <div>
+          <div class="bball-eyebrow">DEAN OLIVER FOUR FACTORS • HOLLINGER GAME SCORE • CLEANING THE GLASS SPLITS • STATMUSE NLP</div>
+          <h1 class="bball-title">Basketball Research &amp; In-Game Intelligence Lab</h1>
+          <p class="bball-subtitle">
+            Real-time possession efficiency, True Shooting (<code>TS%</code>), Effective FG (<code>eFG%</code>), Starters vs. Bench rotation splits, spatial shot diets, and head-to-head player modeling.
+          </p>
+        </div>
+        <div class="bball-league-benchmarks" id="league-benchmarks-bar">
+          <div class="benchmark-chip"><span>NBA PACE</span><strong id="bm-pace">99.4</strong></div>
+          <div class="benchmark-chip"><span>AVG ORTG</span><strong id="bm-ortg">115.6</strong></div>
+          <div class="benchmark-chip"><span>AVG eFG%</span><strong id="bm-efg">54.7%</strong></div>
+          <div class="benchmark-chip"><span>AVG TS%</span><strong id="bm-ts">58.1%</strong></div>
+          <div class="benchmark-chip"><span>AVG 3PAr</span><strong id="bm-3par">41.2%</strong></div>
+        </div>
+      </div>
+
+      <!-- Natural Language Query Input -->
+      <div class="nl-query-box">
+        <form id="nl-query-form" class="nl-query-form">
+          <span class="nl-icon">🔎</span>
+          <input
+            type="text"
+            id="nl-query-input"
+            placeholder="Ask the Basketball Research Engine (e.g. 'Jokic vs Doncic advanced stats', 'True Shooting leaders', 'Wembanyama defensive stocks')..."
+            autocomplete="off"
+          />
+          <button type="submit" class="btn btn-primary">Run Research Query</button>
+        </form>
+        <div class="nl-preset-pills">
+          <span class="preset-label">Instant Research Queries:</span>
+          <button type="button" class="preset-pill" data-query="Nikola Jokic vs Luka Doncic advanced comparison">Jokic vs. Doncic Showdown</button>
+          <button type="button" class="preset-pill" data-query="True Shooting efficiency TS% leaders">True Shooting (TS%) Leaders</button>
+          <button type="button" class="preset-pill" data-query="Defensive stocks steals blocks leaders">Two-Way Stocks (STL+BLK) Leaders</button>
+          <button type="button" class="preset-pill" data-query="Shai Gilgeous-Alexander advanced profile">SGA Rim-Pressure Profile</button>
+          <button type="button" class="preset-pill" data-query="Playmaking and assist rate leaders">Playmaking &amp; AST% Leaders</button>
+        </div>
+      </div>
+
+      <!-- Natural Language Answer Showcase Card -->
+      <div id="nl-query-result" class="nl-result-card"></div>
+    </section>
+
+    <!-- Navigation Sub-Tabs for Research Modules -->
+    <div class="bball-section-nav">
+      <a href="#ingame-lab" class="bball-sec-pill active">📡 Live In-Game &amp; Supporting Stats Lab</a>
+      <a href="#comparison-lab" class="bball-sec-pill">⚔️ Head-to-Head Player Comparison &amp; Radar</a>
+      <a href="#leaderboard-matrix" class="bball-sec-pill">📊 Advanced Reference Leaderboard Matrix</a>
+      <a href="#standings-glossary" class="bball-sec-pill">🏆 Conference Standings &amp; Math Glossary</a>
+    </div>
+
+    <!-- SECTION 1: LIVE IN-GAME & SUPPORTING STATS LAB -->
+    <section id="ingame-lab" class="bball-card-section">
+      <div class="section-header-row">
+        <div>
+          <h2 class="section-heading">📡 In-Game &amp; Supporting Analytics Command Center</h2>
+          <p class="section-desc">Select a matchup to inspect Quarter-by-Quarter Linescores, Dean Oliver's Four Factors, Starters vs. Bench Rotation Splits, Shot Diet, and Hollinger Game Scores.</p>
+        </div>
+        <div id="game-selector-tabs" class="game-selector-tabs"></div>
+      </div>
+
+      <!-- Active Game Scoreboard + Linescore + Pace Projection -->
+      <div id="active-game-overview" class="ingame-overview-grid"></div>
+
+      <!-- Four Factors + Unit Splits + Shot Diet 3-Column Grid -->
+      <div class="ingame-three-col">
+        <!-- Col 1: Dean Oliver's Four Factors -->
+        <div class="analytics-panel" id="four-factors-panel"></div>
+
+        <!-- Col 2: Starters vs Bench Rotation Splits -->
+        <div class="analytics-panel" id="unit-splits-panel"></div>
+
+        <!-- Col 3: Spatial Shot Diet & Scoring Profile -->
+        <div class="analytics-panel" id="shot-diet-panel"></div>
+      </div>
+
+      <!-- Automated In-Game Analytical Insights Strip -->
+      <div class="analytics-panel" style="margin-top: 1.25rem;">
+        <div class="panel-title-row">
+          <h3>🧠 Real-Time Broadcast &amp; Coaching Analytical Insights</h3>
+          <span class="badge-mini">AUTOMATED TELEMETRY</span>
+        </div>
+        <div id="ingame-insights-grid" class="insights-cards-grid"></div>
+      </div>
+
+      <!-- Dual-Mode Advanced & Traditional Box Score -->
+      <div class="analytics-panel" style="margin-top: 1.25rem;">
+        <div class="panel-title-row">
+          <div>
+            <h3>📋 Player In-Game Box Score — Advanced &amp; Traditional Telemetry</h3>
+            <p class="text-muted" style="font-size:0.8rem;">Click any player to inspect their full StatMuse/Reference bio &amp; season card.</p>
+          </div>
+          <div class="box-controls-row">
+            <div id="box-team-switch" class="segmented-control"></div>
+            <div id="box-mode-switch" class="segmented-control">
+              <button type="button" class="seg-btn active" data-mode="advanced">⚡ Advanced (GmSc, TS%, eFG%, USG%, PIE)</button>
+              <button type="button" class="seg-btn" data-mode="traditional">📊 Traditional (PTS, REB, AST, FG, 3PT)</button>
+            </div>
+          </div>
+        </div>
+        <div id="ingame-boxscore-table-wrap" class="table-responsive"></div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: HEAD-TO-HEAD PLAYER COMPARISON LAB & SVG RADAR -->
+    <section id="comparison-lab" class="bball-card-section">
+      <div class="section-header-row">
+        <div>
+          <h2 class="section-heading">⚔️ Head-to-Head Player Comparison Lab &amp; Percentile Radar</h2>
+          <p class="section-desc">Compare any two NBA stars across 13 traditional &amp; advanced Reference metrics (`TS%`, `eFG%`, `PER`, `BPM`, `VORP`, `USG%`, `NetRTG`, `Stocks`) with 6-axis percentile radar charting.</p>
+        </div>
+        <div class="compare-selectors">
+          <select id="compare-p1-select" class="select-input"></select>
+          <span class="vs-badge">VS</span>
+          <select id="compare-p2-select" class="select-input"></select>
+        </div>
+      </div>
+
+      <div id="comparison-lab-content" class="comparison-lab-grid"></div>
+    </section>
+
+    <!-- SECTION 3: ADVANCED PLAYER LEADERBOARD MATRIX -->
+    <section id="leaderboard-matrix" class="bball-card-section">
+      <div class="section-header-row">
+        <div>
+          <h2 class="section-heading">📊 NBA Advanced Reference Leaderboard Matrix</h2>
+          <p class="section-desc">Filter by position or archetype and sort by holistic impact metrics (`PER`, `BPM`, `VORP`, `TS%`, `eFG%`, `GmSc`, `USG%`, `NetRTG`).</p>
+        </div>
+        <div class="matrix-controls">
+          <input type="text" id="matrix-search" class="select-input" placeholder="Filter player, team, or archetype..." />
+          <select id="matrix-pos-filter" class="select-input">
+            <option value="ALL">All Positions</option>
+            <option value="PG">Point Guard (PG)</option>
+            <option value="SG">Shooting Guard (SG)</option>
+            <option value="SF">Small Forward (SF)</option>
+            <option value="PF">Power Forward (PF)</option>
+            <option value="C">Center (C)</option>
+          </select>
+          <select id="matrix-sort-select" class="select-input">
+            <option value="per">Sort by: Hollinger PER</option>
+            <option value="bpm">Sort by: Box Plus/Minus (BPM)</option>
+            <option value="vorp">Sort by: VORP</option>
+            <option value="ppg">Sort by: Points Per Game (PPG)</option>
+            <option value="tspct">Sort by: True Shooting % (TS%)</option>
+            <option value="efgpct">Sort by: Effective FG % (eFG%)</option>
+            <option value="gamescore">Sort by: Hollinger Game Score</option>
+            <option value="usgpct">Sort by: Usage Rate (USG%)</option>
+            <option value="netrtg">Sort by: Net Rating (NetRTG)</option>
+            <option value="apg">Sort by: Assists Per Game (APG)</option>
+            <option value="rpg">Sort by: Rebounds Per Game (RPG)</option>
+            <option value="stocks">Sort by: Stocks (STL + BLK)</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="leaderboard-table-wrap" class="table-responsive"></div>
+    </section>
+
+    <!-- SECTION 4: CONFERENCE STANDINGS & ANALYTICS GLOSSARY -->
+    <section id="standings-glossary" class="bball-card-section">
+      <div class="ingame-two-col">
+        <div class="analytics-panel">
+          <div class="panel-title-row">
+            <h3>🏆 NBA Conference Standings &amp; Net Rating Splits</h3>
+            <div class="segmented-control" id="standings-conf-switch">
+              <button type="button" class="seg-btn active" data-conf="western">Western Conference</button>
+              <button type="button" class="seg-btn" data-conf="eastern">Eastern Conference</button>
+            </div>
+          </div>
+          <div id="standings-table-wrap" class="table-responsive"></div>
+        </div>
+
+        <div class="analytics-panel">
+          <div class="panel-title-row">
+            <h3>📐 Basketball Analytics Formula &amp; Benchmark Reference</h3>
+            <span class="badge-mini">MATH &amp; THEORY</span>
+          </div>
+          <div id="glossary-grid" class="glossary-cards-list"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Athlete Profile Modal -->
+  <div id="player-profile-modal" class="modal hidden" style="z-index: 2000;">
+    <div class="modal-backdrop" id="player-modal-backdrop"></div>
+    <div class="modal-content modal-md">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="live-indicator"></span>
+          <h2 id="player-modal-name">Athlete Profile</h2>
+          <span id="player-modal-pos" class="badge-category">NBA</span>
+        </div>
+        <button id="close-player-modal" class="btn-icon">✕</button>
+      </div>
+      <div class="modal-body" id="player-modal-body" style="padding:1.5rem;"></div>
+    </div>
+  </div>
+
+  <script src="/js/basketball.js"></script>
+</body>
+</html>

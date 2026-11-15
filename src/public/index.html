@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>StreamFree API Streamer - High Performance Live Streaming</title>
+  <title>Free_BallStats — Advanced Basketball Research & Live Sports Intelligence</title>
   <link rel="stylesheet" href="/css/style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏀</text></svg>">
 </head>
 <body>
   <!-- Navigation Header -->
@@ -14,16 +14,20 @@
       <div class="brand">
         <div class="brand-icon">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
           </svg>
         </div>
         <div class="brand-title">
-          STREAMFREE
-          <span class="brand-badge">API Streamer</span>
+          FREE_BALLSTATS
+          <span class="brand-badge">Research &amp; Live Hub</span>
         </div>
       </div>
 
       <div class="nav-actions">
+        <a href="/basketball.html" class="btn btn-primary" style="background: linear-gradient(135deg, #f97316, #9146ff); border: none; font-weight: 700;">
+          🏀 Basketball Research Lab
+        </a>
         <button id="open-custom-stream-modal" class="btn btn-outline" style="border-color: rgba(145, 70, 255, 0.4);">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -195,6 +199,9 @@
           <span id="sb-odds-text"></span>
           <span id="sb-broadcast-text">HD Broadcast</span>
         </div>
+
+        <!-- Quarter-by-Quarter Linescore & Pace Strip -->
+        <div id="sb-linescore-strip" style="display: none; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08);"></div>
       </div>
 
       <!-- Player Stage -->
@@ -206,6 +213,9 @@
       <div class="gamecast-tabs-nav">
         <button class="gamecast-tab-btn active" data-tab="boxscore">
           📋 Box Score
+        </button>
+        <button class="gamecast-tab-btn" data-tab="ingame-analytics">
+          🏀 In-Game Analytics &amp; Four Factors
         </button>
         <button class="gamecast-tab-btn" data-tab="rosters">
           👥 Rosters
@@ -239,6 +249,13 @@
           <div class="boxscore-table-responsive" id="boxscore-table-container">
             <div style="text-align: center; color: var(--text-dim); padding: 24px;">Select a team and category to view individual box score stats.</div>
           </div>
+        </div>
+      </div>
+
+      <!-- Tab 0.25: In-Game Supporting Analytics (Four Factors, Unit Splits, Shot Diet, Insights) -->
+      <div class="gamecast-tab-panel" id="tab-ingame-analytics">
+        <div id="modal-ingame-analytics-container" style="padding: 8px 0;">
+          <div style="text-align: center; color: var(--text-dim); padding: 24px;">Loading Dean Oliver Four Factors, Rotation Unit Splits, and In-Game Supporting Telemetry...</div>
         </div>
       </div>
 

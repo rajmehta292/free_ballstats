@@ -35,9 +35,9 @@ export async function buildServer() {
   await server.register(swagger, {
     openapi: {
       info: {
-        title: 'StreamFree API Streamer',
-        description: 'High-performance streaming engine and API proxy compatible with the StreamFree specification with automatic failover, multi-view, and custom stream extensions.',
-        version: '1.0.0',
+        title: 'Free_BallStats — Basketball Research & Live Sports Intelligence API',
+        description: 'Advanced Basketball Analytics Engine (Dean Oliver Four Factors, Hollinger Game Score, True Shooting, Pace/ORTG/DRTG, Shot Diet, Rotation Splits) + High-Performance Live Sports Streaming Platform.',
+        version: '2.0.0',
       },
       servers: [
         {
@@ -46,6 +46,8 @@ export async function buildServer() {
         },
       ],
       tags: [
+        { name: 'Basketball Research', description: 'Advanced NBA/Basketball analytics, Four Factors, Player Comparison Lab, and Natural Language Query Engine' },
+        { name: 'Sports Intelligence', description: 'Live Gamecast scoreboard, boxscore, rosters, and athlete profiles' },
         { name: 'Streams', description: 'Stream discovery, querying, and sources' },
         { name: 'Catalog', description: 'Categories and sports leagues' },
         { name: 'Custom Streams', description: 'Manage local and custom streams' },
@@ -81,6 +83,11 @@ export async function buildServer() {
   await server.register(exportRoutes, { prefix: '/api/v1' });
   await server.register(embedRoutes);
 
+  // Top-level Basketball Research Lab clean route alias
+  server.get('/basketball', async (_request, reply) => {
+    return reply.sendFile('basketball.html');
+  });
+
   // Top-level feedback route to match StreamFree spec (/api/feedback)
   server.post('/api/feedback', async (request, reply) => {
     return server.inject({
@@ -104,15 +111,14 @@ async function start() {
 
     console.log(`
 ============================================================
-🚀 StreamFree API Streamer is RUNNING
+🏀 Free_BallStats (v2.0) is RUNNING
 ============================================================
-📡 Server URL:         ${address}
-🎮 Web Dashboard:      ${address}/
-📺 Multi-View:         ${address}/multiview.html
-📐 Embed Generator:    ${address}/#embed-generator
-📚 Swagger API Docs:   ${address}/docs
-❤️ Health Check:       ${address}/health
-🔁 Active Mirror:      ${config.primaryMirror}
+📡 Server URL:             ${address}
+🏀 Basketball Research:    ${address}/basketball.html
+🎮 Live Sports Hub:        ${address}/
+📺 Multi-View Matrix:      ${address}/multiview.html
+📚 Swagger API Docs:       ${address}/docs
+❤️ Health Check:           ${address}/health
 ============================================================
     `);
   } catch (err) {
@@ -121,7 +127,15 @@ async function start() {
   }
 }
 
-// Auto-start if run directly
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// Auto-start if run directly (supports junctions and symlinks)
+const isMain = (() => {
+  try {
+    return process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return process.argv[1] === fileURLToPath(import.meta.url);
+  }
+})();
+
+if (isMain) {
   start();
 }
