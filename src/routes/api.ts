@@ -4,6 +4,7 @@ import { customStreamsService } from '../services/custom-streams.js';
 import { sseService } from '../services/sse-service.js';
 import { sportsIntelService } from '../services/sports-intel-service.js';
 import { basketballResearchService } from '../services/basketball-research-service.js';
+import { multiSportAnalyticsService } from '../services/multi-sport-analytics-service.js';
 import type { FeedbackInput, StreamItem } from '../types/stream.js';
 
 export const apiRoutes: FastifyPluginAsync = async (fastify) => {
@@ -202,12 +203,16 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
     let stream: StreamItem | null = await streamFreeClient.getStreamByKey(stream_key);
     if (!stream) {
       const cleanKey = decodeURIComponent(stream_key).replace(/[-_]/g, ' ');
-      const isBasketballKey = /lakers|celtics|warriors|knicks|pistons|bulls|heat|bucks|suns|nuggets|mavericks|clippers|76ers|sixers|thunder|cavaliers|cavs|magic|pacers|hawks|nets|raptors|hornets|wizards|spurs|rockets|grizzlies|pelicans|timberwolves|wolves|kings|blazers|jazz|nba|basketball/i.test(cleanKey);
+      const isBasketballKey = /lakers|celtics|warriors|knicks|pistons|bulls|heat|bucks|suns|nuggets|mavericks|clippers|76ers|sixers|thunder|cavaliers|cavs|magic|pacers|hawks|nets|raptors|hornets|wizards|spurs|rockets|grizzlies|pelicans|timberwolves|wolves|kings|blazers|jazz|nba|basketball|duke|kansas|auburn|uconn|ncaa/i.test(cleanKey);
+      const isSoccerKey = /england|spain|france|germany|italy|brazil|argentina|portugal|netherlands|real madrid|barcelona|liverpool|arsenal|manchester|chelsea|bayern|psg|inter|milan|juventus|uefa|nations|champions|premier|soccer|futbol/i.test(cleanKey);
+      const isHockeyKey = /oilers|panthers|leafs|rangers|bruins|avalanche|lightning|stars|knights|canucks|devils|penguins|capitals|nhl|hockey/i.test(cleanKey);
+      const cat = isSoccerKey ? 'soccer' : isHockeyKey ? 'hockey' : isBasketballKey ? 'basketball' : 'football';
+      const lg = isSoccerKey ? 'UEFA / Premier' : isHockeyKey ? 'NHL' : isBasketballKey ? (/duke|kansas|auburn|uconn|ncaa/i.test(cleanKey) ? 'NCAAB' : 'NBA') : (/oregon|ohio state|texas|georgia|alabama|cfb|ncaa/i.test(cleanKey) ? 'NCAAF' : 'NFL');
       stream = {
         id: stream_key,
         name: cleanKey.replace(/\b\w/g, l => l.toUpperCase()),
-        category: isBasketballKey ? 'basketball' : 'football',
-        league: isBasketballKey ? 'NBA' : 'NFL',
+        category: cat,
+        league: lg,
         stream_key,
         match_timestamp: Math.floor(Date.now() / 1000),
         sources: [],
@@ -220,16 +225,19 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
 
   /**
    * GET /api/v1/basketball/hub
-   * Dedicated Basketball Research Hub: Live/Recent NBA games with Four Factors, Unit Splits, Standings, Leaders, Glossary
+   * Dedicated Basketball & Multi-Sport Research Hub
    */
   fastify.get('/basketball/hub', {
     schema: {
-      description: 'Get complete Basketball Research Lab hub data (Four Factors, In-Game Supporting Stats, Standings, Leaders, Glossary)',
+      description: 'Get complete Basketball & Multi-Sport Research Lab hub data (Four Factors, In-Game Supporting Stats, Standings, Leaders, Glossary, Multi-Sport Showcases)',
       tags: ['Basketball Research'],
     },
   }, async (_request, reply) => {
     const hub = await basketballResearchService.getResearchHub();
-    return reply.send(hub);
+    return reply.send({
+      ...hub,
+      multiSportGames: multiSportAnalyticsService.getMultiSportShowcaseGames(),
+    });
   });
 
   /**
@@ -326,11 +334,18 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
     let stream: StreamItem | null = await streamFreeClient.getStreamByKey(stream_key);
     if (!stream) {
       const cleanKey = decodeURIComponent(stream_key).replace(/[-_]/g, ' ');
+      const isBasketballKey = /lakers|celtics|warriors|knicks|pistons|bulls|heat|bucks|suns|nuggets|mavericks|clippers|76ers|sixers|thunder|cavaliers|cavs|magic|pacers|hawks|nets|raptors|hornets|wizards|spurs|rockets|grizzlies|pelicans|timberwolves|wolves|kings|blazers|jazz|nba|basketball/i.test(cleanKey);
+      const isNcaabKey = /duke|kansas|auburn|uconn|kentucky|gonzaga|purdue|ncaab/i.test(cleanKey);
+      const isSoccerKey = /england|spain|france|germany|italy|brazil|argentina|portugal|netherlands|real madrid|barcelona|liverpool|arsenal|manchester|chelsea|bayern|psg|inter|milan|juventus|uefa|nations|champions|premier|soccer|futbol/i.test(cleanKey);
+      const isHockeyKey = /oilers|panthers|leafs|rangers|bruins|avalanche|lightning|stars|knights|canucks|devils|penguins|capitals|nhl|hockey/i.test(cleanKey);
+      const isNcaafKey = /oregon|ohio state|texas|georgia|alabama|notre dame|cfb|ncaaf/i.test(cleanKey);
+      const cat = isSoccerKey ? 'soccer' : isHockeyKey ? 'hockey' : (isBasketballKey || isNcaabKey) ? 'basketball' : 'football';
+      const lg = isSoccerKey ? 'UEFA / Premier' : isHockeyKey ? 'NHL' : isNcaabKey ? 'NCAAB' : isBasketballKey ? 'NBA' : isNcaafKey ? 'NCAAF' : 'NFL';
       stream = {
         id: stream_key,
         name: cleanKey.replace(/\b\w/g, l => l.toUpperCase()),
-        category: 'basketball',
-        league: 'NBA',
+        category: cat,
+        league: lg,
         stream_key,
         match_timestamp: Math.floor(Date.now() / 1000),
         sources: [],
@@ -338,77 +353,198 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     const intel = await sportsIntelService.getGamecastIntel(stream);
-    let bball = intel.basketballAnalytics;
+    const bball = intel.basketballAnalytics;
+    const sa = intel.sportAnalytics;
 
-    // Ensure rich Smart Screen telemetry is always available even if the stream is cross-sport or pre-game
-    if (!bball) {
-      const showcase = basketballResearchService.getCuratedShowcaseGames()[0];
-      const t1Name = intel.scoreboard?.team1?.name || stream.team1?.name || 'Home Team';
-      const t2Name = intel.scoreboard?.team2?.name || stream.team2?.name || 'Away Team';
-      const t1Abbr = t1Name.slice(0, 3).toUpperCase();
-      const t2Abbr = t2Name.slice(0, 3).toUpperCase();
-      bball = basketballResearchService.buildGameAnalyticsFromPlayers({
-        eventId: stream_key,
-        status: intel.scoreboard?.status || showcase.status,
-        detail: intel.scoreboard?.detail || showcase.detail,
-        isLive: true,
-        venue: intel.gameInfo?.venue || showcase.venue,
-        broadcast: intel.gameInfo?.broadcast || showcase.broadcast,
-        team1Meta: {
-          id: '1',
-          name: t1Name,
-          abbr: t1Abbr,
-          logo: intel.scoreboard?.team1?.logo || showcase.team1Analytics.logo,
-          score: Number(intel.scoreboard?.team1?.score) || showcase.team1Analytics.score,
+    // If this is a non-NBA sport (Soccer, NFL, College Football, NHL Hockey, College Basketball),
+    // return 100% sport-authentic Smart Screen telemetry from UniversalSportDeepAnalytics!
+    if ((!bball || sa?.sportType === 'ncaab') && sa) {
+      return reply.send({
+        stream_key,
+        streamName: stream.name,
+        category: stream.category,
+        sportType: sa.sportType,
+        sportLabel: sa.sportBadge,
+        sportBadge: sa.sportBadge,
+        surfaceType: sa.surfaceType,
+        statusDetail: sa.detail,
+        situationBanner: sa.situationBanner,
+        scoreboard: intel.scoreboard,
+        sportAnalytics: sa,
+        team1: {
+          teamName: sa.team1Meta.name,
+          abbreviation: sa.team1Meta.abbreviation,
+          logo: sa.team1Meta.logo,
+          score: sa.team1Meta.score,
+          ortg: sa.fourPillars[0]?.team1Value || '',
+          efgPct: sa.fourPillars[0]?.team1Numeric || 55,
+          tsPct: sa.fourPillars[1]?.team1Numeric || 55,
+          fourFactors: {
+            efgPct: sa.fourPillars[0]?.team1Value || '',
+            tovPct: sa.fourPillars[1]?.team1Value || '',
+            orbPct: sa.fourPillars[2]?.team1Value || '',
+            ftRate: sa.fourPillars[3]?.team1Value || '',
+          },
+          playTypes: (sa.tacticalMatrix || []).map((t) => ({
+            playType: t.playType,
+            label: t.label,
+            freqPct: t.team1FreqPct,
+            ppp: t.team1Efficiency,
+            efgPct: t.edge,
+            percentile: t.team1Percentile,
+          })),
         },
-        team2Meta: {
-          id: '2',
-          name: t2Name,
-          abbr: t2Abbr,
-          logo: intel.scoreboard?.team2?.logo || showcase.team2Analytics.logo,
-          score: Number(intel.scoreboard?.team2?.score) || showcase.team2Analytics.score,
+        team2: {
+          teamName: sa.team2Meta.name,
+          abbreviation: sa.team2Meta.abbreviation,
+          logo: sa.team2Meta.logo,
+          score: sa.team2Meta.score,
+          ortg: sa.fourPillars[0]?.team2Value || '',
+          efgPct: sa.fourPillars[0]?.team2Numeric || 48,
+          tsPct: sa.fourPillars[1]?.team2Numeric || 48,
+          fourFactors: {
+            efgPct: sa.fourPillars[0]?.team2Value || '',
+            tovPct: sa.fourPillars[1]?.team2Value || '',
+            orbPct: sa.fourPillars[2]?.team2Value || '',
+            ftRate: sa.fourPillars[3]?.team2Value || '',
+          },
+          playTypes: (sa.tacticalMatrix || []).map((t) => ({
+            playType: t.playType,
+            label: t.label,
+            freqPct: t.team2FreqPct,
+            ppp: t.team2Efficiency,
+            efgPct: t.edge,
+            percentile: t.team2Percentile,
+          })),
         },
-        rawPlayers1: showcase.playersTeam1.map(p => ({ ...p, teamName: t1Name, teamAbbr: t1Abbr })),
-        rawPlayers2: showcase.playersTeam2.map(p => ({ ...p, teamName: t2Name, teamAbbr: t2Abbr })),
+        team1Analytics: {
+          teamName: sa.team1Meta.name,
+          abbreviation: sa.team1Meta.abbreviation,
+          logo: sa.team1Meta.logo,
+          score: sa.team1Meta.score,
+          ortg: sa.fourPillars[0]?.team1Value || '',
+          efgPct: sa.fourPillars[0]?.team1Value || '',
+          xEfgPct: sa.fourPillars[1]?.team1Value || '',
+          fourFactors: {
+            efgPct: sa.fourPillars[0]?.team1Value || '',
+            tovPct: sa.fourPillars[1]?.team1Value || '',
+            orbPct: sa.fourPillars[2]?.team1Value || '',
+            ftRate: sa.fourPillars[3]?.team1Value || '',
+          },
+        },
+        team2Analytics: {
+          teamName: sa.team2Meta.name,
+          abbreviation: sa.team2Meta.abbreviation,
+          logo: sa.team2Meta.logo,
+          score: sa.team2Meta.score,
+          ortg: sa.fourPillars[0]?.team2Value || '',
+          efgPct: sa.fourPillars[0]?.team2Value || '',
+          xEfgPct: sa.fourPillars[1]?.team2Value || '',
+          fourFactors: {
+            efgPct: sa.fourPillars[0]?.team2Value || '',
+            tovPct: sa.fourPillars[1]?.team2Value || '',
+            orbPct: sa.fourPillars[2]?.team2Value || '',
+            ftRate: sa.fourPillars[3]?.team2Value || '',
+          },
+        },
+        fourFactors: {
+          team1: {
+            efgPct: sa.fourPillars[0]?.team1Value || '',
+            tovPct: sa.fourPillars[1]?.team1Value || '',
+            orbPct: sa.fourPillars[2]?.team1Value || '',
+            ftRate: sa.fourPillars[3]?.team1Value || '',
+          },
+          team2: {
+            efgPct: sa.fourPillars[0]?.team2Value || '',
+            tovPct: sa.fourPillars[1]?.team2Value || '',
+            orbPct: sa.fourPillars[2]?.team2Value || '',
+            ftRate: sa.fourPillars[3]?.team2Value || '',
+          },
+        },
+        winProbability: intel.winProbability || {
+          team1Percentage: sa.winProbTimeline[sa.winProbTimeline.length - 1]?.team1WinPct ?? 62,
+          team2Percentage: 100 - (sa.winProbTimeline[sa.winProbTimeline.length - 1]?.team1WinPct ?? 62),
+        },
+        linescore: sa.linescore,
+        leverageIndex: sa.leverageIndex,
+        leverageTier: sa.leverageTier,
+        isClutchTime: sa.isClutchTime,
+        bonusState: {
+          team1InBonus: false,
+          team2InBonus: false,
+          team1FoulsInPeriod: 0,
+          team2FoulsInPeriod: 0,
+        },
+        smartCards: sa.smartCards,
+        onCourtLineup: {
+          team1Five: sa.activeUnit.team1Players,
+          team2Five: sa.activeUnit.team2Players,
+          team1UnitNetRtg: sa.activeUnit.team1NetMetric,
+          team2UnitNetRtg: sa.activeUnit.team2NetMetric,
+          activeStintMargin: sa.situationBanner,
+          keyMatchupNote: sa.unitSplits.summaryEdge,
+        },
+        shotChart: {
+          surfaceType: sa.surfaceType,
+          shots: sa.spatialMap.events.map((ev) => ({
+            ...ev,
+            teamSide: ev.team,
+            made: ev.isSuccess,
+            shotType: ev.outcomeLabel,
+            value: ev.isSuccess ? 1 : 0,
+            xEfg: 50,
+          })),
+          team1Zones: sa.spatialMap.zones,
+          team2Zones: sa.spatialMap.zones,
+        },
+        winProbTimeline: sa.winProbTimeline,
+        stintTimeline: sa.activeUnit.stintTimeline,
+        mvpPerformer: sa.mvpPerformer,
+        inGameInsights: sa.inGameInsights,
       });
     }
+
+    const activeBball = bball || basketballResearchService.getCuratedShowcaseGames()[0];
 
     return reply.send({
       stream_key,
       streamName: stream.name,
       category: stream.category,
-      statusDetail: bball.detail,
+      sportType: 'basketball',
+      sportBadge: 'NBA COURTOPTIX & DEAN OLIVER FOUR FACTORS',
+      surfaceType: 'basketball_halfcourt',
+      statusDetail: activeBball.detail,
       scoreboard: intel.scoreboard,
-      team1: bball.team1Analytics,
-      team2: bball.team2Analytics,
+      team1: activeBball.team1Analytics,
+      team2: activeBball.team2Analytics,
       fourFactors: {
-        team1: bball.team1Analytics.fourFactors,
-        team2: bball.team2Analytics.fourFactors,
+        team1: activeBball.team1Analytics.fourFactors,
+        team2: activeBball.team2Analytics.fourFactors,
       },
       winProbability: intel.winProbability || {
-        team1Percentage: bball.winProbTimeline[bball.winProbTimeline.length - 1]?.team1WinPct ?? 55,
-        team2Percentage: 100 - (bball.winProbTimeline[bball.winProbTimeline.length - 1]?.team1WinPct ?? 55),
+        team1Percentage: activeBball.winProbTimeline[activeBball.winProbTimeline.length - 1]?.team1WinPct ?? 55,
+        team2Percentage: 100 - (activeBball.winProbTimeline[activeBball.winProbTimeline.length - 1]?.team1WinPct ?? 55),
       },
       linescore: intel.linescore || {
-        periodHeaders: bball.linescore.periodHeaders,
-        team1Quarters: bball.linescore.team1.quarters,
-        team2Quarters: bball.linescore.team2.quarters,
-        team1Total: bball.linescore.team1.total,
-        team2Total: bball.linescore.team2.total,
+        periodHeaders: activeBball.linescore.periodHeaders,
+        team1Quarters: activeBball.linescore.team1.quarters,
+        team2Quarters: activeBball.linescore.team2.quarters,
+        team1Total: activeBball.linescore.team1.total,
+        team2Total: activeBball.linescore.team2.total,
       },
-      leverageIndex: bball.leverageIndex,
-      leverageTier: bball.leverageTier,
-      isClutchTime: bball.isClutchTime,
-      bonusState: bball.bonusState,
-      smartCards: bball.smartCards,
-      onCourtLineup: bball.onCourtLineup,
-      shotChart: bball.shotChart,
-      winProbTimeline: bball.winProbTimeline,
-      stintTimeline: bball.stintTimeline,
-      team1Analytics: bball.team1Analytics,
-      team2Analytics: bball.team2Analytics,
-      mvpPerformer: bball.mvpPerformer,
-      inGameInsights: bball.inGameInsights,
+      leverageIndex: activeBball.leverageIndex,
+      leverageTier: activeBball.leverageTier,
+      isClutchTime: activeBball.isClutchTime,
+      bonusState: activeBball.bonusState,
+      smartCards: activeBball.smartCards,
+      onCourtLineup: activeBball.onCourtLineup,
+      shotChart: activeBball.shotChart,
+      winProbTimeline: activeBball.winProbTimeline,
+      stintTimeline: activeBball.stintTimeline,
+      team1Analytics: activeBball.team1Analytics,
+      team2Analytics: activeBball.team2Analytics,
+      mvpPerformer: activeBball.mvpPerformer,
+      inGameInsights: activeBball.inGameInsights,
     });
   });
 

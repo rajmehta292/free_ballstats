@@ -285,8 +285,8 @@
           <button class="gamecast-tab-btn active" data-tab="pro-boxscore">
             📋 Box Score
           </button>
-          <button class="gamecast-tab-btn" data-tab="pro-ingame-analytics">
-            🏀 In-Game Analytics &amp; Four Factors
+          <button class="gamecast-tab-btn" data-tab="pro-ingame-analytics" id="pro-tab-btn-ingame">
+            📐 Deep Analytics &amp; Spatial Map
           </button>
           <button class="gamecast-tab-btn" data-tab="pro-rosters">
             👥 Rosters
@@ -634,14 +634,94 @@
       const container = document.getElementById('pro-ingame-analytics-container');
       if (!container) return;
       const ba = intel.basketballAnalytics;
+      const sa = intel.sportAnalytics;
+      const ss = window.FreeBallStatsSmartScreen;
+
+      const tabBtn = document.getElementById('pro-tab-btn-ingame');
+      if (tabBtn) {
+        if (sa && sa.sportType === 'soccer') tabBtn.innerHTML = '⚽ Pitch xG Map &amp; Opta Analytics';
+        else if (sa && (sa.sportType === 'nfl' || sa.sportType === 'ncaaf')) tabBtn.innerHTML = '🏈 Field Map, EPA &amp; Down-Distance';
+        else if (sa && sa.sportType === 'hockey') tabBtn.innerHTML = '🏒 Ice Slot Map, Corsi &amp; xGF';
+        else if (sa && sa.sportType === 'ncaab') tabBtn.innerHTML = '🎓 KenPom, Shot Map &amp; Four Factors';
+        else tabBtn.innerHTML = '🏀 CourtOptix Shot Map &amp; Four Factors';
+      }
+
+      if (!ba && sa) {
+        const hudCompat = {
+          surfaceType: sa.surfaceType,
+          sportAnalytics: sa,
+          leverageIndex: sa.leverageIndex,
+          leverageTier: sa.leverageTier,
+          winProbTimeline: sa.winProbTimeline,
+        };
+        const spatialHtml = ss ? ss.renderSvgHalfCourtShotChart(hudCompat, { filterSide: window._proScFilter || 'all' }) : '';
+        const unitHtml = ss ? ss.renderOnCourt5v5AndStints(hudCompat) : '';
+        const wormHtml = ss ? ss.renderWinProbWormChart(hudCompat) : '';
+        const tacticalHtml = ss ? ss.renderSynergyPlayTypes(hudCompat) : '';
+        const t1Abbr = sa.team1Meta?.abbreviation || 'TM1';
+        const t2Abbr = sa.team2Meta?.abbreviation || 'TM2';
+
+        container.innerHTML = `
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:14px;">
+            <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-color);border-radius:10px;padding:12px;">
+              ${spatialHtml}
+            </div>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              ${unitHtml}
+              ${wormHtml}
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">
+            <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-color);border-radius:10px;padding:12px;">
+              <div style="font-size:12px;font-weight:800;color:#00f2fe;margin-bottom:8px;">📐 ${escapeHtml(sa.sportBadge || 'FOUR ANALYTICAL PILLARS')}</div>
+              <div style="font-size:12px;display:flex;flex-direction:column;gap:8px;">
+                ${(sa.fourPillars || []).map(p => `
+                  <div>
+                    <div style="display:flex;justify-content:space-between;margin-bottom:2px;">
+                      <span>${escapeHtml(p.label)} <small style="color:var(--text-dim);">[${escapeHtml(p.weightLabel)}]</small></span>
+                      <strong>${escapeHtml(t1Abbr)} ${escapeHtml(p.team1Value)} vs ${escapeHtml(t2Abbr)} ${escapeHtml(p.team2Value)}</strong>
+                    </div>
+                    <div style="font-size:10.5px;color:var(--text-dim);">${escapeHtml(p.description)}</div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+            <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-color);border-radius:10px;padding:12px;">
+              <div style="font-size:12px;font-weight:800;color:#a78bfa;margin-bottom:8px;">⚡ TEMPO, PROJECTION &amp; MATCH MVP</div>
+              <div style="font-size:12px;display:flex;flex-direction:column;gap:7px;">
+                <div style="display:flex;justify-content:space-between;">
+                  <span>${escapeHtml(sa.paceAndProjection?.tempoLabel || 'Match Tempo')}</span>
+                  <strong>${escapeHtml(sa.paceAndProjection?.tempoValue || '')}</strong>
+                </div>
+                <div style="display:flex;justify-content:space-between;">
+                  <span>Projected Model Outcome</span>
+                  <strong style="color:#00f2fe;">${escapeHtml(sa.paceAndProjection?.projectedFinal || '')}</strong>
+                </div>
+                <div style="display:flex;justify-content:space-between;">
+                  <span>Active Momentum Swing</span>
+                  <strong style="color:#10b981;">${escapeHtml(sa.paceAndProjection?.activeMomentumRun || '')}</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+          ${tacticalHtml}
+        `;
+        container.querySelectorAll('[data-sc-filter]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            window._proScFilter = btn.getAttribute('data-sc-filter');
+            renderProInGameAnalytics(intel);
+          });
+        });
+        return;
+      }
+
       if (!ba) {
-        container.innerHTML = `<div style="padding:16px;text-align:center;color:var(--text-dim);">Full Basketball Four Factors & Rotation Splits are active on NBA/Basketball broadcasts. <a href="/basketball.html" style="color:#00f2fe;font-weight:700;">Open Dedicated Basketball Research Lab &rarr;</a></div>`;
+        container.innerHTML = `<div style="padding:16px;text-align:center;color:var(--text-dim);">Loading live telemetry &amp; spatial analytics...</div>`;
         return;
       }
 
       const t1 = ba.team1Analytics;
       const t2 = ba.team2Analytics;
-      const ss = window.FreeBallStatsSmartScreen;
       const shotChartHtml = ss ? ss.renderSvgHalfCourtShotChart(ba, { filterSide: window._proScFilter || 'all' }) : '';
       const lineup5v5Html = ss ? ss.renderOnCourt5v5AndStints(ba) : '';
       const wormHtml = ss ? ss.renderWinProbWormChart(ba) : '';

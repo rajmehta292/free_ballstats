@@ -209,13 +209,26 @@
         <iframe id="modal-iframe" src="" allow="fullscreen; picture-in-picture; autoplay" allowfullscreen></iframe>
       </div>
 
+      <!-- Non-Pro Modal Stream Source Switcher & Broadcast Controls -->
+      <div class="modal-source-switcher-bar" id="modal-source-switcher-bar">
+        <div class="modal-source-pills" id="modal-source-pills">
+          <span style="font-size:11px;font-weight:800;color:#94a3b8;">📡 STREAM FEEDS:</span>
+          <button type="button" class="modal-src-btn active">Source 1 (Primary HD)</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          <button type="button" class="modal-src-btn" id="modal-reload-stream-btn" title="Reload Video Stream">🔄 Reload Stream</button>
+          <button type="button" class="modal-src-btn" id="modal-toggle-lbar-btn" title="Toggle L-Bar Squeeze-Back Telemetry">📐 L-Bar Mode</button>
+          <button type="button" class="modal-src-btn" id="modal-cinema-width-btn" title="Expand Modal to Cinema Width">↔ Cinema Width</button>
+        </div>
+      </div>
+
       <!-- Gamecast Tabs Navigation -->
       <div class="gamecast-tabs-nav">
         <button class="gamecast-tab-btn active" data-tab="boxscore">
           📋 Box Score
         </button>
-        <button class="gamecast-tab-btn" data-tab="ingame-analytics">
-          🏀 In-Game Analytics &amp; Four Factors
+        <button class="gamecast-tab-btn" data-tab="ingame-analytics" id="tab-btn-ingame-analytics">
+          📐 Deep Analytics &amp; Spatial Map
         </button>
         <button class="gamecast-tab-btn" data-tab="rosters">
           👥 Rosters

@@ -275,6 +275,56 @@ test('StreamFree API Streamer Suite', async (t) => {
     assert.ok(res.body.includes('Basketball Research'));
   });
 
+  await t.test('GET /api/v1/intel/uefa-england-vs-spain and smart-hud return authentic Soccer Opta xG & Pitch telemetry without NBA cross-contamination', async () => {
+    const intelRes = await server.inject({
+      method: 'GET',
+      url: '/api/v1/intel/uefa-england-vs-spain',
+    });
+    assert.equal(intelRes.statusCode, 200);
+    const intel = intelRes.json();
+    assert.ok(intel.sportAnalytics, 'Expected sportAnalytics on soccer intel');
+    assert.equal(intel.sportAnalytics.sportType, 'soccer');
+    assert.equal(intel.sportAnalytics.surfaceType, 'soccer_pitch');
+    const rosterNames = intel.rosters.team1.map((r: any) => r.name);
+    assert.ok(rosterNames.includes('Harry Kane') || rosterNames.includes('Jude Bellingham'), 'Expected real England players');
+    assert.ok(!rosterNames.some((n: string) => n.includes('England Striker')), 'Must not contain generic placeholder names');
+
+    const hudRes = await server.inject({
+      method: 'GET',
+      url: '/api/v1/basketball/smart-hud/uefa-england-vs-spain',
+    });
+    assert.equal(hudRes.statusCode, 200);
+    const hud = hudRes.json();
+    assert.equal(hud.sportType, 'soccer');
+    assert.equal(hud.surfaceType, 'soccer_pitch');
+    const cardHeadlines = (hud.smartCards || []).map((c: any) => `${c.headline} ${c.subline}`).join(' ');
+    assert.ok(!cardHeadlines.includes('Jaylen Brown'), 'Soccer smart cards must never leak NBA players like Jaylen Brown');
+    assert.ok(!cardHeadlines.includes('Personal Fouls'), 'Soccer smart cards must not show NBA personal foul alerts');
+  });
+
+  await t.test('GET /api/v1/basketball/smart-hud/:stream_key supports NFL, NHL, College Football, and College Basketball with sport-specific surfaces', async () => {
+    const cases = [
+      { key: 'nfl-chiefs-vs-bills', expectedSport: 'nfl', expectedSurface: 'football_field' },
+      { key: 'cfb-oregon-vs-ohio-state', expectedSport: 'ncaaf', expectedSurface: 'football_field' },
+      { key: 'nhl-oilers-vs-panthers', expectedSport: 'hockey', expectedSurface: 'hockey_rink' },
+      { key: 'ncaab-duke-vs-kansas', expectedSport: 'ncaab', expectedSurface: 'basketball_halfcourt' },
+    ];
+
+    for (const c of cases) {
+      const res = await server.inject({
+        method: 'GET',
+        url: `/api/v1/basketball/smart-hud/${c.key}`,
+      });
+      assert.equal(res.statusCode, 200);
+      const data = res.json();
+      assert.equal(data.sportType, c.expectedSport, `Expected ${c.expectedSport} for ${c.key}`);
+      assert.equal(data.surfaceType, c.expectedSurface, `Expected ${c.expectedSurface} for ${c.key}`);
+      assert.ok(data.sportAnalytics && Array.isArray(data.sportAnalytics.fourPillars) && data.sportAnalytics.fourPillars.length === 4);
+      assert.ok(Array.isArray(data.smartCards) && data.smartCards.length > 0);
+    }
+  });
+
   await server.close();
 });
+
 

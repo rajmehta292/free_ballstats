@@ -1,4 +1,5 @@
 import type { StreamItem, StreamSource } from '../types/stream.js';
+import { buildSvgTeamCrestDataUri } from './multi-sport-analytics-service.js';
 
 class CustomStreamsService {
   private customStreams: Map<string, StreamItem> = new Map();
@@ -28,8 +29,8 @@ class CustomStreamsService {
           live: true,
         },
       ],
-      team1: { name: 'StreamFree', logo: 'https://via.placeholder.com/150/9146ff/ffffff?text=SF' },
-      team2: { name: 'Custom Player', logo: 'https://via.placeholder.com/150/00ffcc/000000?text=App' },
+      team1: { name: 'Free_BallStats', logo: buildSvgTeamCrestDataUri('FBS', '#9146ff', '#00f2fe') },
+      team2: { name: 'Broadcast Lab', logo: buildSvgTeamCrestDataUri('LAB', '#0ea5e9', '#10b981') },
     });
   }
 

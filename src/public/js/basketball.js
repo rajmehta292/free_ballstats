@@ -4,6 +4,8 @@
 (function () {
   let hubData = null;
   let activeGameIndex = 0;
+  let activeMultiSportIndex = 0;
+  let activeMultiSportFilter = 'all';
   let activeBoxTeam = 'team1';
   let activeBoxMode = 'advanced';
   let activeConference = 'western';
@@ -21,6 +23,7 @@
       renderLeagueBenchmarks(hubData.leagueAverages);
       renderGameSelectorTabs();
       renderActiveGameLab();
+      renderMultiSportLab();
       initComparisonSelectors(hubData.players || []);
       renderLeaderboardMatrix(hubData.players || []);
       renderStandingsTable();
@@ -555,7 +558,7 @@
                   <div class="player-cell">
                     <img src="${p.headshot}" alt="${escapeHtml(p.name)}" onerror="this.src='https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90'" />
                     <div>
-                      <div class="font-bold">${escapeHtml(p.name)} ${p.onHotStreak ? '<span title="Hot Hand">🔥</span>' : ''} ${p.inFoulTrouble ? '<span title="Foul Trouble">⚠️</span>' : ''}</div>
+                      <div class="font-bold">${escapeHtml(p.name)} ${(p.hotStreak || p.onHotStreak) ? '<span title="Hot Hand">🔥</span>' : ''} ${(p.foulTrouble || p.inFoulTrouble) ? '<span title="Foul Trouble">⚠️</span>' : ''}</div>
                       <small class="text-muted">#${escapeHtml(p.jersey)} • ${escapeHtml(p.position)}</small>
                     </div>
                   </div>
@@ -569,7 +572,7 @@
                 <td class="mono-cell ${p.shotMakingDelta >= 0 ? 'pos-val' : 'neg-val'}">${p.xEfgPct ?? p.efgPct}% (${(p.shotMakingDelta ?? 0) >= 0 ? '+' : ''}${p.shotMakingDelta ?? 0}%)</td>
                 <td class="mono-cell">${p.usgPct}%</td>
                 <td class="mono-cell ${(p.bpm ?? 0) >= 0 ? 'pos-val font-bold' : 'neg-val'}">${(p.bpm ?? 0) > 0 ? '+' : ''}${p.bpm ?? 0}</td>
-                <td class="mono-cell ${(p.wpa ?? 0) >= 0 ? 'pos-val font-bold' : 'neg-val'}">${(p.wpa ?? 0) >= 0 ? '+' : ''}${Math.round((p.wpa ?? 0) * 100)}%</td>
+                <td class="mono-cell ${(p.wpa ?? 0) >= 0 ? 'pos-val font-bold' : 'neg-val'}">${(p.wpa ?? 0) >= 0 ? '+' : ''}${p.wpa ?? 0}%</td>
                 <td class="mono-cell">${p.stocks} (${p.stl}S/${p.blk}B)</td>
                 <td class="mono-cell">${p.projected48 ? `${p.projected48.pts}/${p.projected48.reb}/${p.projected48.ast}` : '-'}</td>
                 <td class="mono-cell ${p.plusMinus >= 0 ? 'pos-val' : 'neg-val'}">${p.plusMinus > 0 ? '+' : ''}${p.plusMinus}</td>
@@ -644,6 +647,159 @@
       row.addEventListener('click', () => {
         const pid = row.getAttribute('data-player-id');
         if (pid) openPlayerModal(pid);
+      });
+    });
+  }
+
+  // =========================================================================
+  // 2B. UNIVERSAL MULTI-SPORT DEEP TELEMETRY LAB (SOCCER, NFL, CFB, NHL, NCAAB)
+  // =========================================================================
+  function renderMultiSportLab() {
+    const tabsWrap = document.getElementById('multisport-selector-tabs');
+    const contentWrap = document.getElementById('multisport-lab-content');
+    const msGames = hubData?.multiSportGames || [];
+    if (!tabsWrap || !contentWrap || msGames.length === 0) return;
+
+    const sportIcons = {
+      soccer: '⚽',
+      nfl: '🏈',
+      ncaaf: '🎓🏈',
+      hockey: '🏒',
+      ncaab: '🎓🏀',
+    };
+
+    tabsWrap.innerHTML = msGames
+      .map((sa, idx) => {
+        const icon = sportIcons[sa.sportType] || '🌐';
+        const activeClass = idx === activeMultiSportIndex ? 'active' : '';
+        const sportLbl = sa.sportLabel || (sa.sportBadge || '').split('•')[0].trim() || sa.sportType.toUpperCase();
+        return `
+          <button type="button" class="game-tab-btn ${activeClass}" data-ms-idx="${idx}">
+            <span class="pulse-dot online" style="width:7px;height:7px;"></span>
+            <span>${icon} ${escapeHtml(sa.team1Meta.abbreviation)} ${sa.team1Meta.score} - ${sa.team2Meta.score} ${escapeHtml(sa.team2Meta.abbreviation)}</span>
+            <small>${escapeHtml(sportLbl)}</small>
+          </button>
+        `;
+      })
+      .join('');
+
+    tabsWrap.querySelectorAll('[data-ms-idx]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        activeMultiSportIndex = Number(btn.getAttribute('data-ms-idx') || 0);
+        activeMultiSportFilter = 'all';
+        renderMultiSportLab();
+      });
+    });
+
+    const sa = msGames[activeMultiSportIndex] || msGames[0];
+    const ss = window.FreeBallStatsSmartScreen;
+    const hudCompat = {
+      surfaceType: sa.surfaceType,
+      sportAnalytics: sa,
+      leverageIndex: sa.leverageIndex,
+      leverageTier: sa.leverageTier,
+      winProbTimeline: sa.winProbTimeline,
+    };
+
+    const spatialHtml = ss ? ss.renderSvgHalfCourtShotChart(hudCompat, { filterSide: activeMultiSportFilter }) : '';
+    const unitHtml = ss ? ss.renderOnCourt5v5AndStints(hudCompat) : '';
+    const wormHtml = ss ? ss.renderWinProbWormChart(hudCompat) : '';
+    const tacticalHtml = ss ? ss.renderSynergyPlayTypes(hudCompat) : '';
+
+    const t1 = sa.team1Meta;
+    const t2 = sa.team2Meta;
+    const p0 = sa.fourPillars?.[0];
+    const p1 = sa.fourPillars?.[1];
+
+    contentWrap.innerHTML = `
+      <div class="ingame-scoreboard-card" style="margin-bottom:1.1rem;">
+        <div class="ingame-teams-row">
+          <div class="ingame-team-block">
+            <img src="${escapeHtml(t1.logo)}" alt="${escapeHtml(t1.name)}" onerror="this.style.display='none'" />
+            <div>
+              <div class="ingame-team-name">${escapeHtml(t1.name)} <small style="color:var(--text-dim);">(${escapeHtml(t1.record)})</small></div>
+              <div class="ingame-team-sub">${escapeHtml(t1.formationOrScheme || '')} • ${escapeHtml(p0?.code || 'EFF')}: <strong>${escapeHtml(p0?.team1Value || '')}</strong> • ${escapeHtml(p1?.code || 'RATE')}: <strong>${escapeHtml(p1?.team1Value || '')}</strong></div>
+            </div>
+            <div class="ingame-team-score">${t1.score}</div>
+          </div>
+
+          <div class="ingame-vs-center">
+            <span class="ingame-status-pill">${escapeHtml(sa.sportBadge || sa.sportLabel || '')} • ${escapeHtml(sa.status)}</span>
+            <span class="ingame-venue-sub">${escapeHtml(sa.venue)} • ${escapeHtml(sa.broadcast)}</span>
+            <span class="ingame-run-badge">⚡ ${escapeHtml(sa.situationBanner)}</span>
+          </div>
+
+          <div class="ingame-team-block right">
+            <div class="ingame-team-score">${t2.score}</div>
+            <div>
+              <div class="ingame-team-name">${escapeHtml(t2.name)} <small style="color:var(--text-dim);">(${escapeHtml(t2.record)})</small></div>
+              <div class="ingame-team-sub">${escapeHtml(t2.formationOrScheme || '')} • ${escapeHtml(p0?.code || 'EFF')}: <strong>${escapeHtml(p0?.team2Value || '')}</strong> • ${escapeHtml(p1?.code || 'RATE')}: <strong>${escapeHtml(p1?.team2Value || '')}</strong></div>
+            </div>
+            <img src="${escapeHtml(t2.logo)}" alt="${escapeHtml(t2.name)}" onerror="this.style.display='none'" />
+          </div>
+        </div>
+      </div>
+
+      <div class="ingame-two-col">
+        <div class="analytics-panel">${spatialHtml}</div>
+        <div class="analytics-panel">${unitHtml}</div>
+      </div>
+
+      <div class="ingame-two-col" style="margin-top:1.1rem;">
+        <div class="analytics-panel">
+          <div class="panel-title-row">
+            <h3>📐 ${escapeHtml(sa.sportBadge)} — Four Core Analytical Pillars</h3>
+            <span class="badge-mini">LIVE TELEMETRY</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px;">
+            ${(sa.fourPillars || []).map((p) => {
+              const n1 = Math.abs(Number(p.team1Numeric) || 50);
+              const n2 = Math.abs(Number(p.team2Numeric) || 50);
+              const tot = n1 + n2 || 100;
+              const bar1 = p.team1BarPct ?? Math.round((n1 / tot) * 100);
+              const bar2 = p.team2BarPct ?? (100 - bar1);
+              return `
+                <div style="background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:10px;">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                    <strong style="color:#e2e8f0;font-size:12px;">${escapeHtml(p.label)} <span style="color:#a78bfa;font-size:10.5px;">[${escapeHtml(p.weightLabel)}]</span></strong>
+                    <span style="font-family:monospace;font-size:12px;font-weight:800;color:#00f2fe;">
+                      ${escapeHtml(t1.abbreviation)} ${escapeHtml(p.team1Value)} vs ${escapeHtml(t2.abbreviation)} ${escapeHtml(p.team2Value)}
+                    </span>
+                  </div>
+                  <div style="height:6px;background:#1e293b;border-radius:999px;overflow:hidden;display:flex;margin-bottom:4px;">
+                    <div style="width:${bar1}%;background:#00f2fe;"></div>
+                    <div style="width:${bar2}%;background:#f97316;"></div>
+                  </div>
+                  <div style="font-size:11px;color:#94a3b8;">${escapeHtml(p.description)}</div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+        <div class="analytics-panel">
+          ${wormHtml}
+          <div style="margin-top:12px;">${tacticalHtml}</div>
+        </div>
+      </div>
+
+      <div class="insights-cards-grid" style="margin-top:1.1rem;">
+        ${(sa.inGameInsights || []).map((ins) => `
+          <div class="insight-card">
+            <div class="insight-top">
+              <span class="insight-cat">${escapeHtml(ins.category)}</span>
+              <span class="insight-badge">${escapeHtml(ins.metricBadge)}</span>
+            </div>
+            <h4>${escapeHtml(ins.title)}</h4>
+            <p>${escapeHtml(ins.detail)}</p>
+          </div>
+        `).join('')}
+      </div>
+    `;
+
+    contentWrap.querySelectorAll('[data-sc-filter]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        activeMultiSportFilter = btn.getAttribute('data-sc-filter') || 'all';
+        renderMultiSportLab();
       });
     });
   }

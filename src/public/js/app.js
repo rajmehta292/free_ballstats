@@ -427,6 +427,17 @@ let activeBoxScoreTeam = 'team1';
 let activeBoxScoreCatIndex = 0;
 let activeRosterTeam = 'team1';
 
+function buildClientSvgCrest(teamName, bgHex = '#9146ff') {
+  const initials = (teamName || 'TM')
+    .split(/\s+/)
+    .map(w => w[0] || '')
+    .join('')
+    .slice(0, 3)
+    .toUpperCase() || 'TM';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80"><circle cx="40" cy="40" r="36" fill="${bgHex}" stroke="rgba(255,255,255,0.35)" stroke-width="3"/><text x="40" y="46" text-anchor="middle" fill="#fff" font-family="sans-serif" font-weight="900" font-size="22">${initials}</text></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
 // Open Watch Modal (Gamecast Hub)
 window.openPlayerModal = async function(streamKey) {
   const stream = state.streams.find(s => s.stream_key === streamKey);
@@ -450,9 +461,64 @@ window.openPlayerModal = async function(streamKey) {
     proPlayerLink.href = `/player.html?key=${encodeURIComponent(stream.stream_key)}&category=${encodeURIComponent(stream.category)}`;
   }
 
-  // Set default iframe embed
-  iframe.src = `/embed/${encodeURIComponent(stream.category)}/${encodeURIComponent(stream.stream_key)}`;
+  // Set default iframe embed (with ?hud=0 so internal iframe HUD doesn't duplicate modal Smart Screen bar)
+  const baseEmbedUrl = `/embed/${encodeURIComponent(stream.category)}/${encodeURIComponent(stream.stream_key)}?hud=0`;
+  iframe.src = baseEmbedUrl;
   modal.classList.add('show');
+
+  // Populate Stream Source Switcher Bar inside the Watch Modal
+  const srcPillsEl = document.getElementById('modal-source-pills');
+  if (srcPillsEl) {
+    const sources = Array.isArray(stream.sources) && stream.sources.length > 0
+      ? stream.sources
+      : [{ quality: 'FHD', live: true, type: 'Primary' }];
+    srcPillsEl.innerHTML = `
+      <span style="font-size:11px;font-weight:800;color:#94a3b8;">📡 STREAM FEEDS:</span>
+      ${sources.map((s, idx) => `
+        <button type="button" class="modal-src-btn ${idx === 0 ? 'active' : ''}" data-modal-src-idx="${idx}">
+          Source ${idx + 1} (${escapeHtml(s.quality || 'HD')}${s.live ? ' • LIVE' : ''})
+        </button>
+      `).join('')}
+    `;
+    srcPillsEl.querySelectorAll('[data-modal-src-idx]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        srcPillsEl.querySelectorAll('[data-modal-src-idx]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const idx = btn.getAttribute('data-modal-src-idx');
+        iframe.src = `${baseEmbedUrl}&src=${encodeURIComponent(idx)}&t=${Date.now()}`;
+      });
+    });
+  }
+
+  const reloadBtn = document.getElementById('modal-reload-stream-btn');
+  if (reloadBtn) {
+    reloadBtn.onclick = () => {
+      iframe.src = `${baseEmbedUrl}&t=${Date.now()}`;
+    };
+  }
+
+  const lbarBtn = document.getElementById('modal-toggle-lbar-btn');
+  if (lbarBtn) {
+    lbarBtn.onclick = () => {
+      if (window.modalSmartScreen) {
+        const nextMode = window.modalSmartScreen.mode === 'lbar' ? 'triggers' : 'lbar';
+        window.modalSmartScreen.setMode(nextMode);
+        lbarBtn.classList.toggle('active', nextMode === 'lbar');
+      }
+    };
+  }
+
+  const cinemaBtn = document.getElementById('modal-cinema-width-btn');
+  if (cinemaBtn) {
+    cinemaBtn.onclick = () => {
+      const mc = modal.querySelector('.modal-content');
+      if (mc) {
+        const isExpanded = mc.style.maxWidth === '96vw';
+        mc.style.maxWidth = isExpanded ? '1180px' : '96vw';
+        cinemaBtn.classList.toggle('active', !isExpanded);
+      }
+    };
+  }
 
   // Mount or update Smart Screen Broadcast Canvas inside the Watch Modal
   if (window.FreeBallStatsSmartScreen) {
@@ -460,7 +526,7 @@ window.openPlayerModal = async function(streamKey) {
     if (stageEl) {
       if (!window.modalSmartScreen) {
         window.modalSmartScreen = new window.FreeBallStatsSmartScreen.SmartScreenController(stageEl, {
-          defaultMode: stream.category === 'basketball' ? 'lbar' : 'triggers',
+          defaultMode: 'triggers',
         });
       }
       window.fbsActiveSmartScreen = window.modalSmartScreen;
@@ -476,8 +542,8 @@ window.openPlayerModal = async function(streamKey) {
   const t2Name = stream.team2?.name || stream.name.split('vs')[1]?.trim() || 'Away';
   document.getElementById('sb-team1-name').textContent = t1Name;
   document.getElementById('sb-team2-name').textContent = t2Name;
-  document.getElementById('sb-team1-logo').src = stream.team1?.logo || 'https://via.placeholder.com/80/9146ff/fff?text=' + t1Name.slice(0, 3).toUpperCase();
-  document.getElementById('sb-team2-logo').src = stream.team2?.logo || 'https://via.placeholder.com/80/00f2fe/000?text=' + t2Name.slice(0, 3).toUpperCase();
+  document.getElementById('sb-team1-logo').src = stream.team1?.logo || buildClientSvgCrest(t1Name, '#9146ff');
+  document.getElementById('sb-team2-logo').src = stream.team2?.logo || buildClientSvgCrest(t2Name, '#0ea5e9');
   document.getElementById('sb-status-text').textContent = (stream.sources || []).some(s => s.live) ? 'LIVE' : 'UPCOMING';
   document.getElementById('sb-venue-text').textContent = `${stream.category.toUpperCase()} • ${(stream.viewers || 0).toLocaleString()} viewers`;
 
@@ -653,14 +719,125 @@ function renderInGameAnalytics(intel) {
   const container = document.getElementById('modal-ingame-analytics-container');
   if (!container) return;
   const ba = intel.basketballAnalytics;
+  const sa = intel.sportAnalytics;
+
+  // Update tab label dynamically for the active sport
+  const tabBtn = document.getElementById('tab-btn-ingame-analytics');
+  if (tabBtn) {
+    if (sa && sa.sportType === 'soccer') tabBtn.innerHTML = '⚽ Pitch xG Map &amp; Opta Analytics';
+    else if (sa && (sa.sportType === 'nfl' || sa.sportType === 'ncaaf')) tabBtn.innerHTML = '🏈 Field Map, EPA &amp; Down-Distance';
+    else if (sa && sa.sportType === 'hockey') tabBtn.innerHTML = '🏒 Ice Slot Map, Corsi &amp; xGF';
+    else if (sa && sa.sportType === 'ncaab') tabBtn.innerHTML = '🎓 KenPom, Shot Map &amp; Four Factors';
+    else tabBtn.innerHTML = '🏀 CourtOptix Shot Map &amp; Four Factors';
+  }
+
+  const ss = window.FreeBallStatsSmartScreen;
+
+  // Multi-Sport Deep Analytics (Soccer, NFL, College Football, NHL Hockey, College Basketball)
+  if (!ba && sa) {
+    const hudCompat = {
+      surfaceType: sa.surfaceType,
+      sportAnalytics: sa,
+      leverageIndex: sa.leverageIndex,
+      leverageTier: sa.leverageTier,
+      winProbTimeline: sa.winProbTimeline,
+    };
+    const spatialHtml = ss ? ss.renderSvgHalfCourtShotChart(hudCompat, { filterSide: window._modalScFilter || 'all' }) : '';
+    const unitHtml = ss ? ss.renderOnCourt5v5AndStints(hudCompat) : '';
+    const wormHtml = ss ? ss.renderWinProbWormChart(hudCompat) : '';
+    const tacticalHtml = ss ? ss.renderSynergyPlayTypes(hudCompat) : '';
+
+    const t1Abbr = sa.team1Meta?.abbreviation || 'TM1';
+    const t2Abbr = sa.team2Meta?.abbreviation || 'TM2';
+
+    container.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:14px;">
+        <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-color);border-radius:10px;padding:12px;">
+          ${spatialHtml}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          ${unitHtml}
+          ${wormHtml}
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">
+        <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-color);border-radius:10px;padding:12px;">
+          <div style="font-size:12px;font-weight:800;color:#00f2fe;margin-bottom:8px;">📐 ${escapeHtml(sa.sportBadge || 'FOUR ANALYTICAL PILLARS')}</div>
+          <div style="font-size:12px;display:flex;flex-direction:column;gap:8px;">
+            ${(sa.fourPillars || []).map(p => `
+              <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:2px;">
+                  <span>${escapeHtml(p.label)} <small style="color:var(--text-dim);">[${escapeHtml(p.weightLabel)}]</small></span>
+                  <strong>${escapeHtml(t1Abbr)} ${escapeHtml(p.team1Value)} vs ${escapeHtml(t2Abbr)} ${escapeHtml(p.team2Value)}</strong>
+                </div>
+                <div style="font-size:10.5px;color:var(--text-dim);">${escapeHtml(p.description)}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-color);border-radius:10px;padding:12px;">
+          <div style="font-size:12px;font-weight:800;color:#a78bfa;margin-bottom:8px;">⚡ TEMPO, PROJECTION &amp; MATCH MVP</div>
+          <div style="font-size:12px;display:flex;flex-direction:column;gap:7px;">
+            <div style="display:flex;justify-content:space-between;">
+              <span>${escapeHtml(sa.paceAndProjection?.tempoLabel || 'Match Tempo')}</span>
+              <strong>${escapeHtml(sa.paceAndProjection?.tempoValue || '')}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;">
+              <span>Projected Model Outcome</span>
+              <strong style="color:#00f2fe;">${escapeHtml(sa.paceAndProjection?.projectedFinal || '')}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;">
+              <span>Active Momentum Swing</span>
+              <strong style="color:#10b981;">${escapeHtml(sa.paceAndProjection?.activeMomentumRun || '')}</strong>
+            </div>
+            ${sa.mvpPerformer ? `
+              <div style="margin-top:4px;padding:8px;border-radius:8px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.28);display:flex;align-items:center;gap:10px;">
+                <img src="${escapeHtml(sa.mvpPerformer.headshot)}" alt="" style="width:38px;height:38px;border-radius:50%;object-fit:cover;">
+                <div>
+                  <div style="font-size:10px;font-weight:800;color:#fbbf24;">🌟 IMPACT LEADER • ${escapeHtml(sa.mvpPerformer.impactBadge)}</div>
+                  <div style="font-weight:800;color:#fff;">${escapeHtml(sa.mvpPerformer.name)} (${escapeHtml(sa.mvpPerformer.teamAbbr)})</div>
+                  <div style="font-size:11px;color:#cbd5e1;">${escapeHtml(sa.mvpPerformer.primaryLine)} • ${escapeHtml(sa.mvpPerformer.efficiencyLine)}</div>
+                </div>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      </div>
+
+      ${tacticalHtml}
+
+      <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;">
+        ${(sa.inGameInsights || []).map(ins => `
+          <div style="background:rgba(145,70,255,0.07);border:1px solid rgba(145,70,255,0.25);border-radius:8px;padding:10px;font-size:12px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+              <span style="color:#c4b5fd;font-weight:700;font-size:10px;">${escapeHtml(ins.category)}</span>
+              <span style="color:#00f2fe;font-weight:800;font-size:10px;">${escapeHtml(ins.metricBadge)}</span>
+            </div>
+            <div style="font-weight:700;margin-bottom:3px;">${escapeHtml(ins.title)}</div>
+            <div style="color:var(--text-dim);font-size:11px;">${escapeHtml(ins.detail)}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+
+    container.querySelectorAll('[data-sc-filter]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        window._modalScFilter = btn.getAttribute('data-sc-filter');
+        renderInGameAnalytics(intel);
+      });
+    });
+    return;
+  }
+
   if (!ba) {
-    container.innerHTML = `<div style="padding:16px;text-align:center;color:var(--text-dim);">Full Basketball Four Factors & Rotation Splits are active on NBA/Basketball broadcasts. <a href="/basketball.html" style="color:#00f2fe;font-weight:700;">Open Dedicated Basketball Research Lab &rarr;</a></div>`;
+    container.innerHTML = `<div style="padding:16px;text-align:center;color:var(--text-dim);">Loading live telemetry &amp; spatial analytics...</div>`;
     return;
   }
 
   const t1 = ba.team1Analytics;
   const t2 = ba.team2Analytics;
-  const ss = window.FreeBallStatsSmartScreen;
   const shotChartHtml = ss ? ss.renderSvgHalfCourtShotChart(ba, { filterSide: window._modalScFilter || 'all' }) : '';
   const lineup5v5Html = ss ? ss.renderOnCourt5v5AndStints(ba) : '';
   const wormHtml = ss ? ss.renderWinProbWormChart(ba) : '';

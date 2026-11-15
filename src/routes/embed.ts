@@ -8,10 +8,10 @@ export const embedRoutes: FastifyPluginAsync = async (fastify) => {
    */
   fastify.get<{
     Params: { category: string; stream_key: string };
-    Querystring: { autoplay?: string; muted?: string; quality?: string };
+    Querystring: { autoplay?: string; muted?: string; quality?: string; hud?: string; src?: string };
   }>('/embed/:category/:stream_key', async (request, reply) => {
     const { category, stream_key } = request.params;
-    const { autoplay, muted, quality } = request.query;
+    const { autoplay, muted, hud, src } = request.query;
 
     const stream = await streamFreeClient.getStreamByKey(stream_key);
     const activeMirror = streamFreeClient.getActiveMirror();
@@ -23,16 +23,18 @@ export const embedRoutes: FastifyPluginAsync = async (fastify) => {
 
     if (stream && stream.sources && stream.sources.length > 0) {
       availableSources = stream.sources;
-      const liveSource = stream.sources.find(s => s.live) || stream.sources[0];
-      defaultSourceUrl = liveSource.url;
+      const srcIdx = src !== undefined ? Number(src) : -1;
+      const picked = (srcIdx >= 0 && stream.sources[srcIdx]) ? stream.sources[srcIdx] : (stream.sources.find(s => s.live) || stream.sources[0]);
+      defaultSourceUrl = picked.url;
       isLive = stream.sources.some(s => s.live);
     } else {
       defaultSourceUrl = `${activeMirror}/embed/${encodeURIComponent(category)}/${encodeURIComponent(stream_key)}`;
     }
 
-    const title = stream ? `${stream.name} | StreamFree Player` : 'Live Stream';
+    const title = stream ? `${stream.name} | Free_BallStats Player` : 'Live Stream';
     const autoPlayBool = autoplay !== '0' && autoplay !== 'false';
     const mutedBool = muted === '1' || muted === 'true';
+    const showInternalHud = hud !== '0' && hud !== 'false';
 
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -187,14 +189,14 @@ export const embedRoutes: FastifyPluginAsync = async (fastify) => {
 </head>
 <body>
   <div class="player-container">
-    <div class="stream-overlay">
+    <div class="stream-overlay" style="${showInternalHud ? '' : 'display:none;'}">
       <span class="live-dot" style="${isLive ? '' : 'background: #eab308; box-shadow: 0 0 8px #eab308;'}"></span>
       <span>${isLive ? 'LIVE' : 'WAITING FOR BROADCAST'}</span>
       <span style="opacity: 0.6;">•</span>
       <span>${category.toUpperCase()}</span>
     </div>
 
-    <div class="smart-hud-pill" id="embed-smart-hud">
+    <div class="smart-hud-pill" id="embed-smart-hud" style="${showInternalHud ? '' : 'display:none;'}">
       <span id="embed-hud-score">Loading Telemetry...</span>
       <span class="li-tag" id="embed-hud-li">LI 1.0x</span>
       <button type="button" class="smart-hud-toggle" id="embed-hud-btn">📊 HUD</button>
@@ -202,7 +204,7 @@ export const embedRoutes: FastifyPluginAsync = async (fastify) => {
 
     <div class="smart-hud-drawer" id="embed-hud-drawer">
       <div style="font-size:10px;color:#a78bfa;font-weight:800;text-transform:uppercase;margin-bottom:4px;" id="embed-hud-card-cat">SMART BROADCAST TELEMETRY</div>
-      <div style="font-weight:800;color:#fff;margin-bottom:3px;" id="embed-hud-card-title">Synchronizing CourtOptix & Four Factors...</div>
+      <div style="font-weight:800;color:#fff;margin-bottom:3px;" id="embed-hud-card-title">Synchronizing Live Sports Telemetry...</div>
       <div style="color:#cbd5e1;line-height:1.35;" id="embed-hud-card-sub">Click HUD to toggle live analytical overlay.</div>
     </div>
 
@@ -283,23 +285,26 @@ export const embedRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     async function refreshEmbedSmartHud() {
+      if (!${showInternalHud}) return;
       try {
         const res = await fetch('/api/v1/basketball/smart-hud/' + encodeURIComponent(streamKey));
         if (!res.ok) return;
         const hud = await res.json();
+        const t1 = hud.linescore?.team1 || hud.team1;
+        const t2 = hud.linescore?.team2 || hud.team2;
         const scoreEl = document.getElementById('embed-hud-score');
         const liEl = document.getElementById('embed-hud-li');
-        if (scoreEl && hud.team1 && hud.team2) {
-          scoreEl.textContent = hud.team1.abbreviation + ' ' + hud.team1.score + ' - ' + hud.team2.score + ' ' + hud.team2.abbreviation + ' (' + hud.statusDetail + ')';
+        if (scoreEl && t1 && t2) {
+          scoreEl.textContent = (t1.abbreviation || 'TM1') + ' ' + (t1.total ?? t1.score ?? 0) + ' - ' + (t2.total ?? t2.score ?? 0) + ' ' + (t2.abbreviation || 'TM2') + ' (' + (hud.detail || hud.status || 'LIVE') + ')';
         }
         if (liEl) {
           liEl.textContent = 'LI ' + (hud.leverageIndex || 1.0) + 'x';
         }
         const card = (hud.smartCards || [])[0];
         if (card) {
-          document.getElementById('embed-hud-card-cat').textContent = card.category + ' • ' + card.badge;
-          document.getElementById('embed-hud-card-title').textContent = card.headline;
-          document.getElementById('embed-hud-card-sub').textContent = card.detail;
+          document.getElementById('embed-hud-card-cat').textContent = (card.badge || 'LIVE TELEMETRY') + (card.primaryMetric ? ' • ' + card.primaryMetric : '');
+          document.getElementById('embed-hud-card-title').textContent = card.title || card.headline || '';
+          document.getElementById('embed-hud-card-sub').textContent = card.subtitle || card.detail || '';
         }
       } catch (e) {}
     }
