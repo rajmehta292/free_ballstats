@@ -28,7 +28,7 @@
           </svg>
         </div>
         <span class="brand-title">FREE_<span class="accent">BALLSTATS</span></span>
-        <span class="badge-pro">RESEARCH v2.0</span>
+        <span class="badge-pro">RESEARCH v3.0 • SMART SCREEN</span>
       </a>
 
       <nav class="nav-links">
@@ -127,6 +127,16 @@
         <div class="analytics-panel" id="shot-diet-panel"></div>
       </div>
 
+      <!-- v3.0 CourtOptix Shot Chart, On-Court 5v5 Lineup & Stints, Win Prob Worm, and Synergy Play Types -->
+      <div class="ingame-two-col" style="margin-top: 1.25rem;">
+        <div class="analytics-panel" id="spatial-shot-chart-panel"></div>
+        <div class="analytics-panel" id="oncourt-lineup-stints-panel"></div>
+      </div>
+      <div class="ingame-two-col" style="margin-top: 1.25rem;">
+        <div class="analytics-panel" id="win-prob-worm-panel"></div>
+        <div class="analytics-panel" id="synergy-playtypes-panel"></div>
+      </div>
+
       <!-- Automated In-Game Analytical Insights Strip -->
       <div class="analytics-panel" style="margin-top: 1.25rem;">
         <div class="panel-title-row">
@@ -146,7 +156,7 @@
           <div class="box-controls-row">
             <div id="box-team-switch" class="segmented-control"></div>
             <div id="box-mode-switch" class="segmented-control">
-              <button type="button" class="seg-btn active" data-mode="advanced">⚡ Advanced (GmSc, TS%, eFG%, USG%, PIE)</button>
+              <button type="button" class="seg-btn active" data-mode="advanced">⚡ Advanced (GmSc, TS%, xEFG%, BPM, WPA, 48-Pace)</button>
               <button type="button" class="seg-btn" data-mode="traditional">📊 Traditional (PTS, REB, AST, FG, 3PT)</button>
             </div>
           </div>
@@ -250,6 +260,7 @@
     </div>
   </div>
 
+  <script src="/js/smart-screen.js"></script>
   <script src="/js/basketball.js"></script>
 </body>
 </html>

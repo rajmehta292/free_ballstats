@@ -9,6 +9,11 @@
   let activeConference = 'western';
 
   async function initBasketballLab() {
+    // Mount Persistent Smart Mini-Player Dock if user docked a live broadcast
+    if (window.FreeBallStatsSmartScreen && window.FreeBallStatsSmartScreen.mountResearchLabSmartDock) {
+      window.FreeBallStatsSmartScreen.mountResearchLabSmartDock();
+    }
+
     try {
       const res = await fetch(`/api/v1/basketball/hub?t=${Date.now()}`);
       hubData = await res.json();
@@ -415,6 +420,67 @@
       `;
     }
 
+    // 4b. v3.0 CourtOptix Shot Chart, On-Court 5v5 Lineup & Stints, Win Prob Worm, and Synergy Play Types
+    if (window.FreeBallStatsSmartScreen) {
+      const shotChartEl = document.getElementById('spatial-shot-chart-panel');
+      if (shotChartEl) {
+        let activeShotFilter = 'all';
+        const drawLabShotChart = () => {
+          shotChartEl.innerHTML = `
+            <div class="panel-title-row">
+              <h3>🎯 CourtOptix 6-Zone Spatial Shot Chart &amp; xEFG%</h3>
+              <div class="segmented-control" id="lab-shot-chart-filter">
+                <button type="button" class="seg-btn ${activeShotFilter === 'all' ? 'active' : ''}" data-filter="all">All</button>
+                <button type="button" class="seg-btn ${activeShotFilter === 'team1' ? 'active' : ''}" data-filter="team1">${escapeHtml(t1.abbreviation)}</button>
+                <button type="button" class="seg-btn ${activeShotFilter === 'team2' ? 'active' : ''}" data-filter="team2">${escapeHtml(t2.abbreviation)}</button>
+              </div>
+            </div>
+            ${window.FreeBallStatsSmartScreen.renderSvgHalfCourtShotChart(game, { filterTeam: activeShotFilter })}
+          `;
+          shotChartEl.querySelectorAll('#lab-shot-chart-filter .seg-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+              activeShotFilter = btn.getAttribute('data-filter') || 'all';
+              drawLabShotChart();
+            });
+          });
+        };
+        drawLabShotChart();
+      }
+
+      const lineupEl = document.getElementById('oncourt-lineup-stints-panel');
+      if (lineupEl) {
+        lineupEl.innerHTML = `
+          <div class="panel-title-row">
+            <h3>👟 On-Court 5v5 Lineup Matrix &amp; Stint GameFlow</h3>
+            <span class="badge-mini">POPCORNMACHINE</span>
+          </div>
+          ${window.FreeBallStatsSmartScreen.renderOnCourt5v5AndStints(game)}
+        `;
+      }
+
+      const wormEl = document.getElementById('win-prob-worm-panel');
+      if (wormEl) {
+        wormEl.innerHTML = `
+          <div class="panel-title-row">
+            <h3>📈 Win Probability Worm &amp; Leverage Index (LI)</h3>
+            <span class="badge-mini">INPREDICTABLE</span>
+          </div>
+          ${window.FreeBallStatsSmartScreen.renderWinProbWormChart(game)}
+        `;
+      }
+
+      const synergyEl = document.getElementById('synergy-playtypes-panel');
+      if (synergyEl) {
+        synergyEl.innerHTML = `
+          <div class="panel-title-row">
+            <h3>⚙️ Synergy Play-Type Efficiency (PPP)</h3>
+            <span class="badge-mini">SYNERGY SPORTS</span>
+          </div>
+          ${window.FreeBallStatsSmartScreen.renderSynergyPlayTypes(game)}
+        `;
+      }
+    }
+
     // 5. Automated In-Game Analytical Insights
     const insightsEl = document.getElementById('ingame-insights-grid');
     if (insightsEl) {
@@ -470,11 +536,12 @@
               <th title="John Hollinger's Game Score">GmSc ★</th>
               <th title="True Shooting %">TS%</th>
               <th title="Effective Field Goal %">eFG%</th>
+              <th title="CourtOptix Expected eFG% & Shot-Making Delta">xEFG% (Δ)</th>
               <th title="Usage Percentage">USG%</th>
-              <th title="Player Impact Estimate">PIE</th>
-              <th title="Individual Offensive Rating">ORTG</th>
-              <th title="Assist to Turnover Ratio">AST/TO</th>
+              <th title="Box Plus/Minus">BPM</th>
+              <th title="Win Probability Added">WPA</th>
               <th title="Steals + Blocks">STOCKS</th>
+              <th title="48-Minute Pace Projection">48-PACE</th>
               <th>+/-</th>
               <th>IMPACT TIER</th>
             </tr>
@@ -488,7 +555,7 @@
                   <div class="player-cell">
                     <img src="${p.headshot}" alt="${escapeHtml(p.name)}" onerror="this.src='https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90'" />
                     <div>
-                      <div class="font-bold">${escapeHtml(p.name)}</div>
+                      <div class="font-bold">${escapeHtml(p.name)} ${p.onHotStreak ? '<span title="Hot Hand">🔥</span>' : ''} ${p.inFoulTrouble ? '<span title="Foul Trouble">⚠️</span>' : ''}</div>
                       <small class="text-muted">#${escapeHtml(p.jersey)} • ${escapeHtml(p.position)}</small>
                     </div>
                   </div>
@@ -499,11 +566,12 @@
                 <td class="mono-cell font-bold accent-text">${p.gameScore}</td>
                 <td class="mono-cell ${p.tsPct >= 60 ? 'pos-val' : ''}">${p.tsPct}%</td>
                 <td class="mono-cell">${p.efgPct}%</td>
+                <td class="mono-cell ${p.shotMakingDelta >= 0 ? 'pos-val' : 'neg-val'}">${p.xEfgPct ?? p.efgPct}% (${(p.shotMakingDelta ?? 0) >= 0 ? '+' : ''}${p.shotMakingDelta ?? 0}%)</td>
                 <td class="mono-cell">${p.usgPct}%</td>
-                <td class="mono-cell">${p.pie}%</td>
-                <td class="mono-cell">${p.ortgEst}</td>
-                <td class="mono-cell">${p.astToRatio}</td>
+                <td class="mono-cell ${(p.bpm ?? 0) >= 0 ? 'pos-val font-bold' : 'neg-val'}">${(p.bpm ?? 0) > 0 ? '+' : ''}${p.bpm ?? 0}</td>
+                <td class="mono-cell ${(p.wpa ?? 0) >= 0 ? 'pos-val font-bold' : 'neg-val'}">${(p.wpa ?? 0) >= 0 ? '+' : ''}${Math.round((p.wpa ?? 0) * 100)}%</td>
                 <td class="mono-cell">${p.stocks} (${p.stl}S/${p.blk}B)</td>
+                <td class="mono-cell">${p.projected48 ? `${p.projected48.pts}/${p.projected48.reb}/${p.projected48.ast}` : '-'}</td>
                 <td class="mono-cell ${p.plusMinus >= 0 ? 'pos-val' : 'neg-val'}">${p.plusMinus > 0 ? '+' : ''}${p.plusMinus}</td>
                 <td><span class="tier-pill">${escapeHtml(p.impactTier)}</span></td>
               </tr>

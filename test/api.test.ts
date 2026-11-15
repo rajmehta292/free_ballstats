@@ -190,7 +190,7 @@ test('StreamFree API Streamer Suite', async (t) => {
     assert.ok(Array.isArray(data.glossary) && data.glossary.length > 0);
   });
 
-  await t.test('GET /api/v1/basketball/game/:event_id returns deep game analytics', async () => {
+  await t.test('GET /api/v1/basketball/game/:event_id returns deep game analytics including v3.0 CourtOptix, Synergy, 5v5 Lineups, and WPA Worm', async () => {
     const res = await server.inject({
       method: 'GET',
       url: '/api/v1/basketball/game/sim_lal_bos_2026',
@@ -201,6 +201,32 @@ test('StreamFree API Streamer Suite', async (t) => {
     assert.ok(data.team1Analytics.fourFactors.efgPct > 0);
     assert.ok(data.team1Analytics.unitSplits.startersPts > 0);
     assert.ok(data.mvpPerformer && typeof data.mvpPerformer.gameScore === 'number');
+    assert.ok(typeof data.mvpPerformer.xEfgPct === 'number');
+    assert.ok(typeof data.mvpPerformer.bpm === 'number');
+    assert.ok(typeof data.mvpPerformer.wpa === 'number');
+    assert.ok(data.shotChart && Array.isArray(data.shotChart.shots) && data.shotChart.shots.length > 0);
+    assert.ok(Array.isArray(data.shotChart.team1Zones) && data.shotChart.team1Zones.length === 6);
+    assert.ok(data.onCourtLineup && Array.isArray(data.onCourtLineup.team1Five) && data.onCourtLineup.team1Five.length === 5);
+    assert.ok(Array.isArray(data.winProbTimeline) && data.winProbTimeline.length > 0);
+    assert.ok(Array.isArray(data.stintTimeline) && data.stintTimeline.length > 0);
+    assert.ok(Array.isArray(data.smartCards) && data.smartCards.length > 0);
+    assert.ok(Array.isArray(data.team1Analytics.playTypes) && data.team1Analytics.playTypes.length >= 6);
+  });
+
+  await t.test('GET /api/v1/basketball/smart-hud/:stream_key returns low-latency Smart Screen broadcast HUD telemetry', async () => {
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/v1/basketball/smart-hud/nba-lakers-vs-celtics',
+    });
+    assert.equal(res.statusCode, 200);
+    const hud = res.json();
+    assert.ok(hud.team1 && hud.team2);
+    assert.ok(typeof hud.leverageIndex === 'number');
+    assert.ok(hud.fourFactors && hud.fourFactors.team1 && hud.fourFactors.team2);
+    assert.ok(hud.shotChart && Array.isArray(hud.shotChart.shots));
+    assert.ok(hud.onCourtLineup && Array.isArray(hud.onCourtLineup.team1Five));
+    assert.ok(Array.isArray(hud.winProbTimeline));
+    assert.ok(Array.isArray(hud.smartCards) && hud.smartCards.length > 0);
   });
 
   await t.test('GET /api/v1/basketball/players supports sorting and position filtering', async () => {

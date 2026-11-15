@@ -3,22 +3,53 @@
 let allStreams = [];
 let currentLayout = 4;
 let tileStreams = [];
+let tileTelemetry = {};
 
 document.addEventListener('DOMContentLoaded', async () => {
   setupLayoutButtons();
   await loadStreams();
   renderGrid();
+  refreshAllTilesTelemetry();
+  setInterval(refreshAllTilesTelemetry, 20000);
 });
 
 function setupLayoutButtons() {
-  document.querySelectorAll('.layout-btn').forEach(btn => {
+  document.querySelectorAll('.layout-btn[data-layout]').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.layout-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.layout-btn[data-layout]').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentLayout = parseInt(btn.dataset.layout, 10);
       renderGrid();
+      refreshAllTilesTelemetry();
     });
   });
+
+  const crunchBtn = document.getElementById('focus-crunch-btn');
+  if (crunchBtn) {
+    crunchBtn.addEventListener('click', () => {
+      // Find stream with highest Leverage Index and promote to Screen 1 in 1-Screen or 2-Split view
+      let bestKey = null;
+      let bestLi = -1;
+      for (const [k, hud] of Object.entries(tileTelemetry)) {
+        if ((hud?.leverageIndex || 0) > bestLi) {
+          bestLi = hud.leverageIndex || 0;
+          bestKey = k;
+        }
+      }
+      if (bestKey) {
+        const found = allStreams.find(s => s.stream_key === bestKey);
+        if (found) {
+          tileStreams[0] = found;
+          currentLayout = 1;
+          document.querySelectorAll('.layout-btn[data-layout]').forEach(b => {
+            b.classList.toggle('active', b.dataset.layout === '1');
+          });
+          renderGrid();
+          refreshAllTilesTelemetry();
+        }
+      }
+    });
+  }
 }
 
 async function loadStreams() {
@@ -63,6 +94,7 @@ function createTileElement(index, stream) {
       <select id="tile-select-${index}">
         ${selectOptions}
       </select>
+      <span class="tile-telemetry-badge" id="tile-hud-${index}">LI 1.0x</span>
       <button class="btn btn-outline" style="padding: 4px 8px; font-size: 11px;" onclick="fullscreenTile(${index})">
         Fullscreen
       </button>
@@ -92,10 +124,42 @@ function createTileElement(index, stream) {
           allowfullscreen
         ></iframe>
       `;
+      refreshAllTilesTelemetry();
     }
   });
 
   return tile;
+}
+
+async function refreshAllTilesTelemetry() {
+  let maxLi = -1;
+  let maxTileIdx = -1;
+
+  for (let i = 0; i < currentLayout; i++) {
+    const stream = tileStreams[i] || allStreams[i % Math.max(1, allStreams.length)];
+    if (!stream) continue;
+    try {
+      const res = await fetch(`/api/v1/basketball/smart-hud/${encodeURIComponent(stream.stream_key)}`);
+      if (!res.ok) continue;
+      const hud = await res.json();
+      tileTelemetry[stream.stream_key] = hud;
+
+      const badge = document.getElementById(`tile-hud-${i}`);
+      if (badge && hud.team1 && hud.team2) {
+        const li = hud.leverageIndex || 1.0;
+        badge.textContent = `${hud.team1.abbreviation} ${hud.team1.score}-${hud.team2.score} ${hud.team2.abbreviation} • LI ${li}x`;
+        badge.classList.toggle('crunch', li >= 1.8 || Boolean(hud.isClutchTime));
+        if (li > maxLi) {
+          maxLi = li;
+          maxTileIdx = i;
+        }
+      }
+    } catch (err) {}
+  }
+
+  document.querySelectorAll('.multiview-tile').forEach((tileEl, idx) => {
+    tileEl.classList.toggle('crunch-time-tile', idx === maxTileIdx && maxLi >= 1.3);
+  });
 }
 
 window.fullscreenTile = function(index) {

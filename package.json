@@ -1,7 +1,7 @@
 {
   "name": "free_ballstats",
-  "version": "2.0.0",
-  "description": "Free_BallStats — Advanced Basketball Research, In-Game Analytics (Four Factors, TS%, Hollinger GmSc, Pace, Shot Diet, Unit Splits), and Live Sports Streaming Intelligence Platform.",
+  "version": "3.0.0",
+  "description": "Free_BallStats v3.0 — Smart Screen Interactive Broadcast Canvas (L-Bar Squeeze-Back, Glass HUD, Smart Cards), CourtOptix 6-Zone Spatial Shot Chart & xEFG%, Synergy Play Types, 5v5 Lineup Matrix, Win Probability Worm, and NBA Research Engine.",
   "type": "module",
   "main": "dist/server.js",
   "scripts": {

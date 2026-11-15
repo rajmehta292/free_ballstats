@@ -304,6 +304,115 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   /**
+   * GET /api/v1/basketball/smart-hud/:stream_key
+   * Unified Smart Screen Broadcast HUD & L-Bar Telemetry payload for live viewing
+   */
+  fastify.get<{
+    Params: { stream_key: string };
+  }>('/basketball/smart-hud/:stream_key', {
+    schema: {
+      description: 'Get unified Smart Screen HUD telemetry (L-Bar Squeeze-Back stats, Auto-Triggered Smart Cards, Interactive Shot Chart, On-Court 5v5 Lineups, Leverage Index, and Win Prob Worm)',
+      tags: ['Basketball Research', 'Sports Intelligence'],
+      params: {
+        type: 'object',
+        properties: {
+          stream_key: { type: 'string' },
+        },
+        required: ['stream_key'],
+      },
+    },
+  }, async (request, reply) => {
+    const { stream_key } = request.params;
+    let stream: StreamItem | null = await streamFreeClient.getStreamByKey(stream_key);
+    if (!stream) {
+      const cleanKey = decodeURIComponent(stream_key).replace(/[-_]/g, ' ');
+      stream = {
+        id: stream_key,
+        name: cleanKey.replace(/\b\w/g, l => l.toUpperCase()),
+        category: 'basketball',
+        league: 'NBA',
+        stream_key,
+        match_timestamp: Math.floor(Date.now() / 1000),
+        sources: [],
+      };
+    }
+
+    const intel = await sportsIntelService.getGamecastIntel(stream);
+    let bball = intel.basketballAnalytics;
+
+    // Ensure rich Smart Screen telemetry is always available even if the stream is cross-sport or pre-game
+    if (!bball) {
+      const showcase = basketballResearchService.getCuratedShowcaseGames()[0];
+      const t1Name = intel.scoreboard?.team1?.name || stream.team1?.name || 'Home Team';
+      const t2Name = intel.scoreboard?.team2?.name || stream.team2?.name || 'Away Team';
+      const t1Abbr = t1Name.slice(0, 3).toUpperCase();
+      const t2Abbr = t2Name.slice(0, 3).toUpperCase();
+      bball = basketballResearchService.buildGameAnalyticsFromPlayers({
+        eventId: stream_key,
+        status: intel.scoreboard?.status || showcase.status,
+        detail: intel.scoreboard?.detail || showcase.detail,
+        isLive: true,
+        venue: intel.gameInfo?.venue || showcase.venue,
+        broadcast: intel.gameInfo?.broadcast || showcase.broadcast,
+        team1Meta: {
+          id: '1',
+          name: t1Name,
+          abbr: t1Abbr,
+          logo: intel.scoreboard?.team1?.logo || showcase.team1Analytics.logo,
+          score: Number(intel.scoreboard?.team1?.score) || showcase.team1Analytics.score,
+        },
+        team2Meta: {
+          id: '2',
+          name: t2Name,
+          abbr: t2Abbr,
+          logo: intel.scoreboard?.team2?.logo || showcase.team2Analytics.logo,
+          score: Number(intel.scoreboard?.team2?.score) || showcase.team2Analytics.score,
+        },
+        rawPlayers1: showcase.playersTeam1.map(p => ({ ...p, teamName: t1Name, teamAbbr: t1Abbr })),
+        rawPlayers2: showcase.playersTeam2.map(p => ({ ...p, teamName: t2Name, teamAbbr: t2Abbr })),
+      });
+    }
+
+    return reply.send({
+      stream_key,
+      streamName: stream.name,
+      category: stream.category,
+      statusDetail: bball.detail,
+      scoreboard: intel.scoreboard,
+      team1: bball.team1Analytics,
+      team2: bball.team2Analytics,
+      fourFactors: {
+        team1: bball.team1Analytics.fourFactors,
+        team2: bball.team2Analytics.fourFactors,
+      },
+      winProbability: intel.winProbability || {
+        team1Percentage: bball.winProbTimeline[bball.winProbTimeline.length - 1]?.team1WinPct ?? 55,
+        team2Percentage: 100 - (bball.winProbTimeline[bball.winProbTimeline.length - 1]?.team1WinPct ?? 55),
+      },
+      linescore: intel.linescore || {
+        periodHeaders: bball.linescore.periodHeaders,
+        team1Quarters: bball.linescore.team1.quarters,
+        team2Quarters: bball.linescore.team2.quarters,
+        team1Total: bball.linescore.team1.total,
+        team2Total: bball.linescore.team2.total,
+      },
+      leverageIndex: bball.leverageIndex,
+      leverageTier: bball.leverageTier,
+      isClutchTime: bball.isClutchTime,
+      bonusState: bball.bonusState,
+      smartCards: bball.smartCards,
+      onCourtLineup: bball.onCourtLineup,
+      shotChart: bball.shotChart,
+      winProbTimeline: bball.winProbTimeline,
+      stintTimeline: bball.stintTimeline,
+      team1Analytics: bball.team1Analytics,
+      team2Analytics: bball.team2Analytics,
+      mvpPerformer: bball.mvpPerformer,
+      inGameInsights: bball.inGameInsights,
+    });
+  });
+
+  /**
    * GET /api/v1/athlete/:sport/:league/:athlete_id
    * Deep player profile bio, physical measurements, college, draft, and statistics
    */

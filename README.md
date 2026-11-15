@@ -2,16 +2,17 @@
 
 # 🏀 Free_BallStats (`free_ballstats`)
 
-### **Next-Generation Basketball Research Engine, In-Game Supporting Analytics Lab & Live Sports Streaming Platform**
+### **Next-Generation Smart Screen Broadcast Canvas, Basketball Research Engine & In-Game Supporting Analytics Lab**
 
-[![Version](https://img.shields.io/badge/version-2.0.0-orange.svg?style=for-the-badge)](https://github.com/rajmehta292/free_ballstats)
+[![Version](https://img.shields.io/badge/version-3.0.0-orange.svg?style=for-the-badge)](https://github.com/rajmehta292/free_ballstats)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6.svg?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Fastify](https://img.shields.io/badge/Fastify-5.2-000000.svg?style=for-the-badge&logo=fastify&logoColor=white)](https://fastify.dev/)
-[![Analytics](https://img.shields.io/badge/Analytics-Four_Factors_%7C_GmSc_%7C_TS%25_%7C_Shot_Diet-9146ff.svg?style=for-the-badge)](https://github.com/rajmehta292/free_ballstats)
-[![Tests](https://img.shields.io/badge/Tests-19%2F19_Passing-10b981.svg?style=for-the-badge)](./test/api.test.ts)
+[![Smart Screen](https://img.shields.io/badge/Smart_Screen-L--Bar_%7C_Glass_HUD_%7C_CourtOptix-f97316.svg?style=for-the-badge)](https://github.com/rajmehta292/free_ballstats)
+[![Analytics](https://img.shields.io/badge/Analytics-Four_Factors_%7C_xEFG%25_%7C_Synergy_PPP_%7C_WPA-9146ff.svg?style=for-the-badge)](https://github.com/rajmehta292/free_ballstats)
+[![Tests](https://img.shields.io/badge/Tests-20%2F20_Passing-10b981.svg?style=for-the-badge)](./test/api.test.ts)
 
 **Built for Basketball Analysts, Fans, Coaches, and Engineering Teams**  
-*Synthesizing the analytical depth of **Basketball-Reference**, **Cleaning the Glass**, **NBA.com/Stats**, and **StatMuse** with the real-time broadcast experience of **ESPN Gamecast**.*
+*Synthesizing the interactive broadcast canvas of **NBA CourtOptix / Clippers CourtVision / Amazon Prime X-Ray** with the analytical depth of **Basketball-Reference**, **Cleaning the Glass**, **Synergy Sports**, **Inpredictable**, **PopcornMachine**, and **StatMuse**.*
 
 [Executive Overview](#-part-i--executive-overview-for-non-technical-audiences--basketball-fans) •
 [Visual Product Tour](#-visual-product-tour--screenshots) •
@@ -33,10 +34,14 @@ When watching a live basketball game on traditional platforms, viewers are force
 1. **Passive Video Streams** that show only the basic score and clock without explaining *why* a team is winning or losing.
 2. **Static Reference Spreadsheets** (like Basketball-Reference or NBA.com/Stats) that are packed with deep numbers but require manual navigation away from the live game.
 
-**`Free_BallStats`** unifies both worlds into a single, real-time command center:
-- **During-the-Game Supporting Telemetry**: While watching any game, viewers immediately see **Quarter-by-Quarter Linescores**, **48-Minute Pace Projections**, **Starters vs. Bench Rotation Splits**, **Spatial Shot Diets** (Paint vs. 3-Point Perimeter vs. Mid-Range vs. Free Throws), and **Dean Oliver's Four Factors of Basketball Success**.
-- **Dedicated Basketball Research Lab (`/basketball`)**: A standalone analytics workstation featuring a **StatMuse-style Natural Language Query Engine**, an interactive **Head-to-Head Player Comparison Lab with 6-Axis Percentile Radar Charts**, a **Sortable NBA Advanced Reference Matrix** (`PER`, `BPM`, `VORP`, `TS%`, `eFG%`, `USG%`, `GmSc`, `Stocks`), and **Live Conference Standings**.
-- **Automated Coaching & Broadcast Insights**: Instead of forcing users to decipher raw tables, the engine automatically synthesizes plain-English insights explaining the key statistical edges driving the game in real time.
+**`Free_BallStats v3.0`** unifies both worlds into a single, real-time **Smart Screen** command center:
+- **Interactive Smart Screen Broadcast Canvas (Zero-Occlusion Viewing)**:
+  - **📐 L-Bar Broadcast Squeeze-Back Mode (`Hotkey: L`)**: Resizes the live video feed into the top-left `72% × 78%` stage with zero video cropping while wrapping a live **28% Right Telemetry Rail** (*Interactive SVG Half-Court Shot Chart*, *On-Court 5v5 Lineup Matrix*, *Four Factors*, and *Win Probability Worm*) and a **22% Bottom Ticker Rail** (*Quarter Linescore*, *Synergy Play-Type PPP*, and *48-Minute Pace Projections*). Works natively inside **Smart Fullscreen**!
+  - **🥽 Translucent Glass HUD Overlay (`Hotkey: H`)**: Clippers CourtVision-style corner glass pills overlaid on the 100% video viewport (`Scorebug + Leverage Index`, `On-Court 5v5 Floor Unit`, `Four Factors + Hot-Hand`).
+  - **⚡ Auto-Triggered Smart Broadcast Cards**: Context-aware lower-third cards that automatically surface during **Hot-Hand Streaks (`TS% >= 65%`)**, **Momentum Runs (`10-2 Run`)**, **Clutch High-Leverage (`LI >= 2.0x`)**, **Foul Trouble / Penalty Bonus**, and **CourtOptix Shot-Making Delta (`eFG% - xEFG%`)**.
+  - **🔬 Persistent Research Lab Mini-Player Dock**: Click `🔬 Dock to Lab` while watching any game to dock the live broadcast into the bottom-right corner of `/basketball.html` while you run StatMuse NLP queries or compare players.
+- **During-the-Game Supporting Telemetry**: Real-time **CourtOptix 6-Zone Spatial Shot Charts (`xEFG%`)**, **Synergy Sports Play-Type Efficiency (`PPP`)**, **On-Court 5v5 Lineup Matrix & PopcornMachine Stint GameFlow**, **Inpredictable Win Probability Worm & Leverage Index (`LI`)**, **Quarter-by-Quarter Linescores**, **Starters vs. Bench Rotation Splits**, and **Dean Oliver's Four Factors**.
+- **Dedicated Basketball Research Lab (`/basketball`)**: Standalone analytics workstation featuring a **StatMuse-style Natural Language Query Engine**, an interactive **Head-to-Head Player Comparison Lab with 6-Axis Percentile Radar Charts**, a **Sortable NBA Advanced Reference Matrix** (`PER`, `BPM`, `VORP`, `WPA`, `xEFG%`, `TS%`, `eFG%`, `USG%`, `GmSc`, `Stocks`), and **Live Conference Standings**.
 
 ---
 
@@ -124,6 +129,12 @@ $$\text{GmSc} = \text{PTS} + 0.4\cdot\text{FGM} - 0.7\cdot\text{FGA} - 0.4(\text
 ### 5. Usage Percentage ($\text{USG\%}$)
 $$\text{USG\%} = 100 \times \frac{(\text{FGA} + 0.44 \cdot \text{FTA} + \text{TOV}) \times (\text{Team MIN} / 5)}{\text{MIN} \times (\text{Team FGA} + 0.44 \cdot \text{Team FTA} + \text{Team TOV})}$$
 
+### 6. CourtOptix Expected Effective FG% ($\text{xEFG\%}$) & Shot-Making Delta
+$$\text{xEFG\%} = \frac{\sum_{i=1}^{\text{FGA}} \text{xPTS}_i(\text{Zone}, \text{Distance})}{2 \times \text{FGA}} \times 100, \quad \text{Shot-Making }\Delta = \text{eFG\%} - \text{xEFG\%}$$
+
+### 7. Inpredictable Game Leverage Index ($\text{LI}$) & Win Probability Added ($\text{WPA}$)
+$$\text{LI} = \frac{\mathbb{E}[|\Delta \text{WP}|_{\text{possession}}]}{\mathbb{E}[|\Delta \text{WP}|_{\text{league avg}}]}, \quad \text{WPA} = \sum_{p \in \text{Plays}} \left(\text{WP}_{\text{after}}(p) - \text{WP}_{\text{before}}(p)\right)$$
+
 ---
 
 ## 🏗️ Part III — Technical Architecture (For Engineers & Developers)
@@ -210,8 +221,9 @@ free_ballstats/
 
 | Method | Endpoint | Description |
 | :---: | :--- | :--- |
-| `GET` | `/api/v1/basketball/hub` | Returns the full Basketball Research Lab payload: live/recent NBA games with Four Factors, ORTG/DRTG, unit splits, shot diet, conference standings, 13-player reference database, league benchmarks, and formula glossary. |
-| `GET` | `/api/v1/basketball/game/:event_id` | Returns deep in-game analytics for a specific NBA matchup (`linescore`, `projectedPaceScore`, `team1Analytics`, `team2Analytics`, `playersTeam1`, `playersTeam2`, `mvpPerformer`, `inGameInsights`). |
+| `GET` | `/api/v1/basketball/hub` | Returns the full Basketball Research Lab payload: live/recent NBA games with Four Factors, CourtOptix Shot Chart, 5v5 Lineup Matrix, Win Prob Worm, Synergy Play Types, ORTG/DRTG, unit splits, conference standings, 13-player reference database, league benchmarks, and formula glossary. |
+| `GET` | `/api/v1/basketball/smart-hud/:stream_key` | Low-latency **Smart Screen Broadcast HUD** payload: live scorebug, Leverage Index (`LI`), Clutch/Bonus state, 6-Zone Spatial Shot Chart, On-Court 5v5 Lineup, Win Probability Worm, and auto-triggered Smart Broadcast Cards. |
+| `GET` | `/api/v1/basketball/game/:event_id` | Returns deep in-game analytics for a specific NBA matchup (`linescore`, `projectedPaceScore`, `shotChart`, `onCourtLineup`, `winProbTimeline`, `stintTimeline`, `smartCards`, `team1Analytics`, `team2Analytics`, `playersTeam1`, `playersTeam2`, `mvpPerformer`, `inGameInsights`). |
 | `GET` | `/api/v1/basketball/players` | Returns sortable and filterable NBA player profiles (`?sort=per\|bpm\|vorp\|ppg\|tspct\|efgpct\|gamescore\|usgpct\|netrtg\|stocks&position=ALL\|PG\|SG\|SF\|PF\|C&search=...`). |
 | `GET` | `/api/v1/basketball/compare` | Head-to-head comparison between any two NBA players (`?p1=Nikola%20Jokic&p2=Luka%20Doncic`) with 6-axis radar percentiles and 13-metric edge detection. |
 | `GET` | `/api/v1/basketball/query` | StatMuse-style Natural Language Research Query Engine (`?q=True%20Shooting%20leaders` or `?q=Jokic%20vs%20Doncic`). |
@@ -258,12 +270,12 @@ The server starts on **`http://localhost:3000`**:
 ```bash
 npm test
 ```
-Runs all **19 integration & unit tests** in `test/api.test.ts` verifying health checks, stream catalog filtering, custom stream CRUD, IPTV/XMLTV exports, live Gamecast intelligence, Four Factors & Advanced Boxscore calculation, Head-to-Head Player Comparison, and Natural Language Research queries.
+Runs all **20 integration & unit tests** in `test/api.test.ts` verifying health checks, stream catalog filtering, custom stream CRUD, IPTV/XMLTV exports, live Gamecast intelligence, Smart Screen HUD telemetry, CourtOptix Shot Charts, Synergy Play Types, On-Court 5v5 Lineups, Four Factors & Advanced Boxscore calculation, Head-to-Head Player Comparison, and Natural Language Research queries.
 
 ---
 
 <div align="center">
 
-**Engineered with precision for Basketball Research & Live Sports Intelligence — `Free_BallStats v2.0`**
+**Engineered with precision for Smart Screen Broadcast Viewing & Basketball Research — `Free_BallStats v3.0`**
 
 </div>

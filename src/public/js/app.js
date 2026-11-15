@@ -454,6 +454,23 @@ window.openPlayerModal = async function(streamKey) {
   iframe.src = `/embed/${encodeURIComponent(stream.category)}/${encodeURIComponent(stream.stream_key)}`;
   modal.classList.add('show');
 
+  // Mount or update Smart Screen Broadcast Canvas inside the Watch Modal
+  if (window.FreeBallStatsSmartScreen) {
+    const stageEl = document.getElementById('modal-smart-screen-stage');
+    if (stageEl) {
+      if (!window.modalSmartScreen) {
+        window.modalSmartScreen = new window.FreeBallStatsSmartScreen.SmartScreenController(stageEl, {
+          defaultMode: stream.category === 'basketball' ? 'lbar' : 'triggers',
+        });
+      }
+      window.fbsActiveSmartScreen = window.modalSmartScreen;
+      window.modalSmartScreen.loadStream(stream.stream_key, {
+        name: stream.name,
+        category: stream.category,
+      });
+    }
+  }
+
   // Initial Scoreboard state
   const t1Name = stream.team1?.name || stream.name.split('vs')[0]?.trim() || 'Home';
   const t2Name = stream.team2?.name || stream.name.split('vs')[1]?.trim() || 'Away';
@@ -538,6 +555,9 @@ function renderGamecastIntel(intel) {
 
   // 4.5. Quarter-by-Quarter Linescore & In-Game Supporting Analytics (Four Factors, Unit Splits, Insights)
   renderInGameAnalytics(intel);
+  if (window.modalSmartScreen) {
+    window.modalSmartScreen.updateFromIntel(intel);
+  }
 
   // 5. Tab 0.5: Team Rosters
   renderRosters(intel.rosters);
@@ -640,12 +660,28 @@ function renderInGameAnalytics(intel) {
 
   const t1 = ba.team1Analytics;
   const t2 = ba.team2Analytics;
+  const ss = window.FreeBallStatsSmartScreen;
+  const shotChartHtml = ss ? ss.renderSvgHalfCourtShotChart(ba, { filterSide: window._modalScFilter || 'all' }) : '';
+  const lineup5v5Html = ss ? ss.renderOnCourt5v5AndStints(ba) : '';
+  const wormHtml = ss ? ss.renderWinProbWormChart(ba) : '';
+  const synergyHtml = ss ? ss.renderSynergyPlayTypes(ba) : '';
+
   container.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:14px;">
+      <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-color);border-radius:10px;padding:12px;">
+        ${shotChartHtml}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        ${lineup5v5Html}
+        ${wormHtml}
+      </div>
+    </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">
       <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-color);border-radius:10px;padding:12px;">
-        <div style="font-size:12px;font-weight:800;color:#00f2fe;margin-bottom:8px;">📐 DEAN OLIVER'S FOUR FACTORS</div>
+        <div style="font-size:12px;font-weight:800;color:#00f2fe;margin-bottom:8px;">📐 DEAN OLIVER'S FOUR FACTORS &amp; SHOT QUALITY</div>
         <div style="font-size:12px;display:flex;flex-direction:column;gap:6px;">
           <div style="display:flex;justify-content:space-between;"><span>Effective FG% (eFG%) [40%]</span><strong>${t1.abbreviation} ${t1.fourFactors.efgPct}% vs ${t2.abbreviation} ${t2.fourFactors.efgPct}%</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>Expected eFG% (CourtOptix xEFG%)</span><strong>${t1.abbreviation} ${t1.xEfgPct}% vs ${t2.abbreviation} ${t2.xEfgPct}%</strong></div>
           <div style="display:flex;justify-content:space-between;"><span>Turnover Rate (TOV%) [25%]</span><strong>${t1.abbreviation} ${t1.fourFactors.tovPct}% vs ${t2.abbreviation} ${t2.fourFactors.tovPct}%</strong></div>
           <div style="display:flex;justify-content:space-between;"><span>Offensive Reb % (ORB%) [20%]</span><strong>${t1.abbreviation} ${t1.fourFactors.orbPct}% vs ${t2.abbreviation} ${t2.fourFactors.orbPct}%</strong></div>
           <div style="display:flex;justify-content:space-between;"><span>Free Throw Rate (FTR) [15%]</span><strong>${t1.abbreviation} ${t1.fourFactors.ftRate}% vs ${t2.abbreviation} ${t2.fourFactors.ftRate}%</strong></div>
@@ -661,6 +697,7 @@ function renderInGameAnalytics(intel) {
         </div>
       </div>
     </div>
+    ${synergyHtml}
     <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;">
       ${(ba.inGameInsights || []).map(ins => `
         <div style="background:rgba(145,70,255,0.07);border:1px solid rgba(145,70,255,0.25);border-radius:8px;padding:10px;font-size:12px;">
@@ -671,6 +708,13 @@ function renderInGameAnalytics(intel) {
       `).join('')}
     </div>
   `;
+
+  container.querySelectorAll('[data-sc-filter]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      window._modalScFilter = btn.getAttribute('data-sc-filter');
+      renderInGameAnalytics(intel);
+    });
+  });
 }
 
 // Render Box Score Component

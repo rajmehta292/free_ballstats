@@ -506,7 +506,8 @@ class SportsIntelService {
                   `${advRow.tsPct}%`,
                   `${advRow.efgPct}%`,
                   `${advRow.usgPct}%`,
-                  String(advRow.astToRatio),
+                  advRow.bpm >= 0 ? `+${advRow.bpm}` : String(advRow.bpm),
+                  advRow.wpa >= 0 ? `+${advRow.wpa}%` : `${advRow.wpa}%`,
                   String(advRow.stocks),
                   advRow.plusMinus > 0 ? `+${advRow.plusMinus}` : String(advRow.plusMinus),
                 ],
@@ -536,7 +537,7 @@ class SportsIntelService {
               cats.push({
                 name: 'advanced',
                 displayName: 'Advanced Analytics',
-                labels: ['MIN', 'PTS', 'GmSc', 'TS%', 'eFG%', 'USG%', 'AST/TO', 'STOCKS', '+/-'],
+                labels: ['MIN', 'PTS', 'GmSc', 'TS%', 'eFG%', 'USG%', 'BPM', 'WPA', 'STOCKS', '+/-'],
                 athletes: advancedAthletes,
               });
             }
@@ -557,7 +558,7 @@ class SportsIntelService {
               cats.push({
                 name: 'advanced',
                 displayName: 'Advanced Analytics',
-                labels: ['MIN', 'PTS', 'GmSc', 'TS%', 'eFG%', 'USG%', 'AST/TO', 'STOCKS', '+/-'],
+                labels: ['MIN', 'PTS', 'GmSc', 'TS%', 'eFG%', 'USG%', 'BPM', 'WPA', 'STOCKS', '+/-'],
                 athletes: advancedAthletes,
               });
             }
@@ -808,7 +809,7 @@ class SportsIntelService {
       const toAdvCategory = (rows: PlayerAdvancedBoxRow[], tName: string): BoxScoreCategory => ({
         name: 'advanced',
         displayName: 'Advanced Analytics',
-        labels: ['MIN', 'PTS', 'GmSc', 'TS%', 'eFG%', 'USG%', 'AST/TO', 'STOCKS', '+/-'],
+        labels: ['MIN', 'PTS', 'GmSc', 'TS%', 'eFG%', 'USG%', 'BPM', 'WPA', 'STOCKS', '+/-'],
         athletes: rows.map(r => ({
           id: r.id,
           name: r.name,
@@ -823,7 +824,8 @@ class SportsIntelService {
             `${r.tsPct}%`,
             `${r.efgPct}%`,
             `${r.usgPct}%`,
-            String(r.astToRatio),
+            r.bpm >= 0 ? `+${r.bpm}` : String(r.bpm),
+            r.wpa >= 0 ? `+${r.wpa}%` : `${r.wpa}%`,
             String(r.stocks),
             r.plusMinus > 0 ? `+${r.plusMinus}` : String(r.plusMinus),
           ],
