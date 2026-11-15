@@ -558,18 +558,21 @@
     const t1 = hudData.team1Analytics || {};
     const t2 = hudData.team2Analytics || {};
     const bonus = hudData.bonusState || {};
+    const isPreGame =
+      hudData.gameState === 'pre' ||
+      (!hudData.isLive && Number(t1.score || 0) === 0 && Number(t2.score || 0) === 0);
 
     const renderFiveRow = (players, abbr, unitNetRtg, inBonus, foulsInPeriod, accent) => `
       <div style="background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:8px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <div style="display:flex;align-items:center;gap:6px;">
-            <span style="font-size:11px;font-weight:900;color:${accent};">${esc(abbr)} ON-COURT 5</span>
+            <span style="font-size:11px;font-weight:900;color:${accent};">${esc(abbr)} ${isPreGame ? 'PROJECTED 5' : 'ON-COURT 5'}</span>
             <span style="font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(255,255,255,0.07);color:#cbd5e1;">
               Unit NetRTG: <strong>${unitNetRtg >= 0 ? '+' : ''}${unitNetRtg}</strong>
             </span>
           </div>
           <div style="font-size:10px;color:${inBonus ? '#f59e0b' : '#94a3b8'};font-weight:700;">
-            Fouls: ${foulsInPeriod || 2} ${inBonus ? '• BONUS' : ''}
+            ${isPreGame ? 'Season Scouting Avg' : `Fouls: ${foulsInPeriod ?? 0} ${inBonus ? '• BONUS' : ''}`}
           </div>
         </div>
         <div style="display:grid;grid-template-columns:repeat(5, 1fr);gap:5px;">
@@ -582,7 +585,7 @@
                 <div style="font-size:10px;color:${accent};font-weight:800;margin-top:2px;">${p.pts}p/${p.reb}r/${p.ast}a</div>
                 <div style="font-size:9px;color:#cbd5e1;display:flex;justify-content:center;gap:4px;margin-top:2px;">
                   <span>${p.plusMinus >= 0 ? '+' : ''}${p.plusMinus}</span>
-                  <span style="color:${foulWarn ? '#f87171' : '#94a3b8'};">${p.pf}PF</span>
+                  <span style="color:${foulWarn ? '#f87171' : '#94a3b8'};">${isPreGame ? 'AVG' : `${p.pf}PF`}</span>
                 </div>
               </div>
             `;
@@ -887,6 +890,9 @@
           stream_key: intel.stream_key,
           sportType: 'basketball',
           surfaceType: 'basketball_halfcourt',
+          gameState: ba.gameState || (ba.isLive ? 'in' : 'post'),
+          isLive: ba.isLive,
+          projectedPaceScore: ba.projectedPaceScore,
           scoreboard: intel.scoreboard,
           winProbability: intel.winProbability,
           linescore: intel.linescore,
@@ -1319,25 +1325,30 @@
           </div>
         `;
       } else {
+        const isPreGame =
+          this.hudData.gameState === 'pre' ||
+          (!this.hudData.isLive && Number(t1Total) === 0 && Number(t2Total) === 0);
+        const proj = this.hudData.projectedPaceScore;
         this.bottomRail.innerHTML = `
           <div class="fbs-lbar-bottom-cell">
-            <div style="font-size:10px;font-weight:800;color:#00f2fe;margin-bottom:3px;">📊 LIVE LINESCORE &amp; PACE</div>
+            <div style="font-size:10px;font-weight:800;color:#00f2fe;margin-bottom:3px;">${isPreGame ? '📋 PRE-GAME LINESCORE &amp; PROJECTION' : '📊 LIVE LINESCORE &amp; PACE'}</div>
             <div style="font-size:11px;color:#e2e8f0;font-family:monospace;">
               ${esc(t1Abbr)}: ${t1Periods.join(' | ')} = <strong>${t1Total}</strong><br>
               ${esc(t2Abbr)}: ${t2Periods.join(' | ')} = <strong>${t2Total}</strong>
+              ${isPreGame && proj ? `<div style="font-size:9.5px;color:#94a3b8;margin-top:2px;">Proj Final: ${esc(t1Abbr)} ${proj.team1Projected} - ${esc(t2Abbr)} ${proj.team2Projected} (${proj.possessionsPer48} Pace)</div>` : ''}
             </div>
           </div>
           <div class="fbs-lbar-bottom-cell">
-            <div style="font-size:10px;font-weight:800;color:#fbbf24;margin-bottom:3px;">🌟 PEAK FLOOR IMPACT (GMSC / BPM / WPA)</div>
+            <div style="font-size:10px;font-weight:800;color:#fbbf24;margin-bottom:3px;">${isPreGame ? '🌟 PRE-GAME STAR WATCH (SEASON AVG)' : '🌟 PEAK FLOOR IMPACT (GMSC / BPM / WPA)'}</div>
             <div style="font-size:11px;color:#fff;font-weight:700;">
-              ${mvp ? `${esc(mvp.name)} (${esc(mvp.teamAbbr)}): ${mvp.pts} PTS, ${mvp.reb} REB, ${mvp.ast} AST • ${mvp.gameScore} GmSc • +${mvp.bpm} BPM • +${mvp.wpa}% WPA` : 'Calculating live player impact...'}
+              ${mvp ? `${esc(mvp.name)} (${esc(mvp.teamAbbr)}): ${mvp.pts} PTS, ${mvp.reb} REB, ${mvp.ast} AST • ${mvp.gameScore} GmSc • +${mvp.bpm} BPM` : 'Scouting active rotation...'}
             </div>
             <div style="font-size:10px;color:#94a3b8;">
               ${mvp?.projected48?.milestoneAlert ? `🚀 ${esc(mvp.projected48.milestoneAlert)}` : `48-Min Pace: ${t1.pace || 99.4} Possessions`}
             </div>
           </div>
           <div class="fbs-lbar-bottom-cell">
-            <div style="font-size:10px;font-weight:800;color:#a78bfa;margin-bottom:3px;">⚡ ACTIVE STINT &amp; SHOT QUALITY</div>
+            <div style="font-size:10px;font-weight:800;color:#a78bfa;margin-bottom:3px;">${isPreGame ? '⚡ PRE-GAME SCOUTING &amp; SHOT QUALITY' : '⚡ ACTIVE STINT &amp; SHOT QUALITY'}</div>
             <div style="font-size:11px;color:#e2e8f0;">
               ${esc(this.hudData.onCourtLineup?.activeStintMargin || 'Balanced rotation stint')}
             </div>

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildServer } from '../src/server.js';
+import { basketballResearchService } from '../src/services/basketball-research-service.js';
 
 test('StreamFree API Streamer Suite', async (t) => {
   const server = await buildServer();
@@ -322,6 +323,52 @@ test('StreamFree API Streamer Suite', async (t) => {
       assert.ok(data.sportAnalytics && Array.isArray(data.sportAnalytics.fourPillars) && data.sportAnalytics.fourPillars.length === 4);
       assert.ok(Array.isArray(data.smartCards) && data.smartCards.length > 0);
     }
+  });
+
+  await t.test('Pre-game 0-0 state (e.g. LAL vs PHX before tip-off) produces realistic scouting baselines, 0-0 linescore, 1.0x LI, 0 fouls, and full projected starting 5s', async () => {
+    const preGame = basketballResearchService.buildGameAnalyticsFromPlayers({
+      eventId: 'espn-pregame-lal-phx',
+      status: 'Scheduled',
+      detail: '11/15 - 4:00 PM EST',
+      isLive: false,
+      gameState: 'pre',
+      venue: 'Footprint Center, Phoenix',
+      broadcast: 'ESPN',
+      team1Meta: {
+        name: 'Los Angeles Lakers',
+        abbreviation: 'LAL',
+        logo: 'https://a.espncdn.com/i/teamlogos/nba/500/lal.png',
+        score: '0',
+        record: '10-4',
+      },
+      team2Meta: {
+        name: 'Phoenix Suns',
+        abbreviation: 'PHX',
+        logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phx.png',
+        score: '0',
+        record: '9-5',
+      },
+      rawPlayers1: [],
+      rawPlayers2: [],
+    });
+
+    assert.equal(preGame.gameState, 'pre');
+    assert.equal(preGame.linescore.team1.total, 0, 'Pre-game linescore total must be 0, never 108');
+    assert.equal(preGame.linescore.team2.total, 0, 'Pre-game linescore total must be 0, never 108');
+    assert.deepEqual(preGame.linescore.team1.quarters, [0, 0, 0, 0]);
+    assert.deepEqual(preGame.linescore.team2.quarters, [0, 0, 0, 0]);
+    assert.ok(preGame.team1Analytics.ortg >= 94 && preGame.team1Analytics.ortg <= 136, `ORTG must be realistic, got ${preGame.team1Analytics.ortg}`);
+    assert.ok(preGame.team1Analytics.efgPct > 45, `eFG% must never be 0%, got ${preGame.team1Analytics.efgPct}`);
+    assert.equal(preGame.leverageIndex, 1.0, 'Pre-game leverage index must be 1.0x');
+    assert.equal(preGame.bonusState.team1FoulsInPeriod, 0, 'Pre-game fouls must be 0');
+    assert.equal(preGame.bonusState.team2FoulsInPeriod, 0, 'Pre-game fouls must be 0');
+    assert.equal(preGame.onCourtLineup.team1Five.length, 5, 'LAL projected starting 5 must be populated');
+    assert.equal(preGame.onCourtLineup.team2Five.length, 5, 'PHX projected starting 5 must be populated');
+    assert.ok(preGame.onCourtLineup.team2Five.some((p) => p.name.includes('Kevin Durant') || p.name.includes('Devin Booker')));
+    assert.ok(preGame.mvpPerformer !== null, 'Pre-game star watch performer must never be null');
+    const cardTitles = preGame.smartCards.map((c) => `${c.badge} ${c.title}`).join(' ');
+    assert.ok(!cardTitles.includes('9-2 run'), 'Pre-game smart cards must not show fake in-game runs');
+    assert.ok(cardTitles.includes('PRE-GAME'), 'Pre-game smart cards should show pre-game scouting insights');
   });
 
   await server.close();

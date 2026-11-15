@@ -818,28 +818,138 @@ class MultiSportAnalyticsService {
 
   /**
    * Builds complete, realistic, sport-native deep analytics for any stream.
+   * When liveOverride is provided from ESPN, synchronizes scores, linescore, gameState ('pre'|'in'|'post'),
+   * leverage index, and Smart Cards so pre-game or live matches never show contradictory numbers.
    */
-  public buildSportDeepAnalytics(stream: StreamItem): UniversalSportDeepAnalytics {
+  public buildSportDeepAnalytics(
+    stream: StreamItem,
+    liveOverride?: {
+      team1Score: number;
+      team2Score: number;
+      gameState: 'pre' | 'in' | 'post';
+      status: string;
+      detail: string;
+      team1Quarters?: number[];
+      team2Quarters?: number[];
+      team1Record?: string;
+      team2Record?: string;
+      team1Logo?: string;
+      team2Logo?: string;
+    }
+  ): UniversalSportDeepAnalytics {
     const sportType = this.detectSportType(stream);
     const rawParts = (stream.name || 'Home vs Away').split(/\s+(?:vs\.?|v\.?|at|@|-)\s+/i);
     const rawT1 = stream.team1?.name || rawParts[0]?.trim() || 'Home Team';
     const rawT2 = stream.team2?.name || rawParts[1]?.trim() || 'Away Team';
 
+    let base: UniversalSportDeepAnalytics;
     if (sportType === 'soccer') {
-      return this.buildSoccerAnalytics(stream, rawT1, rawT2);
-    }
-    if (sportType === 'hockey') {
-      return this.buildHockeyAnalytics(stream, rawT1, rawT2);
-    }
-    if (sportType === 'nfl' || sportType === 'ncaaf') {
-      return this.buildFootballAnalytics(stream, rawT1, rawT2, sportType === 'ncaaf');
-    }
-    if (sportType === 'ncaab') {
-      return this.buildCollegeBasketballAnalytics(stream, rawT1, rawT2);
+      base = this.buildSoccerAnalytics(stream, rawT1, rawT2);
+    } else if (sportType === 'hockey') {
+      base = this.buildHockeyAnalytics(stream, rawT1, rawT2);
+    } else if (sportType === 'nfl' || sportType === 'ncaaf') {
+      base = this.buildFootballAnalytics(stream, rawT1, rawT2, sportType === 'ncaaf');
+    } else if (sportType === 'ncaab') {
+      base = this.buildCollegeBasketballAnalytics(stream, rawT1, rawT2);
+    } else {
+      base = this.buildFootballAnalytics(stream, rawT1, rawT2, false);
     }
 
-    // Default fallback to NFL/Soccer style if another sport
-    return this.buildFootballAnalytics(stream, rawT1, rawT2, false);
+    if (liveOverride) {
+      const s1 = Math.max(0, Number(liveOverride.team1Score || 0));
+      const s2 = Math.max(0, Number(liveOverride.team2Score || 0));
+      const isPre = liveOverride.gameState === 'pre' || (liveOverride.gameState !== 'post' && !/final/i.test(liveOverride.status) && s1 === 0 && s2 === 0 && liveOverride.gameState !== 'in');
+
+      base.status = liveOverride.status || base.status;
+      base.detail = liveOverride.detail || base.detail;
+      base.isLive = liveOverride.gameState === 'in';
+      base.team1Meta.score = isPre ? 0 : s1;
+      base.team2Meta.score = isPre ? 0 : s2;
+      if (liveOverride.team1Record) base.team1Meta.record = liveOverride.team1Record;
+      if (liveOverride.team2Record) base.team2Meta.record = liveOverride.team2Record;
+      if (liveOverride.team1Logo) base.team1Meta.logo = liveOverride.team1Logo;
+      if (liveOverride.team2Logo) base.team2Meta.logo = liveOverride.team2Logo;
+
+      const numPeriods = base.linescore.periodHeaders.length || 4;
+      if (isPre) {
+        base.linescore.team1Quarters = Array(numPeriods).fill(0);
+        base.linescore.team2Quarters = Array(numPeriods).fill(0);
+        base.linescore.team1Total = 0;
+        base.linescore.team2Total = 0;
+        base.leverageIndex = 1.0;
+        base.leverageTier = 'LOW';
+        base.isClutchTime = false;
+        base.situationBanner = `Pre-Game Scouting Preview (${liveOverride.detail}) • ${base.team1Meta.formationOrScheme} vs ${base.team2Meta.formationOrScheme}`;
+        base.smartCards = [
+          {
+            id: `sc_pre_${stream.stream_key}_1`,
+            category: 'Pre-Game Scouting',
+            badge: '📋 PRE-GAME SCOUTING REPORT',
+            headline: `${base.team1Meta.name} vs ${base.team2Meta.name} — Matchup Preview (${liveOverride.detail})`,
+            detail: `Tactical Schemes: ${base.team1Meta.abbreviation} (${base.team1Meta.formationOrScheme}) vs ${base.team2Meta.abbreviation} (${base.team2Meta.formationOrScheme})`,
+            metricHighlight: base.paceAndProjection.projectedFinal,
+            accentColor: 'purple',
+          },
+          {
+            id: `sc_pre_${stream.stream_key}_2`,
+            category: 'Star Watch',
+            badge: '🌟 STAR MATCHUP WATCH',
+            headline: `${base.mvpPerformer.name} (${base.mvpPerformer.teamAbbr}) — Season Impact Profile`,
+            detail: `Season Baseline: ${base.mvpPerformer.primaryLine} • ${base.mvpPerformer.efficiencyLine}`,
+            metricHighlight: base.mvpPerformer.impactBadge,
+            playerHeadshot: base.mvpPerformer.headshot,
+            accentColor: 'gold',
+          },
+          {
+            id: `sc_pre_${stream.stream_key}_3`,
+            category: 'Analytical Pillars',
+            badge: `📐 ${base.sportBadge} PILLARS`,
+            headline: `${base.fourPillars[0]?.label || 'Primary Efficiency'}: ${base.team1Meta.abbreviation} ${base.fourPillars[0]?.team1Value || ''} vs ${base.team2Meta.abbreviation} ${base.fourPillars[0]?.team2Value || ''}`,
+            detail: `${base.paceAndProjection.tempoLabel}: ${base.paceAndProjection.tempoValue} • ${base.unitSplits.summaryEdge}`,
+            metricHighlight: '1.0x Pre-Game LI',
+            accentColor: 'cyan',
+          },
+        ];
+        base.scoringTimeline = [
+          {
+            period: 'PRE',
+            clock: liveOverride.detail || 'Scheduled',
+            teamName: base.team1Meta.name,
+            teamLogo: base.team1Meta.logo,
+            score: '0 - 0',
+            description: `Pre-Game Scouting: ${base.team1Meta.name} (${base.team1Meta.record}) vs ${base.team2Meta.name} (${base.team2Meta.record}). Projected: ${base.paceAndProjection.projectedFinal}.`,
+          },
+        ];
+      } else {
+        const splitTotal = (total: number, custom?: number[]) => {
+          if (custom && custom.length > 0) {
+            const out = [...custom];
+            while (out.length < numPeriods) out.push(0);
+            return out;
+          }
+          if (total <= 0) return Array(numPeriods).fill(0);
+          if (numPeriods === 2) {
+            const h1 = Math.floor(total / 2);
+            return [h1, total - h1];
+          }
+          if (numPeriods === 3) {
+            const p1 = Math.floor(total / 3);
+            const p2 = Math.floor((total - p1) / 2);
+            return [p1, p2, total - p1 - p2];
+          }
+          const q1 = Math.round(total * 0.25);
+          const q2 = Math.round(total * 0.25);
+          const q3 = Math.round(total * 0.25);
+          return [q1, q2, q3, Math.max(0, total - q1 - q2 - q3)];
+        };
+        base.linescore.team1Quarters = splitTotal(s1, liveOverride.team1Quarters);
+        base.linescore.team2Quarters = splitTotal(s2, liveOverride.team2Quarters);
+        base.linescore.team1Total = s1;
+        base.linescore.team2Total = s2;
+      }
+    }
+
+    return base;
   }
 
   /**

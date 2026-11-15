@@ -691,14 +691,18 @@ class SportsIntelService {
 
     const t1QuartersRaw = parseCompLinescores(comp1);
     const t2QuartersRaw = parseCompLinescores(comp2);
+    const rawState = matchedEvent.status?.type?.state;
+    const espnGameState: 'pre' | 'in' | 'post' =
+      rawState === 'pre' ? 'pre' : rawState === 'in' ? 'in' : 'post';
 
     let basketballAnalytics: BasketballGameDeepAnalytics | undefined;
     if (sportPath === 'basketball/nba' || stream.category === 'basketball') {
       basketballAnalytics = basketballResearchService.buildGameAnalyticsFromPlayers({
         eventId: String(matchedEvent.id || stream.stream_key),
+        gameState: espnGameState,
         status: matchedEvent.status?.type?.detail || 'Live Broadcast',
         detail: matchedEvent.status?.type?.shortDetail || 'LIVE',
-        isLive: matchedEvent.status?.type?.state === 'in',
+        isLive: espnGameState === 'in',
         venue: gameInfoObj.venue || 'NBA Arena',
         broadcast: gameInfoObj.broadcast || 'NBA Broadcast',
         team1Meta: {
@@ -748,13 +752,26 @@ class SportsIntelService {
         })
       : null;
 
-    const sportAnalyticsObj =
-      fallbackForMissing?.sportAnalytics ||
-      multiSportAnalyticsService.buildSportDeepAnalytics({
+    const sportAnalyticsObj = multiSportAnalyticsService.buildSportDeepAnalytics(
+      {
         ...stream,
         team1: { name: comp1?.team?.displayName || stream.team1?.name || 'Team 1', logo: comp1?.team?.logo || '' },
         team2: { name: comp2?.team?.displayName || stream.team2?.name || 'Team 2', logo: comp2?.team?.logo || '' },
-      });
+      },
+      {
+        team1Score: Number(comp1?.score || 0),
+        team2Score: Number(comp2?.score || 0),
+        gameState: espnGameState,
+        status: matchedEvent.status?.type?.detail || 'Scheduled',
+        detail: matchedEvent.status?.type?.shortDetail || 'LIVE',
+        team1Quarters: t1QuartersRaw.length > 0 ? t1QuartersRaw : undefined,
+        team2Quarters: t2QuartersRaw.length > 0 ? t2QuartersRaw : undefined,
+        team1Record: comp1?.records?.[0]?.summary,
+        team2Record: comp2?.records?.[0]?.summary,
+        team1Logo: comp1?.team?.logo,
+        team2Logo: comp2?.team?.logo,
+      }
+    );
 
     return {
       stream_key: stream.stream_key,
@@ -965,131 +982,66 @@ class SportsIntelService {
 
     if (isBasketball) {
       const nbaLabels = ['MIN', 'PTS', 'FG', '3PT', 'FT', 'REB', 'AST', 'TO', 'STL', 'BLK', '+/-'];
-      const buildNbaRoster = (tName: string, isT1: boolean): { starters: AthleteInfo[]; bench: AthleteInfo[]; abbr: string; logo: string } => {
+      const resolveNbaMeta = (tName: string, isT1: boolean): { abbr: string; logo: string } => {
         const low = tName.toLowerCase();
-        const hs = (id: string, name: string, num: string, c1: string, c2: string) =>
-          id.startsWith('nba_')
-            ? buildSvgAvatarDataUri(name, num, c1, c2)
-            : `https://a.espncdn.com/i/headshots/nba/players/full/${id}.png`;
-
-        if (low.includes('laker') || low === 'lal') {
-          return {
-            abbr: 'LAL',
-            logo: 'https://a.espncdn.com/i/teamlogos/nba/500/lal.png',
-            starters: [
-              { id: '3945274', name: 'Luka Doncic', jersey: '77', position: 'PG', headshot: hs('3945274', 'Luka Doncic', '77', '#552583', '#FDB927'), stats: ['35', '31', '11-21', '5-10', '4-5', '9', '10', '3', '2', '0', '+9'], teamName: tName },
-              { id: '4066261', name: 'Austin Reaves', jersey: '15', position: 'SG', headshot: hs('4066261', 'Austin Reaves', '15', '#552583', '#FDB927'), stats: ['33', '20', '7-13', '4-7', '2-2', '4', '6', '1', '1', '0', '+7'], teamName: tName },
-              { id: '1966', name: 'LeBron James', jersey: '23', position: 'SF', headshot: hs('1966', 'LeBron James', '23', '#552583', '#FDB927'), stats: ['34', '25', '10-17', '2-5', '3-4', '8', '8', '2', '1', '1', '+8'], teamName: tName },
-              { id: '4066648', name: 'Rui Hachimura', jersey: '28', position: 'PF', headshot: hs('4066648', 'Rui Hachimura', '28', '#552583', '#FDB927'), stats: ['29', '13', '5-9', '2-4', '1-2', '6', '2', '1', '1', '1', '+5'], teamName: tName },
-              { id: '4397077', name: 'Jaxson Hayes', jersey: '11', position: 'C', headshot: hs('4397077', 'Jaxson Hayes', '11', '#552583', '#FDB927'), stats: ['26', '9', '4-5', '0-0', '1-2', '8', '1', '1', '0', '2', '+4'], teamName: tName },
-            ],
-            bench: [
-              { id: '4395651', name: 'Dalton Knecht', jersey: '4', position: 'SG', headshot: hs('4395651', 'Dalton Knecht', '4', '#552583', '#FDB927'), stats: ['21', '11', '4-8', '3-6', '0-0', '3', '2', '1', '1', '0', '+2'], teamName: tName },
-              { id: '3913174', name: 'Dorian Finney-Smith', jersey: '17', position: 'PF', headshot: hs('3913174', 'Dorian Finney-Smith', '17', '#552583', '#FDB927'), stats: ['20', '6', '2-5', '2-4', '0-0', '4', '1', '0', '1', '1', '+3'], teamName: tName },
-            ],
-          };
-        }
-        if (low.includes('piston') || low.includes('detroit') || low === 'det') {
-          return {
-            abbr: 'DET',
-            logo: 'https://a.espncdn.com/i/teamlogos/nba/500/det.png',
-            starters: [
-              { id: '4432166', name: 'Cade Cunningham', jersey: '2', position: 'PG', headshot: hs('4432166', 'Cade Cunningham', '2', '#C8102E', '#1D42BA'), stats: ['35', '27', '10-21', '3-7', '4-4', '6', '9', '3', '1', '1', '-4'], teamName: tName },
-              { id: '4433627', name: 'Jaden Ivey', jersey: '23', position: 'SG', headshot: hs('4433627', 'Jaden Ivey', '23', '#C8102E', '#1D42BA'), stats: ['31', '18', '7-14', '2-5', '2-2', '4', '4', '2', '1', '0', '-5'], teamName: tName },
-              { id: '3064514', name: 'Tobias Harris', jersey: '12', position: 'PF', headshot: hs('3064514', 'Tobias Harris', '12', '#C8102E', '#1D42BA'), stats: ['32', '16', '6-12', '2-5', '2-2', '7', '3', '1', '1', '1', '-4'], teamName: tName },
-              { id: '4701230', name: 'Ausar Thompson', jersey: '9', position: 'SF', headshot: hs('4701230', 'Ausar Thompson', '9', '#C8102E', '#1D42BA'), stats: ['27', '11', '5-9', '0-1', '1-2', '8', '3', '1', '2', '1', '-3'], teamName: tName },
-              { id: '4433621', name: 'Jalen Duren', jersey: '0', position: 'C', headshot: hs('4433621', 'Jalen Duren', '0', '#C8102E', '#1D42BA'), stats: ['30', '14', '6-9', '0-0', '2-3', '12', '2', '2', '1', '2', '-5'], teamName: tName },
-            ],
-            bench: [
-              { id: '3907387', name: 'Malik Beasley', jersey: '5', position: 'SG', headshot: hs('3907387', 'Malik Beasley', '5', '#C8102E', '#1D42BA'), stats: ['22', '12', '4-9', '4-8', '0-0', '2', '2', '1', '1', '0', '-2'], teamName: tName },
-              { id: '4432816', name: 'Isaiah Stewart', jersey: '28', position: 'C', headshot: hs('4432816', 'Isaiah Stewart', '28', '#C8102E', '#1D42BA'), stats: ['19', '7', '3-5', '1-2', '0-0', '6', '1', '1', '0', '1', '-1'], teamName: tName },
-            ],
-          };
-        }
-        if (low.includes('celtic') || low.includes('boston') || low === 'bos') {
-          return {
-            abbr: 'BOS',
-            logo: 'https://a.espncdn.com/i/teamlogos/nba/500/bos.png',
-            starters: [
-              { id: '3995', name: 'Jrue Holiday', jersey: '4', position: 'PG', headshot: hs('3995', 'Jrue Holiday', '4', '#007A33', '#BA9653'), stats: ['32', '12', '5-10', '2-5', '0-0', '5', '6', '1', '2', '0', '+5'], teamName: tName },
-              { id: '3078576', name: 'Derrick White', jersey: '9', position: 'SG', headshot: hs('3078576', 'Derrick White', '9', '#007A33', '#BA9653'), stats: ['34', '18', '6-13', '4-9', '2-2', '4', '7', '1', '2', '2', '+6'], teamName: tName },
-              { id: '3917376', name: 'Jaylen Brown', jersey: '7', position: 'SF', headshot: hs('3917376', 'Jaylen Brown', '7', '#007A33', '#BA9653'), stats: ['35', '25', '10-20', '3-8', '2-3', '6', '4', '3', '1', '0', '+4'], teamName: tName },
-              { id: '4065648', name: 'Jayson Tatum', jersey: '0', position: 'PF', headshot: hs('4065648', 'Jayson Tatum', '0', '#007A33', '#BA9653'), stats: ['37', '31', '11-23', '4-10', '5-6', '9', '6', '3', '1', '1', '+8'], teamName: tName },
-              { id: '3102531', name: 'Kristaps Porzingis', jersey: '8', position: 'C', headshot: hs('3102531', 'Kristaps Porzingis', '8', '#007A33', '#BA9653'), stats: ['30', '19', '7-14', '2-6', '3-4', '8', '2', '1', '0', '3', '+7'], teamName: tName },
-            ],
-            bench: [
-              { id: '4395725', name: 'Payton Pritchard', jersey: '11', position: 'PG', headshot: hs('4395725', 'Payton Pritchard', '11', '#007A33', '#BA9653'), stats: ['24', '11', '4-8', '3-6', '0-0', '3', '3', '1', '0', '0', '+3'], teamName: tName },
-              { id: '3143', name: 'Al Horford', jersey: '42', position: 'C', headshot: hs('3143', 'Al Horford', '42', '#007A33', '#BA9653'), stats: ['22', '8', '3-6', '2-4', '0-0', '6', '3', '0', '1', '1', '+2'], teamName: tName },
-            ],
-          };
-        }
-        if (low.includes('warrior') || low.includes('golden state') || low === 'gsw') {
-          return {
-            abbr: 'GSW',
-            logo: 'https://a.espncdn.com/i/teamlogos/nba/500/gs.png',
-            starters: [
-              { id: '3975', name: 'Stephen Curry', jersey: '30', position: 'PG', headshot: hs('3975', 'Stephen Curry', '30', '#1D428A', '#FFC72C'), stats: ['35', '32', '11-21', '6-12', '4-4', '5', '8', '3', '2', '0', '+8'], teamName: tName },
-              { id: '4066320', name: 'Brandin Podziemski', jersey: '2', position: 'SG', headshot: buildSvgAvatarDataUri('Brandin Podziemski', '2', '#1D428A', '#FFC72C'), stats: ['29', '13', '5-10', '2-5', '1-2', '6', '5', '1', '1', '0', '+4'], teamName: tName },
-              { id: '3059319', name: 'Andrew Wiggins', jersey: '22', position: 'SF', headshot: hs('3059319', 'Andrew Wiggins', '22', '#1D428A', '#FFC72C'), stats: ['32', '19', '7-14', '3-6', '2-2', '6', '2', '1', '1', '1', '+5'], teamName: tName },
-              { id: '3112', name: 'Draymond Green', jersey: '23', position: 'PF', headshot: hs('3112', 'Draymond Green', '23', '#1D428A', '#FFC72C'), stats: ['31', '9', '3-7', '1-3', '2-2', '9', '8', '2', '2', '2', '+7'], teamName: tName },
-              { id: '4432809', name: 'Jonathan Kuminga', jersey: '00', position: 'PF', headshot: buildSvgAvatarDataUri('Jonathan Kuminga', '00', '#1D428A', '#FFC72C'), stats: ['28', '18', '7-13', '1-3', '3-4', '6', '2', '2', '1', '1', '+3'], teamName: tName },
-            ],
-            bench: [
-              { id: '3991', name: 'Buddy Hield', jersey: '7', position: 'SG', headshot: buildSvgAvatarDataUri('Buddy Hield', '7', '#1D428A', '#FFC72C'), stats: ['22', '14', '5-10', '4-8', '0-0', '3', '2', '1', '1', '0', '+2'], teamName: tName },
-              { id: '3155535', name: 'Kevon Looney', jersey: '5', position: 'C', headshot: buildSvgAvatarDataUri('Kevon Looney', '5', '#1D428A', '#FFC72C'), stats: ['18', '6', '3-4', '0-0', '0-0', '8', '2', '0', '1', '1', '+1'], teamName: tName },
-            ],
-          };
-        }
+        if (low.includes('laker') || low === 'lal') return { abbr: 'LAL', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/lal.png' };
+        if (low.includes('sun') || low.includes('phoenix') || low === 'phx') return { abbr: 'PHX', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phx.png' };
+        if (low.includes('piston') || low.includes('detroit') || low === 'det') return { abbr: 'DET', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/det.png' };
+        if (low.includes('celtic') || low.includes('boston') || low === 'bos') return { abbr: 'BOS', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/bos.png' };
+        if (low.includes('warrior') || low.includes('golden state') || low === 'gsw') return { abbr: 'GSW', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/gs.png' };
+        if (low.includes('nugget') || low.includes('denver') || low === 'den') return { abbr: 'DEN', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/den.png' };
+        if (low.includes('thunder') || low.includes('oklahoma') || low === 'okc') return { abbr: 'OKC', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/okc.png' };
+        if (low.includes('knick') || low.includes('new york') || low === 'nyk') return { abbr: 'NYK', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/nyk.png' };
+        if (low.includes('buck') || low.includes('milwaukee') || low === 'mil') return { abbr: 'MIL', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/mil.png' };
+        if (low.includes('maverick') || low.includes('dallas') || low === 'dal') return { abbr: 'DAL', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/dal.png' };
+        if (low.includes('timberwolv') || low.includes('minnesota') || low === 'min') return { abbr: 'MIN', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/min.png' };
+        if (low.includes('cavalier') || low.includes('cleveland') || low === 'cle') return { abbr: 'CLE', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/cle.png' };
+        if (low.includes('spur') || low.includes('san antonio') || low === 'sas') return { abbr: 'SAS', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/sas.png' };
         const abbr = tName.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || (isT1 ? 'TM1' : 'TM2');
         const c1 = isT1 ? '#7c3aed' : '#0284c7';
         const c2 = isT1 ? '#c084fc' : '#38bdf8';
         return {
           abbr,
           logo: stream.team1?.logo && isT1 ? stream.team1.logo : stream.team2?.logo && !isT1 ? stream.team2.logo : buildSvgTeamCrestDataUri(tName, c1, c2),
-          starters: isT1
-            ? [
-                { id: '3112335', name: 'Nikola Jokic', jersey: '15', position: 'C', headshot: hs('3112335', 'Nikola Jokic', '15', c1, c2), stats: ['36', '29', '11-18', '2-4', '5-6', '13', '11', '2', '2', '1', '+9'], teamName: tName },
-                { id: '3936299', name: 'Jamal Murray', jersey: '27', position: 'PG', headshot: hs('3936299', 'Jamal Murray', '27', c1, c2), stats: ['34', '23', '8-16', '4-8', '3-3', '4', '7', '2', '1', '0', '+7'], teamName: tName },
-                { id: '4278104', name: 'Michael Porter Jr.', jersey: '1', position: 'SF', headshot: hs('4278104', 'Michael Porter Jr.', '1', c1, c2), stats: ['33', '18', '7-13', '3-7', '1-1', '7', '2', '1', '1', '1', '+6'], teamName: tName },
-                { id: '3064290', name: 'Aaron Gordon', jersey: '32', position: 'PF', headshot: hs('3064290', 'Aaron Gordon', '32', c1, c2), stats: ['31', '14', '6-10', '1-3', '1-2', '8', '4', '1', '1', '1', '+5'], teamName: tName },
-                { id: '4432848', name: 'Christian Braun', jersey: '0', position: 'SG', headshot: buildSvgAvatarDataUri('Christian Braun', '0', c1, c2), stats: ['29', '12', '5-8', '1-3', '1-2', '5', '2', '1', '2', '1', '+4'], teamName: tName },
-              ]
-            : [
-                { id: '4278073', name: 'Shai Gilgeous-Alexander', jersey: '2', position: 'PG', headshot: hs('4278073', 'Shai Gilgeous-Alexander', '2', c1, c2), stats: ['36', '31', '11-20', '2-5', '7-8', '6', '7', '2', '3', '1', '-4'], teamName: tName },
-                { id: '4593803', name: 'Jalen Williams', jersey: '8', position: 'SF', headshot: hs('4593803', 'Jalen Williams', '8', c1, c2), stats: ['34', '21', '8-16', '3-6', '2-2', '5', '6', '2', '2', '0', '-5'], teamName: tName },
-                { id: '4433255', name: 'Chet Holmgren', jersey: '7', position: 'C', headshot: hs('4433255', 'Chet Holmgren', '7', c1, c2), stats: ['32', '18', '7-13', '2-5', '2-2', '10', '3', '2', '1', '3', '-3'], teamName: tName },
-                { id: '4397002', name: 'Luguentz Dort', jersey: '5', position: 'SG', headshot: hs('4397002', 'Luguentz Dort', '5', c1, c2), stats: ['30', '12', '4-9', '4-8', '0-0', '4', '2', '1', '1', '0', '-6'], teamName: tName },
-                { id: '3908845', name: 'Alex Caruso', jersey: '9', position: 'SG', headshot: hs('3908845', 'Alex Caruso', '9', c1, c2), stats: ['25', '9', '3-6', '2-4', '1-1', '4', '4', '1', '3', '1', '-2'], teamName: tName },
-              ],
-          bench: isT1
-            ? [
-                { id: '3468', name: 'Russell Westbrook', jersey: '4', position: 'PG', headshot: hs('3468', 'Russell Westbrook', '4', c1, c2), stats: ['22', '11', '4-9', '1-3', '2-2', '5', '6', '2', '1', '0', '+2'], teamName: tName },
-                { id: '4397142', name: 'Peyton Watson', jersey: '8', position: 'SF', headshot: buildSvgAvatarDataUri('Peyton Watson', '8', c1, c2), stats: ['19', '7', '3-6', '1-3', '0-0', '4', '1', '0', '1', '2', '+2'], teamName: tName },
-              ]
-            : [
-                { id: '4431678', name: 'Cason Wallace', jersey: '22', position: 'PG', headshot: buildSvgAvatarDataUri('Cason Wallace', '22', c1, c2), stats: ['21', '8', '3-6', '2-4', '0-0', '3', '3', '1', '2', '0', '-2'], teamName: tName },
-                { id: '4397014', name: 'Isaiah Hartenstein', jersey: '55', position: 'C', headshot: buildSvgAvatarDataUri('Isaiah Hartenstein', '55', c1, c2), stats: ['23', '9', '4-6', '0-0', '1-2', '9', '3', '1', '1', '1', '-1'], teamName: tName },
-              ],
         };
       };
 
-      const r1 = buildNbaRoster(t1Name, true);
-      const r2 = buildNbaRoster(t2Name, false);
-      mockAthletesT1 = r1.starters;
-      const benchT1 = r1.bench;
-      mockAthletesT2 = r2.starters;
-      const benchT2 = r2.bench;
+      const m1 = resolveNbaMeta(t1Name, true);
+      const m2 = resolveNbaMeta(t2Name, false);
+      const t1Abbr = m1.abbr;
+      const t2Abbr = m2.abbr;
 
-      const t1Abbr = r1.abbr;
-      const t2Abbr = r2.abbr;
+      const advRows1 = basketballResearchService.getDefaultTeamPlayers(t1Name, t1Abbr, true);
+      const advRows2 = basketballResearchService.getDefaultTeamPlayers(t2Name, t2Abbr, false);
 
-      const buildAdvRows = (starters: AthleteInfo[], bench: AthleteInfo[], tName: string, tAbbr: string) => [
-        ...starters.map(a => basketballResearchService.buildPlayerAdvancedRow({ ...a, starter: true }, nbaLabels, tName, tAbbr)),
-        ...bench.map(a => basketballResearchService.buildPlayerAdvancedRow({ ...a, starter: false }, nbaLabels, tName, tAbbr)),
-      ];
+      const rowToAthleteInfo = (r: PlayerAdvancedBoxRow, tName: string): AthleteInfo => ({
+        id: r.id,
+        name: r.name,
+        jersey: r.jersey,
+        position: r.position,
+        headshot: r.headshot,
+        teamName: tName,
+        stats: [
+          String(r.min),
+          String(r.pts),
+          r.fg,
+          r.threePt,
+          r.ft,
+          String(r.reb),
+          String(r.ast),
+          String(r.tov),
+          String(r.stl),
+          String(r.blk),
+          r.plusMinus >= 0 ? `+${r.plusMinus}` : String(r.plusMinus),
+        ],
+      });
 
-      const advRows1 = buildAdvRows(mockAthletesT1, benchT1, t1Name, t1Abbr);
-      const advRows2 = buildAdvRows(mockAthletesT2, benchT2, t2Name, t2Abbr);
+      mockAthletesT1 = advRows1.filter(r => r.starter).map(r => rowToAthleteInfo(r, t1Name));
+      const benchT1 = advRows1.filter(r => !r.starter).map(r => rowToAthleteInfo(r, t1Name));
+      mockAthletesT2 = advRows2.filter(r => r.starter).map(r => rowToAthleteInfo(r, t2Name));
+      const benchT2 = advRows2.filter(r => !r.starter).map(r => rowToAthleteInfo(r, t2Name));
+      const r1 = { abbr: t1Abbr, logo: m1.logo };
+      const r2 = { abbr: t2Abbr, logo: m2.logo };
 
       const toAdvCategory = (rows: PlayerAdvancedBoxRow[], tName: string): BoxScoreCategory => ({
         name: 'advanced',
