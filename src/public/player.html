@@ -226,6 +226,7 @@
 
       <!-- ESPN / StatMuse / Reference Sports Intelligence Hub -->
       <div class="gamecast-hub-container" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); overflow: hidden; margin-top: 8px;">
+        <div id="pro-redzone-ribbon" style="display: none; padding: 10px 14px 0;"></div>
         <!-- Scoreboard Strip -->
         <div class="gamecast-scoreboard">
           <div class="scoreboard-matchup">
@@ -439,10 +440,12 @@
       if (window.FreeBallStatsSmartScreen) {
         const videoWrap = document.getElementById('video-wrapper');
         if (videoWrap) {
+          const isRzStream = /redzone|red-zone/i.test(streamKey);
           window.proSmartScreen = new window.FreeBallStatsSmartScreen.SmartScreenController(videoWrap, {
-            defaultMode: category === 'basketball' ? 'lbar' : 'triggers',
+            defaultMode: (category === 'basketball' || isRzStream) ? 'lbar' : 'triggers',
           });
           window.fbsActiveSmartScreen = window.proSmartScreen;
+          window.onRedZonePinChange = () => initIntel();
           window.proSmartScreen.loadStream(streamKey, { name: streamKey, category });
         }
       }
@@ -479,7 +482,11 @@
 
     async function initIntel() {
       try {
-        const res = await fetch('/api/v1/intel/' + encodeURIComponent(streamKey) + '?t=' + Date.now());
+        const ss = window.proSmartScreen;
+        const pinQs =
+          (ss?.rzManualPinId ? `&pinnedEventId=${encodeURIComponent(ss.rzManualPinId)}` : '') +
+          (ss?.rzSecondaryPinId ? `&pinnedB=${encodeURIComponent(ss.rzSecondaryPinId)}` : '');
+        const res = await fetch('/api/v1/intel/' + encodeURIComponent(streamKey) + '?t=' + Date.now() + pinQs);
         if (res.ok) {
           proIntel = await res.json();
           renderProIntel(proIntel);
@@ -491,6 +498,13 @@
 
     function renderProIntel(intel) {
       if (!intel) return;
+
+      if (window.FreeBallStatsSmartScreen?.renderRedZoneSlateRibbon) {
+        window.FreeBallStatsSmartScreen.renderRedZoneSlateRibbon(
+          document.getElementById('pro-redzone-ribbon'),
+          intel
+        );
+      }
 
       // Scoreboard Update
       if (intel.scoreboard) {
@@ -639,7 +653,8 @@
 
       const tabBtn = document.getElementById('pro-tab-btn-ingame');
       if (tabBtn) {
-        if (sa && sa.sportType === 'soccer') tabBtn.innerHTML = '⚽ Pitch xG Map &amp; Opta Analytics';
+        if (intel.redzoneIntel) tabBtn.innerHTML = '🚨 RedZone Multi-Game &amp; Spotlight';
+        else if (sa && sa.sportType === 'soccer') tabBtn.innerHTML = '⚽ Pitch xG Map &amp; Opta Analytics';
         else if (sa && (sa.sportType === 'nfl' || sa.sportType === 'ncaaf')) tabBtn.innerHTML = '🏈 Field Map, EPA &amp; Down-Distance';
         else if (sa && sa.sportType === 'hockey') tabBtn.innerHTML = '🏒 Ice Slot Map, Corsi &amp; xGF';
         else if (sa && sa.sportType === 'ncaab') tabBtn.innerHTML = '🎓 KenPom, Shot Map &amp; Four Factors';
@@ -647,6 +662,9 @@
       }
 
       if (!ba && sa) {
+        const rzMultiHtml = (intel.redzoneIntel && ss?.renderRedZoneMultiGameSectionHtml)
+          ? ss.renderRedZoneMultiGameSectionHtml(intel)
+          : '';
         const hudCompat = {
           surfaceType: sa.surfaceType,
           sportAnalytics: sa,
@@ -662,6 +680,7 @@
         const t2Abbr = sa.team2Meta?.abbreviation || 'TM2';
 
         container.innerHTML = `
+          ${rzMultiHtml}
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:14px;">
             <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border-color);border-radius:10px;padding:12px;">
               ${spatialHtml}
@@ -710,6 +729,13 @@
           btn.addEventListener('click', () => {
             window._proScFilter = btn.getAttribute('data-sc-filter');
             renderProInGameAnalytics(intel);
+          });
+        });
+        container.querySelectorAll('[data-rz-card-pin]').forEach((el) => {
+          el.addEventListener('click', () => {
+            const eid = el.getAttribute('data-rz-card-pin');
+            if (window.proSmartScreen) window.proSmartScreen.setRedZonePins(eid, undefined);
+            else initIntel();
           });
         });
         return;

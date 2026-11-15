@@ -181,11 +181,40 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   /**
+   * GET /api/v1/redzone/intel
+   * Dedicated Multi-Game NFL RedZone Command & Radar telemetry (live threat ranking, fantasy PPR leaders, spotlight & double-box compare)
+   */
+  fastify.get<{
+    Querystring: { pinnedEventId?: string; pinnedB?: string };
+  }>('/redzone/intel', {
+    schema: {
+      description: 'Get NFL RedZone multi-game slate intelligence, RedZone Heat ranking, TD/turnover feed, Fantasy PPR leaders, and pinned game intel',
+      tags: ['Sports Intelligence'],
+    },
+  }, async (request, reply) => {
+    const stream: StreamItem = {
+      id: 'redzone',
+      name: 'RedZone',
+      category: 'football',
+      league: 'NFL',
+      stream_key: 'redzone',
+      match_timestamp: Math.floor(Date.now() / 1000),
+      sources: [],
+    };
+    const intel = await sportsIntelService.getGamecastIntel(stream, {
+      pinnedEventId: request.query.pinnedEventId,
+      secondaryEventId: request.query.pinnedB,
+    });
+    return reply.send(intel);
+  });
+
+  /**
    * GET /api/v1/intel/:stream_key
    * Live gamecast statistics, box score, key leaders (StatMuse/Reference), win probability, and news
    */
   fastify.get<{
     Params: { stream_key: string };
+    Querystring: { pinnedEventId?: string; pinnedB?: string };
   }>('/intel/:stream_key', {
     schema: {
       description: 'Get deep gamecast live stats, boxscore, team comparison, StatMuse-style leaders, and news',
@@ -219,7 +248,10 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
       };
     }
 
-    const intel = await sportsIntelService.getGamecastIntel(stream);
+    const intel = await sportsIntelService.getGamecastIntel(stream, {
+      pinnedEventId: request.query.pinnedEventId,
+      secondaryEventId: request.query.pinnedB,
+    });
     return reply.send(intel);
   });
 
@@ -317,6 +349,7 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
    */
   fastify.get<{
     Params: { stream_key: string };
+    Querystring: { pinnedEventId?: string; pinnedB?: string };
   }>('/basketball/smart-hud/:stream_key', {
     schema: {
       description: 'Get unified Smart Screen HUD telemetry (L-Bar Squeeze-Back stats, Auto-Triggered Smart Cards, Interactive Shot Chart, On-Court 5v5 Lineups, Leverage Index, and Win Prob Worm)',
@@ -352,9 +385,79 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
       };
     }
 
-    const intel = await sportsIntelService.getGamecastIntel(stream);
+    const intel = await sportsIntelService.getGamecastIntel(stream, {
+      pinnedEventId: request.query.pinnedEventId,
+      secondaryEventId: request.query.pinnedB,
+    });
     const bball = intel.basketballAnalytics;
     const sa = intel.sportAnalytics;
+    const rz = intel.redzoneIntel;
+
+    // Dedicated Multi-Game NFL RedZone Command telemetry
+    if (rz) {
+      return reply.send({
+        stream_key,
+        streamName: stream.name,
+        category: stream.category,
+        sportType: 'nfl_redzone',
+        sportLabel: rz.sportBadge,
+        sportBadge: rz.sportBadge,
+        surfaceType: 'football_field',
+        statusDetail: rz.slateHeadline,
+        gameState: rz.summaryCounts.liveGames > 0 ? 'in' : rz.summaryCounts.upcomingGames > 0 ? 'pre' : 'post',
+        isLive: rz.summaryCounts.liveGames > 0,
+        situationBanner: rz.slateHeadline,
+        scoreboard: intel.scoreboard,
+        redzoneIntel: rz,
+        sportAnalytics: sa,
+        team1: sa ? {
+          teamName: sa.team1Meta.name,
+          abbreviation: sa.team1Meta.abbreviation,
+          logo: sa.team1Meta.logo,
+          score: sa.team1Meta.score,
+        } : undefined,
+        team2: sa ? {
+          teamName: sa.team2Meta.name,
+          abbreviation: sa.team2Meta.abbreviation,
+          logo: sa.team2Meta.logo,
+          score: sa.team2Meta.score,
+        } : undefined,
+        team1Analytics: sa ? {
+          teamName: sa.team1Meta.name,
+          abbreviation: sa.team1Meta.abbreviation,
+          logo: sa.team1Meta.logo,
+          score: sa.team1Meta.score,
+        } : undefined,
+        team2Analytics: sa ? {
+          teamName: sa.team2Meta.name,
+          abbreviation: sa.team2Meta.abbreviation,
+          logo: sa.team2Meta.logo,
+          score: sa.team2Meta.score,
+        } : undefined,
+        winProbability: intel.winProbability,
+        linescore: sa?.linescore,
+        leverageIndex: rz.games.find((g) => g.eventId === rz.pinnedEventId)?.winProbability.leverageIndex || 1.5,
+        leverageTier: rz.summaryCounts.witchingHourCount > 0 ? 'HIGH' : 'MEDIUM',
+        isClutchTime: rz.summaryCounts.witchingHourCount > 0 || rz.summaryCounts.inRedZoneCount > 0,
+        smartCards: rz.smartCards,
+        shotChart: sa ? {
+          surfaceType: sa.surfaceType,
+          shots: sa.spatialMap.events.map((ev) => ({
+            ...ev,
+            teamSide: ev.team,
+            made: ev.isSuccess,
+            shotType: ev.outcomeLabel,
+            value: ev.isSuccess ? 1 : 0,
+            xEfg: 50,
+          })),
+          team1Zones: sa.spatialMap.zones,
+          team2Zones: sa.spatialMap.zones,
+        } : undefined,
+        winProbTimeline: sa?.winProbTimeline || [],
+        mvpPerformer: sa?.mvpPerformer,
+        inGameInsights: sa?.inGameInsights || [],
+      });
+    }
 
     // If this is a non-NBA sport (Soccer, NFL, College Football, NHL Hockey, College Basketball),
     // return 100% sport-authentic Smart Screen telemetry from UniversalSportDeepAnalytics!

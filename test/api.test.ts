@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildServer } from '../src/server.js';
 import { basketballResearchService } from '../src/services/basketball-research-service.js';
+import { redZoneIntelService } from '../src/services/redzone-intel-service.js';
 
 test('StreamFree API Streamer Suite', async (t) => {
   const server = await buildServer();
@@ -369,6 +370,101 @@ test('StreamFree API Streamer Suite', async (t) => {
     const cardTitles = preGame.smartCards.map((c) => `${c.badge} ${c.title}`).join(' ');
     assert.ok(!cardTitles.includes('9-2 run'), 'Pre-game smart cards must not show fake in-game runs');
     assert.ok(cardTitles.includes('PRE-GAME'), 'Pre-game smart cards should show pre-game scouting insights');
+  });
+
+  await t.test('RedZone Multi-Game Heat Engine prioritizes Goal-to-Go & Witching Hour, tracks PPR leaders & Fantasy RZ threats, and exposes /api/v1/redzone/intel', async () => {
+    const mockEvents = [
+      {
+        id: 'evt-halftime',
+        shortName: 'ARI @ SEA',
+        name: 'Arizona Cardinals at Seattle Seahawks',
+        date: '2026-11-15T21:05Z',
+        status: { displayClock: '0:00', period: 2, type: { state: 'in', shortDetail: 'Halftime' } },
+        competitions: [{
+          competitors: [
+            { homeAway: 'home', score: '14', team: { id: '26', abbreviation: 'SEA', shortDisplayName: 'Seahawks', displayName: 'Seattle Seahawks' } },
+            { homeAway: 'away', score: '3', team: { id: '22', abbreviation: 'ARI', shortDisplayName: 'Cardinals', displayName: 'Arizona Cardinals' } },
+          ],
+          situation: { isRedZone: false, homeTimeouts: 3, awayTimeouts: 3 },
+          leaders: [],
+        }],
+      },
+      {
+        id: 'evt-witch',
+        shortName: 'KC @ BUF',
+        name: 'Kansas City Chiefs at Buffalo Bills',
+        date: '2026-11-15T21:25Z',
+        status: { displayClock: '1:54', period: 4, type: { state: 'in', shortDetail: '1:54 - 4th' } },
+        competitions: [{
+          competitors: [
+            { homeAway: 'home', score: '24', team: { id: '2', abbreviation: 'BUF', shortDisplayName: 'Bills', displayName: 'Buffalo Bills' } },
+            { homeAway: 'away', score: '21', team: { id: '12', abbreviation: 'KC', shortDisplayName: 'Chiefs', displayName: 'Kansas City Chiefs' } },
+          ],
+          situation: {
+            isRedZone: false,
+            down: 3,
+            distance: 6,
+            possession: '12',
+            possessionText: 'BUF 42',
+            downDistanceText: '3rd & 6 at BUF 42',
+            lastPlay: { id: 'p-witch', text: 'P.Mahomes pass 14 yds to T.Kelce', statYardage: 14, scoreValue: 0, probability: { homeWinPercentage: 0.56 } },
+          },
+          leaders: [],
+        }],
+      },
+      {
+        id: 'evt-gtg',
+        shortName: 'HOU @ LAC',
+        name: 'Houston Texans at Los Angeles Chargers',
+        date: '2026-11-15T21:05Z',
+        status: { displayClock: '5:12', period: 3, type: { state: 'in', shortDetail: '5:12 - 3rd' } },
+        competitions: [{
+          competitors: [
+            { homeAway: 'home', score: '17', team: { id: '24', abbreviation: 'LAC', shortDisplayName: 'Chargers', displayName: 'Los Angeles Chargers' } },
+            { homeAway: 'away', score: '20', team: { id: '34', abbreviation: 'HOU', shortDisplayName: 'Texans', displayName: 'Houston Texans' } },
+          ],
+          situation: {
+            isRedZone: true,
+            down: 2,
+            distance: 4,
+            yardLine: 4,
+            possession: '34',
+            possessionText: 'LAC 4',
+            downDistanceText: '2nd & Goal at LAC 4',
+            lastPlay: { id: 'p-gtg', text: 'N.Collins 22-yard catch inside the 5', statYardage: 22, scoreValue: 0, drive: { description: '7 plays, 71 yds, 3:10' }, probability: { homeWinPercentage: 0.34 } },
+          },
+          leaders: [
+            {
+              shortDisplayName: 'REC',
+              leaders: [{ athlete: { id: '4258173', displayName: 'Nico Collins' }, team: { id: '34' }, displayValue: '7 REC, 118 YDS, 1 TD' }],
+            },
+          ],
+        }],
+      },
+    ];
+
+    const slate = await redZoneIntelService.buildSlateFromEvents(mockEvents);
+    assert.equal(slate.games.length, 3);
+    assert.equal(slate.games[0].eventId, 'evt-gtg', 'Goal-to-Go inside Opp 4 must rank #1 in RedZone Heat');
+    assert.equal(slate.games[0].heatTier, 'GOAL_TO_GO');
+    assert.equal(slate.games[0].situation.yardsToEndZone, 4);
+    assert.equal(slate.games[0].situation.ballPosPct, 96);
+    assert.equal(slate.secondaryEventId, 'evt-witch', 'Double-Box secondary game should select #2 hottest live game');
+    assert.ok(slate.games[1].situation.isWitchingHour, 'Close Q4 inside 2 minutes must flag Witching Hour');
+    assert.ok(slate.fantasyLeaders.length > 0 && slate.fantasyLeaders[0].isInRedZoneNow, 'Fantasy leader on offense in RedZone should be flagged isInRedZoneNow');
+    assert.ok(slate.fantasyLeaders[0].estimatedPpr > 20, 'PPR calculation for 7 REC 118 YDS 1 TD should be 24.8');
+
+    const rzApiRes = await server.inject({ method: 'GET', url: '/api/v1/redzone/intel' });
+    assert.equal(rzApiRes.statusCode, 200);
+    const rzData = rzApiRes.json();
+    assert.ok(rzData.redzoneIntel && rzData.redzoneIntel.sportType === 'nfl_redzone');
+    assert.ok(Array.isArray(rzData.redzoneIntel.games) && rzData.redzoneIntel.games.length > 0);
+
+    const rzHudRes = await server.inject({ method: 'GET', url: '/api/v1/basketball/smart-hud/redzone' });
+    assert.equal(rzHudRes.statusCode, 200);
+    const rzHud = rzHudRes.json();
+    assert.equal(rzHud.sportType, 'nfl_redzone');
+    assert.ok(rzHud.redzoneIntel && Array.isArray(rzHud.smartCards));
   });
 
   await server.close();

@@ -780,6 +780,45 @@
     `;
   }
 
+  function loadRedZoneWatchlist() {
+    try {
+      const raw = localStorage.getItem('fbs_rz_watchlist');
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr.map((s) => String(s).trim()).filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveRedZoneWatchlist(list) {
+    try {
+      localStorage.setItem('fbs_rz_watchlist', JSON.stringify(list.slice(0, 12)));
+    } catch {}
+  }
+
+  function renderRedZoneFieldBarHtml(g, hideScores = false) {
+    const posPct = g.situation?.ballPosPct;
+    const isRz = g.situation?.isRedZone;
+    const isGtG = g.situation?.isGoalToGo;
+    const possAbbr = g.situation?.possessionTeamAbbr;
+    const scoreTxt = hideScores ? '•• - ••' : `${g.away.score} - ${g.home.score}`;
+    return `
+      <div style="position:relative;height:14px;border-radius:4px;background:rgba(15,23,42,0.9);border:1px solid rgba(255,255,255,0.12);overflow:hidden;margin:4px 0;">
+        <div style="position:absolute;left:20%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.12);"></div>
+        <div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.22);"></div>
+        <div style="position:absolute;right:0;top:0;bottom:0;width:20%;background:${isRz ? 'rgba(239,68,68,0.38)' : 'rgba(239,68,68,0.16)'};border-left:1px dashed rgba(248,113,113,0.6);"></div>
+        ${posPct !== null && posPct !== undefined ? `
+          <div style="position:absolute;left:0;top:0;bottom:0;width:${posPct}%;background:${isGtG ? 'linear-gradient(90deg,rgba(239,68,68,0.2),rgba(239,68,68,0.65))' : isRz ? 'linear-gradient(90deg,rgba(245,158,11,0.15),rgba(239,68,68,0.5))' : 'linear-gradient(90deg,rgba(0,242,254,0.12),rgba(0,242,254,0.38))'};"></div>
+          <div style="position:absolute;left:calc(${posPct}% - 5px);top:2px;width:10px;height:10px;border-radius:50%;background:${isRz ? '#f87171' : '#00f2fe'};border:2px solid #fff;box-shadow:0 0 6px ${isRz ? '#ef4444' : '#00f2fe'};" title="${esc(possAbbr || '')} Ball Spot (${esc(scoreTxt)})"></div>
+        ` : ''}
+        <span style="position:relative;z-index:2;font-size:8.5px;font-weight:800;color:#e2e8f0;padding:0 5px;line-height:14px;display:flex;justify-content:space-between;">
+          <span>${possAbbr ? `🏈 ${esc(possAbbr)} BALL` : esc(g.statusDetail)}</span>
+          <span style="color:#fca5a5;">RED ZONE 20→EZ</span>
+        </span>
+      </div>
+    `;
+  }
+
   /**
    * Smart Screen Broadcast Controller
    * Attaches to a video stage container (e.g. .player-frame-wrapper in index.html or #video-wrapper in player.html)
@@ -792,11 +831,20 @@
       this.streamMeta = null;
       this.hudData = null;
       this.mode = options.defaultMode || 'triggers'; // 'triggers' | 'lbar' | 'hud' | 'off'
-      this.activeRailTab = 'shotchart'; // 'shotchart' | 'lineup' | 'fourfactors' | 'worm'
+      this.activeRailTab = 'shotchart'; // 'shotchart' | 'lineup' | 'fourfactors' | 'worm' (or 'rz_radar' | 'rz_spotlight' | 'rz_feed' | 'rz_fantasy')
       this.shotChartFilter = 'all';
       this.cardIndex = 0;
       this.cardDismissed = false;
       this.cardTimer = null;
+
+      // NFL RedZone Companion State
+      this.rzManualPinId = null;
+      this.rzSecondaryPinId = null;
+      this.rzDoubleBoxMode = false;
+      this.rzDelaySec = 0; // 0 | 15 | 30
+      this.rzSpoilerHideScores = false;
+      this.rzSnapshotBuffer = [];
+      this.rzWatchlist = loadRedZoneWatchlist();
 
       this.initDom();
     }
@@ -861,17 +909,61 @@
       this.cardDismissed = false;
       saveActiveStreamForDock(this.streamMeta);
 
+      const isRz = /redzone|red-zone/i.test(streamKey) || /redzone|red zone/i.test(this.streamMeta.name || '');
+      if (isRz && !String(this.activeRailTab || '').startsWith('rz_')) {
+        this.activeRailTab = 'rz_radar';
+      } else if (!isRz && String(this.activeRailTab || '').startsWith('rz_')) {
+        this.activeRailTab = 'shotchart';
+      }
+
       this.renderTopBar();
 
       try {
-        const res = await fetch(`/api/v1/basketball/smart-hud/${encodeURIComponent(streamKey)}?t=${Date.now()}`);
+        const pinQs =
+          (this.rzManualPinId ? `&pinnedEventId=${encodeURIComponent(this.rzManualPinId)}` : '') +
+          (this.rzSecondaryPinId ? `&pinnedB=${encodeURIComponent(this.rzSecondaryPinId)}` : '');
+        const res = await fetch(`/api/v1/basketball/smart-hud/${encodeURIComponent(streamKey)}?t=${Date.now()}${pinQs}`);
         if (res.ok) {
-          this.hudData = await res.json();
+          const freshData = await res.json();
+          this.ingestHudDataWithSyncBuffer(freshData);
           this.cardIndex = 0;
           this.renderAll();
         }
       } catch (err) {
         console.error('[SmartScreen] Failed to fetch smart-hud telemetry:', err);
+      }
+    }
+
+    ingestHudDataWithSyncBuffer(freshData) {
+      if (!freshData || freshData.sportType !== 'nfl_redzone') {
+        this.hudData = freshData;
+        return;
+      }
+      const now = Date.now();
+      this.rzSnapshotBuffer.push({ ts: now, data: freshData });
+      if (this.rzSnapshotBuffer.length > 16) {
+        this.rzSnapshotBuffer = this.rzSnapshotBuffer.slice(-16);
+      }
+      if (this.rzDelaySec > 0 && this.rzSnapshotBuffer.length > 1) {
+        const targetTs = now - this.rzDelaySec * 1000;
+        const delayed = [...this.rzSnapshotBuffer].reverse().find((s) => s.ts <= targetTs);
+        this.hudData = delayed ? delayed.data : this.rzSnapshotBuffer[0].data;
+      } else {
+        this.hudData = freshData;
+      }
+      if (!String(this.activeRailTab || '').startsWith('rz_')) {
+        this.activeRailTab = 'rz_radar';
+      }
+    }
+
+    async setRedZonePins(pinnedId, secondaryId) {
+      if (pinnedId !== undefined) this.rzManualPinId = pinnedId;
+      if (secondaryId !== undefined) this.rzSecondaryPinId = secondaryId;
+      if (typeof window.onRedZonePinChange === 'function') {
+        window.onRedZonePinChange(this.rzManualPinId, this.rzSecondaryPinId);
+      }
+      if (this.streamKey) {
+        await this.loadStream(this.streamKey, this.streamMeta || {});
       }
     }
 
@@ -882,6 +974,55 @@
           name: (intel.scoreboard?.team1?.name || 'Team 1') + ' vs ' + (intel.scoreboard?.team2?.name || 'Team 2'),
           category: intel.sportAnalytics?.sportType || 'basketball',
         });
+        return;
+      }
+      if (intel.redzoneIntel) {
+        const rz = intel.redzoneIntel;
+        const sa = intel.sportAnalytics;
+        const freshRzHud = {
+          stream_key: intel.stream_key,
+          sportType: 'nfl_redzone',
+          sportLabel: rz.sportBadge,
+          surfaceType: 'football_field',
+          scoreboard: intel.scoreboard,
+          winProbability: intel.winProbability,
+          linescore: intel.linescore || sa?.linescore,
+          leverageIndex: rz.games.find((g) => g.eventId === rz.pinnedEventId)?.winProbability?.leverageIndex || 1.5,
+          leverageTier: rz.summaryCounts.witchingHourCount > 0 ? 'HIGH' : 'MEDIUM',
+          isClutchTime: rz.summaryCounts.witchingHourCount > 0 || rz.summaryCounts.inRedZoneCount > 0,
+          smartCards: rz.smartCards,
+          redzoneIntel: rz,
+          sportAnalytics: sa,
+          shotChart: sa ? {
+            surfaceType: sa.surfaceType,
+            shots: (sa.spatialMap?.events || []).map((ev) => ({
+              ...ev,
+              made: ev.isSuccess,
+              shotType: ev.outcomeLabel,
+              value: ev.isSuccess ? 1 : 0,
+              xEfg: 50,
+            })),
+            team1Zones: sa.spatialMap?.zones || [],
+            team2Zones: sa.spatialMap?.zones || [],
+          } : undefined,
+          winProbTimeline: sa?.winProbTimeline || [],
+          team1Analytics: sa ? {
+            teamName: sa.team1Meta.name,
+            abbreviation: sa.team1Meta.abbreviation,
+            logo: sa.team1Meta.logo,
+            score: sa.team1Meta.score,
+          } : undefined,
+          team2Analytics: sa ? {
+            teamName: sa.team2Meta.name,
+            abbreviation: sa.team2Meta.abbreviation,
+            logo: sa.team2Meta.logo,
+            score: sa.team2Meta.score,
+          } : undefined,
+          mvpPerformer: sa?.mvpPerformer,
+          inGameInsights: sa?.inGameInsights,
+        };
+        this.ingestHudDataWithSyncBuffer(freshRzHud);
+        this.renderAll();
         return;
       }
       if (intel.basketballAnalytics) {
@@ -1010,7 +1151,32 @@
       const li = this.hudData?.leverageIndex || sa?.leverageIndex || 1.85;
       const isClutch = Boolean(this.hudData?.isClutchTime || li >= 2.2);
 
-      const scorebugHtml = sb
+      const isRedZone = this.hudData?.sportType === 'nfl_redzone' && Boolean(this.hudData?.redzoneIntel);
+      const rz = this.hudData?.redzoneIntel;
+
+      const scorebugHtml = isRedZone
+        ? (() => {
+            const c = rz.summaryCounts;
+            const pinGame = rz.games.find((g) => g.eventId === rz.pinnedEventId) || rz.games[0];
+            const scoreStr = this.rzSpoilerHideScores
+              ? '•• - ••'
+              : pinGame
+              ? `${esc(pinGame.away.abbr)} ${pinGame.away.score} - ${esc(pinGame.home.abbr)} ${pinGame.home.score}`
+              : 'NFL REDZONE';
+            return `
+              <div class="fbs-mini-scorebug ${c.inRedZoneCount > 0 || c.witchingHourCount > 0 ? 'is-clutch' : ''}">
+                <span style="color:#f87171;font-weight:900;">🚨 ${c.inRedZoneCount} RZ</span>
+                <span class="fbs-ms-sep">•</span>
+                <span class="fbs-ms-team">${c.liveGames} LIVE</span>
+                <span class="fbs-ms-sep">•</span>
+                <span class="fbs-ms-team">${scoreStr}</span>
+                <span class="fbs-ms-clock">${esc(pinGame?.situation?.downDistanceText || pinGame?.statusDetail || 'SLATE')}</span>
+                <button type="button" id="fbs-rz-delay-btn" style="background:rgba(255,255,255,0.1);color:#cbd5e1;border:1px solid rgba(255,255,255,0.18);border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;cursor:pointer;" title="Anti-Spoiler Broadcast Delay Buffer">${this.rzDelaySec === 0 ? '⚡ Live' : `⏱️ -${this.rzDelaySec}s`}</button>
+                <button type="button" id="fbs-rz-spoiler-btn" style="background:${this.rzSpoilerHideScores ? 'rgba(245,158,11,0.28)' : 'rgba(255,255,255,0.08)'};color:${this.rzSpoilerHideScores ? '#fbbf24' : '#94a3b8'};border:1px solid rgba(255,255,255,0.18);border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;cursor:pointer;" title="Hide / Blur Live Scores">${this.rzSpoilerHideScores ? '🙈 Masked' : '👁 Scores'}</button>
+              </div>
+            `;
+          })()
+        : sb
         ? `
           <div class="fbs-mini-scorebug ${isClutch ? 'is-clutch' : ''}">
             <span class="fbs-ms-team">${esc(t1?.abbreviation || sb.team1?.name || 'TM1')} <strong>${esc(sb.team1?.score ?? t1?.score ?? '0')}</strong></span>
@@ -1061,6 +1227,21 @@
       this.topBar.querySelector('[data-sm-action="dock-lab"]')?.addEventListener('click', (e) => {
         e.stopPropagation();
         this.openInResearchLabWithDock();
+      });
+
+      this.topBar.querySelector('#fbs-rz-delay-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.rzDelaySec = this.rzDelaySec === 0 ? 15 : this.rzDelaySec === 15 ? 30 : 0;
+        if (this.rzSnapshotBuffer.length > 0) {
+          this.ingestHudDataWithSyncBuffer(this.rzSnapshotBuffer[this.rzSnapshotBuffer.length - 1].data);
+        }
+        this.renderAll();
+      });
+
+      this.topBar.querySelector('#fbs-rz-spoiler-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.rzSpoilerHideScores = !this.rzSpoilerHideScores;
+        this.renderAll();
       });
     }
 
@@ -1113,6 +1294,20 @@
         this.cardDismissed = true;
         this.smartCardEl.style.display = 'none';
       });
+
+      if (card.eventId && this.hudData?.sportType === 'nfl_redzone') {
+        const bodyEl = this.smartCardEl.querySelector('.fbs-stc-body');
+        if (bodyEl) {
+          bodyEl.style.cursor = 'pointer';
+          bodyEl.title = 'Click to Pin & Inspect this NFL game';
+          bodyEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.setMode('lbar');
+            this.activeRailTab = 'rz_spotlight';
+            this.setRedZonePins(card.eventId, undefined);
+          });
+        }
+      }
     }
 
     renderGlassHud() {
@@ -1122,6 +1317,35 @@
         return;
       }
       this.glassHudEl.style.display = 'block';
+
+      if (this.hudData.sportType === 'nfl_redzone' && this.hudData.redzoneIntel) {
+        const rz = this.hudData.redzoneIntel;
+        const topGames = rz.games.slice(0, 4);
+        const latestFeed = rz.eventFeed?.[0];
+        this.glassHudEl.innerHTML = `
+          <div class="fbs-hud-corner top-right">
+            <div class="fbs-hud-title">🚨 REDZONE HEAT RADAR (${rz.summaryCounts.inRedZoneCount} IN RZ)</div>
+            ${topGames.map((g) => `
+              <div class="fbs-hud-row">
+                <span>${g.situation.isRedZone ? '🔴 ' : ''}${esc(g.shortName)}</span>
+                <strong>${this.rzSpoilerHideScores ? '••-••' : `${g.away.score}-${g.home.score}`} • ${esc(g.situation.downDistanceText || g.statusDetail)}</strong>
+              </div>
+            `).join('')}
+          </div>
+
+          <div class="fbs-hud-corner bottom-left">
+            <div class="fbs-hud-title">🔥 LATEST REDZONE PULSE</div>
+            <div style="font-size:10px;color:#00f2fe;font-weight:700;">
+              ${latestFeed ? `${esc(latestFeed.badge)} — ${esc(latestFeed.headline)}` : esc(rz.slateHeadline)}
+            </div>
+            <div style="font-size:9.5px;color:#cbd5e1;margin-top:2px;">
+              🏆 Top PPR: ${(rz.fantasyLeaders || []).slice(0, 2).map((f) => `${esc(f.name.split(' ').slice(-1)[0])} (${f.estimatedPpr} pts)`).join(' • ') || 'Updating...'}
+            </div>
+          </div>
+        `;
+        return;
+      }
+
       const sa = this.hudData.sportAnalytics;
 
       if (sa && Array.isArray(sa.fourPillars) && sa.fourPillars.length > 0 && sa.sportType !== 'basketball') {
@@ -1186,6 +1410,11 @@
 
       this.rightRail.style.display = 'flex';
       this.bottomRail.style.display = 'grid';
+
+      if (this.hudData.sportType === 'nfl_redzone' && this.hudData.redzoneIntel) {
+        this.renderRedZoneLBarRails();
+        return;
+      }
 
       const sa = this.hudData.sportAnalytics;
       const surfaceType = getSportSurfaceType(this.hudData);
@@ -1359,6 +1588,256 @@
         `;
       }
     }
+
+    renderRedZoneLBarRails() {
+      const rz = this.hudData.redzoneIntel;
+      const sa = this.hudData.sportAnalytics;
+      const activeTab = String(this.activeRailTab || '').startsWith('rz_') ? this.activeRailTab : 'rz_radar';
+      const hide = this.rzSpoilerHideScores;
+      const fmtScore = (a, b) => (hide ? '••-••' : `${a}-${b}`);
+
+      let railBodyHtml = '';
+
+      if (activeTab === 'rz_radar') {
+        const isManualPin = Boolean(this.rzManualPinId);
+        railBodyHtml = `
+          <div style="display:flex;flex-direction:column;gap:7px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;background:rgba(255,255,255,0.04);padding:5px 8px;border-radius:6px;">
+              <span style="color:#f87171;font-weight:800;">🚨 ${rz.summaryCounts.inRedZoneCount} IN RZ • ${rz.summaryCounts.liveGames} LIVE</span>
+              ${isManualPin ? `<button type="button" id="fbs-rz-auto-pin" style="background:rgba(0,242,254,0.16);color:#00f2fe;border:1px solid rgba(0,242,254,0.35);border-radius:4px;padding:1px 6px;font-size:9.5px;font-weight:800;cursor:pointer;">↺ Auto-Heat</button>` : `<span style="color:#10b981;font-weight:700;">Auto-Heat Active</span>`}
+            </div>
+            ${rz.games.map((g) => {
+              const isPinned = g.eventId === rz.pinnedEventId;
+              const isSec = g.eventId === rz.secondaryEventId;
+              const tierColor =
+                g.heatTier === 'GOAL_TO_GO' || g.heatTier === 'RED_ZONE'
+                  ? '#ef4444'
+                  : g.heatTier === 'WITCHING_HOUR'
+                  ? '#a855f7'
+                  : g.gameState === 'in'
+                  ? '#00f2fe'
+                  : '#64748b';
+              return `
+                <div style="background:${isPinned ? 'rgba(0,242,254,0.08)' : 'rgba(255,255,255,0.025)'};border:1px solid ${isPinned ? 'rgba(0,242,254,0.5)' : isSec ? 'rgba(249,115,22,0.45)' : 'rgba(255,255,255,0.08)'};border-left:3px solid ${tierColor};border-radius:7px;padding:7px;">
+                  <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;font-weight:800;color:#fff;">
+                    <span style="display:flex;align-items:center;gap:4px;">
+                      ${g.away.logo ? `<img src="${esc(g.away.logo)}" alt="" style="width:14px;height:14px;object-fit:contain;">` : ''}
+                      ${esc(g.away.abbr)} <strong>${hide ? '•' : g.away.score}</strong>
+                      <span style="color:#64748b;font-weight:600;">@</span>
+                      ${g.home.logo ? `<img src="${esc(g.home.logo)}" alt="" style="width:14px;height:14px;object-fit:contain;">` : ''}
+                      ${esc(g.home.abbr)} <strong>${hide ? '•' : g.home.score}</strong>
+                    </span>
+                    <span style="font-size:9.5px;color:${tierColor};font-weight:800;">${esc(g.statusDetail)}</span>
+                  </div>
+                  ${g.gameState === 'in' ? renderRedZoneFieldBarHtml(g, hide) : ''}
+                  <div style="font-size:9.5px;color:#cbd5e1;margin-top:2px;line-height:1.3;">
+                    ${esc(g.situation?.downDistanceText || g.heatReason)}
+                  </div>
+                  ${g.lastPlay?.text ? `<div style="font-size:9px;color:#94a3b8;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(g.lastPlay.text)}">${esc(g.lastPlay.text)}</div>` : ''}
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px;gap:4px;">
+                    <span style="font-size:9px;color:#fbbf24;font-weight:700;">Heat ${g.heatScore} • ${g.winProbability.leverageIndex}x LI</span>
+                    <div style="display:flex;gap:4px;">
+                      <button type="button" data-rz-pin="${esc(g.eventId)}" style="background:${isPinned ? '#00f2fe' : 'rgba(255,255,255,0.08)'};color:${isPinned ? '#06070a' : '#e2e8f0'};border:0;border-radius:4px;padding:2px 6px;font-size:9.5px;font-weight:800;cursor:pointer;">${isPinned ? '📌 Pinned' : 'Pin A'}</button>
+                      <button type="button" data-rz-sec="${esc(g.eventId)}" style="background:${isSec ? '#f97316' : 'rgba(255,255,255,0.08)'};color:${isSec ? '#06070a' : '#cbd5e1'};border:0;border-radius:4px;padding:2px 6px;font-size:9.5px;font-weight:800;cursor:pointer;">${isSec ? '2-Box B' : '+2-Box'}</button>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      } else if (activeTab === 'rz_spotlight') {
+        const gA = rz.games.find((g) => g.eventId === rz.pinnedEventId) || rz.games[0];
+        const gB = rz.secondaryGame || rz.games.find((g) => g.eventId !== gA?.eventId);
+        const renderCompactBox = (g, label, accent) => {
+          if (!g) return '';
+          return `
+            <div style="background:rgba(255,255,255,0.03);border:1px solid ${accent};border-radius:8px;padding:8px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;font-weight:900;color:${accent};margin-bottom:4px;">
+                <span>${label} • ${esc(g.shortName)}</span>
+                <span>${esc(g.statusDetail)}</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:800;color:#fff;margin-bottom:4px;">
+                <span>${esc(g.away.displayName)} (${hide ? '•' : g.away.score})</span>
+                <span>${esc(g.home.displayName)} (${hide ? '•' : g.home.score})</span>
+              </div>
+              ${renderRedZoneFieldBarHtml(g, hide)}
+              <div style="font-size:10px;color:#e2e8f0;margin-top:4px;">${esc(g.situation?.downDistanceText || g.heatReason)}</div>
+              <div style="font-size:9.5px;color:#94a3b8;margin-top:3px;">${esc(g.lastPlay?.text || 'Awaiting next snap...')}</div>
+              <div style="margin-top:5px;border-top:1px solid rgba(255,255,255,0.08);padding-top:4px;display:flex;flex-direction:column;gap:2px;">
+                ${(g.leaders || []).map((l) => `<div style="font-size:9.5px;color:#cbd5e1;"><strong>${esc(l.category)}</strong>: ${esc(l.name)} (${esc(l.teamAbbr)}) — ${esc(l.statLine)}</div>`).join('')}
+              </div>
+            </div>
+          `;
+        };
+        railBodyHtml = `
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:10px;font-weight:800;color:#00f2fe;">${this.rzDoubleBoxMode ? '📺 DOUBLE-BOX COMPARE' : '🏈 SPOTLIGHT INSPECTOR'}</span>
+              <button type="button" id="fbs-rz-toggle-2box" style="background:rgba(145,70,255,0.22);color:#ddd6fe;border:1px solid rgba(145,70,255,0.45);border-radius:5px;padding:2px 8px;font-size:9.5px;font-weight:800;cursor:pointer;">
+                ${this.rzDoubleBoxMode ? 'Switch to Single Deep View' : '📺 Open Double-Box (A+B)'}
+              </button>
+            </div>
+            ${this.rzDoubleBoxMode
+              ? `${renderCompactBox(gA, 'BOX A', '#00f2fe')}${renderCompactBox(gB, 'BOX B', '#f97316')}`
+              : `
+                ${gA ? renderCompactBox(gA, 'PINNED SPOTLIGHT', '#00f2fe') : ''}
+                ${sa ? renderSvgHalfCourtShotChart(this.hudData, { compact: true, filterSide: this.shotChartFilter }) : ''}
+                ${sa ? renderWinProbWormChart(this.hudData) : ''}
+              `
+            }
+          </div>
+        `;
+      } else if (activeTab === 'rz_feed') {
+        const feed = rz.eventFeed || [];
+        railBodyHtml = `
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <div style="font-size:10px;font-weight:800;color:#fbbf24;">🔥 LIVE MULTI-GAME TD &amp; PLAY SWING FEED</div>
+            ${feed.length === 0
+              ? '<div style="padding:12px;color:#94a3b8;font-size:11px;">Monitoring all active NFL games for touchdowns, Red Zone entries, turnovers &amp; explosive plays...</div>'
+              : feed.map((ev) => `
+                  <div data-rz-pin="${esc(ev.eventId)}" style="cursor:pointer;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:7px;padding:7px;display:flex;gap:7px;align-items:flex-start;">
+                    ${ev.playerHeadshot ? `<img src="${esc(ev.playerHeadshot)}" alt="" style="width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">` : ''}
+                    <div style="min-width:0;flex:1;">
+                      <div style="display:flex;justify-content:space-between;font-size:9.5px;font-weight:800;">
+                        <span style="color:#fbbf24;">${esc(ev.badge)}</span>
+                        <span style="color:#00f2fe;">${hide ? '••-••' : esc(ev.scoreBadge)} • ${esc(ev.wpSwingText)}</span>
+                      </div>
+                      <div style="font-size:10.5px;font-weight:800;color:#fff;margin-top:2px;">${esc(ev.headline)}</div>
+                      <div style="font-size:9.5px;color:#94a3b8;margin-top:2px;line-height:1.3;">${esc(ev.detail)}</div>
+                    </div>
+                  </div>
+                `).join('')
+            }
+          </div>
+        `;
+      } else if (activeTab === 'rz_fantasy') {
+        const leaders = rz.fantasyLeaders || [];
+        const watch = this.rzWatchlist || [];
+        railBodyHtml = `
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:7px;padding:7px;">
+              <div style="font-size:10px;font-weight:800;color:#fbbf24;margin-bottom:5px;">⭐ MY FANTASY WATCHLIST (${watch.length})</div>
+              <div style="display:flex;gap:4px;margin-bottom:5px;">
+                <input id="fbs-rz-watch-input" type="text" placeholder="Track player (e.g. Kittle, Purdy)..." style="flex:1;background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.18);border-radius:5px;padding:4px 7px;color:#fff;font-size:10px;">
+                <button type="button" id="fbs-rz-watch-add" style="background:#f59e0b;color:#06070a;border:0;border-radius:5px;padding:4px 8px;font-size:10px;font-weight:800;cursor:pointer;">+Track</button>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                ${watch.map((w) => `<span style="background:rgba(245,158,11,0.2);color:#fde68a;border-radius:999px;padding:2px 7px;font-size:9.5px;font-weight:700;display:inline-flex;align-items:center;gap:4px;">${esc(w)} <button type="button" data-rz-unwatch="${esc(w)}" style="background:none;border:0;color:#fca5a5;cursor:pointer;font-weight:900;padding:0;">&times;</button></span>`).join('')}
+              </div>
+            </div>
+            <div style="font-size:10px;font-weight:800;color:#00f2fe;">🏆 LIVE SUNDAY FANTASY PPR PACE LEADERS</div>
+            ${leaders.map((p) => {
+              const isWatched = watch.some((w) => p.name.toLowerCase().includes(w.toLowerCase()));
+              return `
+                <div data-rz-pin="${esc(p.eventId)}" style="cursor:pointer;background:${isWatched ? 'rgba(245,158,11,0.14)' : 'rgba(255,255,255,0.03)'};border:1px solid ${p.isInRedZoneNow ? 'rgba(239,68,68,0.55)' : isWatched ? 'rgba(245,158,11,0.5)' : 'rgba(255,255,255,0.08)'};border-radius:7px;padding:6px 8px;display:flex;align-items:center;gap:8px;">
+                  <img src="${esc(p.headshot)}" alt="" style="width:28px;height:28px;border-radius:50%;object-fit:cover;" onerror="this.style.display='none'">
+                  <div style="min-width:0;flex:1;">
+                    <div style="display:flex;justify-content:space-between;font-size:10.5px;font-weight:800;color:#fff;">
+                      <span>${isWatched ? '⭐ ' : ''}${esc(p.name)} <small style="color:#94a3b8;">(${esc(p.teamAbbr)} • ${esc(p.category)})</small></span>
+                      <span style="color:#fbbf24;">${p.estimatedPpr} PPR</span>
+                    </div>
+                    <div style="font-size:9.5px;color:#cbd5e1;">${esc(p.matchup)} • ${esc(p.statLine)} ${p.isInRedZoneNow ? '<span style="color:#f87171;font-weight:900;">• 🔴 IN RZ</span>' : ''}</div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      }
+
+      this.rightRail.innerHTML = `
+        <div class="fbs-lbar-tabs">
+          <button type="button" class="fbs-lbar-tab ${activeTab === 'rz_radar' ? 'active' : ''}" data-rail-tab="rz_radar">🚨 RZ Radar</button>
+          <button type="button" class="fbs-lbar-tab ${activeTab === 'rz_spotlight' ? 'active' : ''}" data-rail-tab="rz_spotlight">🏈 Spotlight</button>
+          <button type="button" class="fbs-lbar-tab ${activeTab === 'rz_feed' ? 'active' : ''}" data-rail-tab="rz_feed">🔥 TD Feed</button>
+          <button type="button" class="fbs-lbar-tab ${activeTab === 'rz_fantasy' ? 'active' : ''}" data-rail-tab="rz_fantasy">🏆 Fantasy</button>
+        </div>
+        <div class="fbs-lbar-body">
+          ${railBodyHtml}
+        </div>
+      `;
+
+      // Bind RedZone tab switches & actions
+      this.rightRail.querySelectorAll('[data-rail-tab]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.activeRailTab = btn.getAttribute('data-rail-tab');
+          this.renderLBarRails();
+        });
+      });
+
+      this.rightRail.querySelectorAll('[data-rz-pin]').forEach((el) => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.setRedZonePins(el.getAttribute('data-rz-pin'), undefined);
+        });
+      });
+
+      this.rightRail.querySelectorAll('[data-rz-sec]').forEach((el) => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.rzDoubleBoxMode = true;
+          this.activeRailTab = 'rz_spotlight';
+          this.setRedZonePins(undefined, el.getAttribute('data-rz-sec'));
+        });
+      });
+
+      this.rightRail.querySelector('#fbs-rz-auto-pin')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.setRedZonePins(null, null);
+      });
+
+      this.rightRail.querySelector('#fbs-rz-toggle-2box')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.rzDoubleBoxMode = !this.rzDoubleBoxMode;
+        this.renderLBarRails();
+      });
+
+      this.rightRail.querySelector('#fbs-rz-watch-add')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const inp = this.rightRail.querySelector('#fbs-rz-watch-input');
+        const val = (inp?.value || '').trim();
+        if (val && !this.rzWatchlist.includes(val)) {
+          this.rzWatchlist.push(val);
+          saveRedZoneWatchlist(this.rzWatchlist);
+          this.renderLBarRails();
+        }
+      });
+
+      this.rightRail.querySelectorAll('[data-rz-unwatch]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const name = btn.getAttribute('data-rz-unwatch');
+          this.rzWatchlist = this.rzWatchlist.filter((w) => w !== name);
+          saveRedZoneWatchlist(this.rzWatchlist);
+          this.renderLBarRails();
+        });
+      });
+
+      // Bottom Rail: Multi-Game Score Strip + Active Cut-In Drive + Witching Hour/Fantasy Pulse
+      const top4 = rz.games.slice(0, 4);
+      const pinG = rz.games.find((g) => g.eventId === rz.pinnedEventId) || rz.games[0];
+      const topFantasy = rz.fantasyLeaders?.[0];
+      this.bottomRail.innerHTML = `
+        <div class="fbs-lbar-bottom-cell">
+          <div style="font-size:10px;font-weight:800;color:#f87171;margin-bottom:3px;">📺 MULTI-GAME SLATE STRIP (${rz.summaryCounts.liveGames} LIVE / ${rz.summaryCounts.finalGames} FINAL)</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px;font-size:10px;font-family:monospace;color:#e2e8f0;">
+            ${top4.map((g) => `<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${g.situation.isRedZone ? '🔴' : ''}${esc(g.away.abbr)} ${fmtScore(g.away.score, g.home.score)} ${esc(g.home.abbr)}</div>`).join('')}
+          </div>
+        </div>
+        <div class="fbs-lbar-bottom-cell">
+          <div style="font-size:10px;font-weight:800;color:#00f2fe;margin-bottom:3px;">🏈 SPOTLIGHT DRIVE: ${esc(pinG?.shortName || 'NFL REDZONE')}</div>
+          <div style="font-size:10.5px;color:#fff;font-weight:700;">${esc(pinG?.situation?.downDistanceText || pinG?.heatReason || 'Monitoring drives...')}</div>
+          <div style="font-size:9.5px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(pinG?.lastPlay?.driveDescription ? `Drive: ${pinG.lastPlay.driveDescription} • ` : '')}${esc(pinG?.lastPlay?.text || '')}</div>
+        </div>
+        <div class="fbs-lbar-bottom-cell">
+          <div style="font-size:10px;font-weight:800;color:#fbbf24;margin-bottom:3px;">🔮 WITCHING HOUR &amp; FANTASY PULSE</div>
+          <div style="font-size:10.5px;color:#e2e8f0;">${rz.summaryCounts.witchingHourCount > 0 ? `🚨 ${rz.summaryCounts.witchingHourCount} One-Score Q4 Clutch Games` : esc(rz.slatePhase.replace('_', ' '))}</div>
+          <div style="font-size:10px;color:#10b981;">${topFantasy ? `🏆 ${esc(topFantasy.name)} (${esc(topFantasy.teamAbbr)}): ${topFantasy.estimatedPpr} PPR` : 'All 14 Sunday Games Tracked'}</div>
+        </div>
+      `;
+    }
   }
 
   /**
@@ -1453,6 +1932,144 @@
     }
   });
 
+  /**
+   * Shared Multi-Game RedZone Slate Switcher Ribbon (renders directly above/inside scoreboard in Player & Modal)
+   */
+  function renderRedZoneSlateRibbon(ribbonEl, intel, onSelectGame) {
+    if (!ribbonEl) return;
+    const rz = intel?.redzoneIntel;
+    if (!rz || !Array.isArray(rz.games) || rz.games.length === 0) {
+      ribbonEl.style.display = 'none';
+      return;
+    }
+    ribbonEl.style.display = 'block';
+    const activeCtrl = window.fbsActiveSmartScreen;
+    const hideScores = Boolean(activeCtrl?.rzSpoilerHideScores);
+    const manualPin = activeCtrl?.rzManualPinId;
+
+    ribbonEl.innerHTML = `
+      <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);border-radius:10px;padding:8px 10px;margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px;">
+          <span style="font-size:11px;font-weight:900;color:#fca5a5;">🚨 ${esc(rz.slateHeadline)}</span>
+          <div style="display:flex;gap:6px;align-items:center;">
+            ${manualPin ? `<button type="button" data-rz-ribbon-auto="1" style="background:rgba(0,242,254,0.16);color:#00f2fe;border:1px solid rgba(0,242,254,0.35);border-radius:5px;padding:2px 8px;font-size:10px;font-weight:800;cursor:pointer;">↺ Auto-Heat</button>` : '<span style="font-size:10px;color:#10b981;font-weight:700;">Auto-Heat Spotlight</span>'}
+            <span style="font-size:10px;color:#94a3b8;">Click any game to load its full Boxscore, Rosters &amp; Field Map:</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin;">
+          ${rz.games.map((g) => {
+            const isPinned = g.eventId === rz.pinnedEventId;
+            const isRz = g.situation?.isRedZone;
+            const badge = isRz ? '🔴 RZ' : g.heatTier === 'WITCHING_HOUR' ? '🔮 CLUTCH' : g.gameState === 'in' ? 'LIVE' : g.gameState === 'post' ? 'FINAL' : 'PRE';
+            const scoreStr = hideScores ? '••-••' : `${g.away.score}-${g.home.score}`;
+            return `
+              <button type="button" data-rz-ribbon-pin="${esc(g.eventId)}" style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:6px 10px;border-radius:8px;cursor:pointer;background:${isPinned ? 'rgba(0,242,254,0.14)' : 'rgba(255,255,255,0.04)'};border:1px solid ${isPinned ? '#00f2fe' : isRz ? 'rgba(239,68,68,0.6)' : 'rgba(255,255,255,0.12)'};color:#fff;min-width:138px;text-align:left;">
+                <div style="display:flex;justify-content:space-between;width:100%;font-size:9.5px;font-weight:800;color:${isRz ? '#f87171' : '#94a3b8'};">
+                  <span>${badge}</span>
+                  <span>${esc(g.statusDetail)}</span>
+                </div>
+                <div style="font-size:11.5px;font-weight:900;color:${isPinned ? '#00f2fe' : '#fff'};">
+                  ${esc(g.away.abbr)} @ ${esc(g.home.abbr)} • ${scoreStr}
+                </div>
+                <div style="font-size:9px;color:#cbd5e1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;">
+                  ${esc(g.situation?.downDistanceText || g.heatReason)}
+                </div>
+              </button>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+
+    ribbonEl.querySelectorAll('[data-rz-ribbon-pin]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const eid = btn.getAttribute('data-rz-ribbon-pin');
+        if (window.fbsActiveSmartScreen) {
+          window.fbsActiveSmartScreen.setRedZonePins(eid, undefined);
+        }
+        if (typeof onSelectGame === 'function') onSelectGame(eid);
+      });
+    });
+
+    ribbonEl.querySelector('[data-rz-ribbon-auto]')?.addEventListener('click', () => {
+      if (window.fbsActiveSmartScreen) {
+        window.fbsActiveSmartScreen.setRedZonePins(null, null);
+      }
+      if (typeof onSelectGame === 'function') onSelectGame(null);
+    });
+  }
+
+  /**
+   * Shared Multi-Game RedZone Slate Dashboard block appended above the Spotlight Field Map & Four Pillars
+   */
+  function renderRedZoneMultiGameSectionHtml(intel) {
+    const rz = intel?.redzoneIntel;
+    if (!rz) return '';
+    const hide = Boolean(window.fbsActiveSmartScreen?.rzSpoilerHideScores);
+    const watch = window.fbsActiveSmartScreen?.rzWatchlist || loadRedZoneWatchlist();
+    return `
+      <div style="margin-bottom:14px;display:flex;flex-direction:column;gap:12px;">
+        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+            <div style="font-size:12px;font-weight:900;color:#fca5a5;">🚨 NFL REDZONE LIVE THREAT MATRIX (${rz.summaryCounts.totalGames} GAMES TRACKED)</div>
+            <div style="font-size:11px;color:#94a3b8;">🔴 ${rz.summaryCounts.inRedZoneCount} Red Zone • 🔮 ${rz.summaryCounts.witchingHourCount} Witching Hour • 🏈 ${rz.summaryCounts.liveGames} Live</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px;">
+            ${rz.games.slice(0, 8).map((g) => {
+              const isPin = g.eventId === rz.pinnedEventId;
+              const isRz = g.situation?.isRedZone;
+              return `
+                <div data-rz-card-pin="${esc(g.eventId)}" style="cursor:pointer;background:${isPin ? 'rgba(0,242,254,0.08)' : 'rgba(6,7,10,0.65)'};border:1px solid ${isPin ? '#00f2fe' : isRz ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.08)'};border-radius:8px;padding:8px;">
+                  <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:800;color:#fff;">
+                    <span>${esc(g.away.abbr)} ${hide ? '•' : g.away.score} @ ${esc(g.home.abbr)} ${hide ? '•' : g.home.score}</span>
+                    <span style="color:${isRz ? '#f87171' : '#00f2fe'};font-size:10px;">${esc(g.statusDetail)}</span>
+                  </div>
+                  ${g.gameState === 'in' ? renderRedZoneFieldBarHtml(g, hide) : ''}
+                  <div style="font-size:10px;color:#cbd5e1;margin-top:3px;">${esc(g.heatReason)}</div>
+                  <div style="font-size:9.5px;color:#94a3b8;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(g.lastPlay?.text || (g.odds?.details ? `Line: ${g.odds.details}` : g.venue))}</div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;">
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px;">
+            <div style="font-size:11.5px;font-weight:900;color:#fbbf24;margin-bottom:6px;">🔥 MULTI-GAME TD &amp; BIG PLAY FEED</div>
+            ${(rz.eventFeed || []).length === 0
+              ? '<div style="font-size:11px;color:#94a3b8;">Waiting for live scoring drives &amp; Red Zone entries...</div>'
+              : (rz.eventFeed || []).slice(0, 5).map((f) => `
+                  <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:10.5px;">
+                    <div style="display:flex;justify-content:space-between;font-weight:800;">
+                      <span style="color:#fbbf24;">${esc(f.badge)} • ${esc(f.matchup)}</span>
+                      <span style="color:#00f2fe;">${hide ? '••-••' : esc(f.scoreBadge)}</span>
+                    </div>
+                    <div style="color:#e2e8f0;margin-top:2px;">${esc(f.detail)}</div>
+                  </div>
+                `).join('')
+            }
+          </div>
+
+          <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px;">
+            <div style="font-size:11.5px;font-weight:900;color:#00f2fe;margin-bottom:6px;">🏆 SUNDAY FANTASY PPR PACE LEADERS</div>
+            ${(rz.fantasyLeaders || []).slice(0, 5).map((p) => {
+              const isWatched = watch.some((w) => p.name.toLowerCase().includes(w.toLowerCase()));
+              return `
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:10.5px;">
+                  <div>
+                    <strong style="color:${isWatched ? '#fbbf24' : '#fff'};">${isWatched ? '⭐ ' : ''}${esc(p.name)}</strong> <small style="color:#94a3b8;">(${esc(p.teamAbbr)} • ${esc(p.category)})</small>
+                    <div style="font-size:9.5px;color:#cbd5e1;">${esc(p.statLine)} ${p.isInRedZoneNow ? '<span style="color:#f87171;font-weight:800;">• 🔴 IN RZ</span>' : ''}</div>
+                  </div>
+                  <strong style="color:#fbbf24;">${p.estimatedPpr} PPR</strong>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   window.FreeBallStatsSmartScreen = {
     SmartScreenController,
     renderSvgHalfCourtShotChart,
@@ -1460,6 +2077,9 @@
     renderOnCourt5v5AndStints,
     renderWinProbWormChart,
     renderSynergyPlayTypes,
+    renderRedZoneFieldBarHtml,
+    renderRedZoneSlateRibbon,
+    renderRedZoneMultiGameSectionHtml,
     saveActiveStreamForDock,
     mountResearchLabSmartDock,
   };

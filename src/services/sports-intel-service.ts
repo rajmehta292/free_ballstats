@@ -7,6 +7,11 @@ import {
   buildSvgAvatarDataUri,
   type UniversalSportDeepAnalytics,
 } from './multi-sport-analytics-service.js';
+import {
+  redZoneIntelService,
+  isRedZoneStream,
+  type RedZoneSlatePayload,
+} from './redzone-intel-service.js';
 
 export interface AthleteInfo {
   id: string;
@@ -102,6 +107,7 @@ export interface SportsGamecastIntel {
   };
   basketballAnalytics?: BasketballGameDeepAnalytics;
   sportAnalytics?: UniversalSportDeepAnalytics;
+  redzoneIntel?: RedZoneSlatePayload;
 }
 
 export interface AthleteProfileDetails {
@@ -140,7 +146,51 @@ class SportsIntelService {
     });
   }
 
-  async getGamecastIntel(stream: StreamItem): Promise<SportsGamecastIntel> {
+  async getGamecastIntel(
+    stream: StreamItem,
+    options: { pinnedEventId?: string; secondaryEventId?: string } = {}
+  ): Promise<SportsGamecastIntel> {
+    if (isRedZoneStream(stream)) {
+      const rzSlate = await redZoneIntelService.getRedZoneSlate({
+        pinnedEventId: options.pinnedEventId,
+        secondaryEventId: options.secondaryEventId,
+        eventSummaryFetcher: async (rawEvent, newsArticles) => {
+          const comps = rawEvent.competitions?.[0]?.competitors || [];
+          const awayC = comps.find((c: any) => c.homeAway === 'away') || comps[1] || comps[0];
+          const homeC = comps.find((c: any) => c.homeAway === 'home') || comps[0] || comps[1];
+          const syntheticStream: StreamItem = {
+            ...stream,
+            name: rawEvent.name || 'NFL Spotlight',
+            category: 'football',
+            league: 'NFL',
+            team1: { name: awayC?.team?.displayName || 'Away', logo: awayC?.team?.logo || '' },
+            team2: { name: homeC?.team?.displayName || 'Home', logo: homeC?.team?.logo || '' },
+          };
+          return this.buildGamecastIntelFromEvent(syntheticStream, 'football/nfl', rawEvent, newsArticles);
+        },
+      });
+
+      if (rzSlate.spotlightIntel) {
+        return {
+          ...rzSlate.spotlightIntel,
+          stream_key: stream.stream_key,
+          redzoneIntel: rzSlate,
+        };
+      }
+
+      const fallback = this.generateComprehensiveFallback({
+        ...stream,
+        name: 'NFL RedZone Multi-Game Command',
+        team1: { name: 'AFC Spotlight', logo: '' },
+        team2: { name: 'NFC Spotlight', logo: '' },
+      });
+      return {
+        ...fallback,
+        stream_key: stream.stream_key,
+        redzoneIntel: rzSlate,
+      };
+    }
+
     const cached = this.cache.get(stream.stream_key);
     if (cached) return cached;
 
@@ -361,7 +411,7 @@ class SportsIntelService {
         c1Mascot.includes(t2Raw) || t2Raw.includes(c1Mascot)
       );
 
-      if ((team1Matches && team2Matches) || evName.includes(t1Raw) || evName.includes(t2Raw)) {
+      if ((team1Matches && team2Matches) || (t1Raw.length >= 3 && evName.includes(t1Raw)) || (t2Raw.length >= 3 && evName.includes(t2Raw))) {
         matchedEvent = event;
         break;
       }
@@ -386,6 +436,19 @@ class SportsIntelService {
     if (!matchedEvent) {
       return null;
     }
+
+    return this.buildGamecastIntelFromEvent(stream, sportPath, matchedEvent, newsArticles);
+  }
+
+  public async buildGamecastIntelFromEvent(
+    stream: StreamItem,
+    sportPath: string,
+    matchedEvent: any,
+    newsArticles: any[] = []
+  ): Promise<SportsGamecastIntel> {
+    const streamName = (stream.name || '').toLowerCase();
+    const t1Raw = (stream.team1?.name || streamName.split(/vs|at/i)[0] || '').toLowerCase().trim();
+    const t2Raw = (stream.team2?.name || streamName.split(/vs|at/i)[1] || '').toLowerCase().trim();
 
     // Fetch deep summary (box score, players, drives, leaders)
     let summary: any = {};
