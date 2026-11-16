@@ -327,6 +327,7 @@
           <h3>🔄 Starters vs. Bench Rotation Splits</h3>
           <span class="badge-mini">LINEUP DEPTH</span>
         </div>
+        <div class="table-responsive">
         <table class="bball-table compact-table">
           <thead>
             <tr>
@@ -345,8 +346,8 @@
             </tr>
             <tr>
               <td>Bench Points (2nd Unit)</td>
-              <td class="mono-cell font-bold">${u1.benchPts} PTS (${u1.benchScoringSharePct}%)</td>
-              <td class="mono-cell font-bold">${u2.benchPts} PTS (${u2.benchScoringSharePct}%)</td>
+              <td class="mono-cell font-bold">${u1.benchPts} (${u1.benchScoringSharePct}%)</td>
+              <td class="mono-cell font-bold">${u2.benchPts} (${u2.benchScoringSharePct}%)</td>
               <td><span class="edge-pill">${u1.benchPts >= u2.benchPts ? t1.abbreviation : t2.abbreviation}</span></td>
             </tr>
             <tr>
@@ -363,14 +364,14 @@
             </tr>
             <tr>
               <td>Starters REB / AST</td>
-              <td class="mono-cell">${u1.startersReb} R / ${u1.startersAst} A</td>
-              <td class="mono-cell">${u2.startersReb} R / ${u2.startersAst} A</td>
+              <td class="mono-cell">${u1.startersReb}R / ${u1.startersAst}A</td>
+              <td class="mono-cell">${u2.startersReb}R / ${u2.startersAst}A</td>
               <td><span class="edge-pill">${u1.startersReb + u1.startersAst >= u2.startersReb + u2.startersAst ? t1.abbreviation : t2.abbreviation}</span></td>
             </tr>
             <tr>
               <td>Bench REB / AST</td>
-              <td class="mono-cell">${u1.benchReb} R / ${u1.benchAst} A</td>
-              <td class="mono-cell">${u2.benchReb} R / ${u2.benchAst} A</td>
+              <td class="mono-cell">${u1.benchReb}R / ${u1.benchAst}A</td>
+              <td class="mono-cell">${u2.benchReb}R / ${u2.benchAst}A</td>
               <td><span class="edge-pill">${u1.benchReb + u1.benchAst >= u2.benchReb + u2.benchAst ? t1.abbreviation : t2.abbreviation}</span></td>
             </tr>
             <tr>
@@ -381,6 +382,7 @@
             </tr>
           </tbody>
         </table>
+        </div>
       `;
     }
 
@@ -432,17 +434,13 @@
           shotChartEl.innerHTML = `
             <div class="panel-title-row">
               <h3>🎯 CourtOptix 6-Zone Spatial Shot Chart &amp; xEFG%</h3>
-              <div class="segmented-control" id="lab-shot-chart-filter">
-                <button type="button" class="seg-btn ${activeShotFilter === 'all' ? 'active' : ''}" data-filter="all">All</button>
-                <button type="button" class="seg-btn ${activeShotFilter === 'team1' ? 'active' : ''}" data-filter="team1">${escapeHtml(t1.abbreviation)}</button>
-                <button type="button" class="seg-btn ${activeShotFilter === 'team2' ? 'active' : ''}" data-filter="team2">${escapeHtml(t2.abbreviation)}</button>
-              </div>
+              <span class="badge-mini">INTERACTIVE ZONES</span>
             </div>
-            ${window.FreeBallStatsSmartScreen.renderSvgHalfCourtShotChart(game, { filterTeam: activeShotFilter })}
+            ${window.FreeBallStatsSmartScreen.renderSvgHalfCourtShotChart(game, { filterSide: activeShotFilter })}
           `;
-          shotChartEl.querySelectorAll('#lab-shot-chart-filter .seg-btn').forEach(btn => {
+          shotChartEl.querySelectorAll('[data-sc-filter]').forEach((btn) => {
             btn.addEventListener('click', () => {
-              activeShotFilter = btn.getAttribute('data-filter') || 'all';
+              activeShotFilter = btn.getAttribute('data-sc-filter') || 'all';
               drawLabShotChart();
             });
           });

@@ -698,6 +698,43 @@ test('StreamFree API Streamer Suite', async (t) => {
     assert.ok(Object.keys(data.tickers).length > 0, 'At least some active catalog streams must have live tickers hydrated');
   });
 
+  await t.test('Research queries answer MVP Race, Team Records, and Player Aliases (Jokic vs SGA), and ORL pre-game never shows OKC players', async () => {
+    const mvpRes = await server.inject({ method: 'GET', url: '/api/v1/basketball/query?q=' + encodeURIComponent('who is the leaders of the mvp race') });
+    assert.equal(mvpRes.statusCode, 200);
+    const mvp = mvpRes.json();
+    assert.equal(mvp.type, 'mvp_race');
+    assert.ok(mvp.headline.includes('MVP Race Ladder'));
+    assert.ok(mvp.tableHeaders.includes('MVP IDX'));
+
+    const sgaCompRes = await server.inject({ method: 'GET', url: '/api/v1/basketball/query?q=' + encodeURIComponent('jokic vs sga') });
+    assert.equal(sgaCompRes.statusCode, 200);
+    const comp = sgaCompRes.json();
+    assert.equal(comp.type, 'comparison');
+    assert.ok(comp.headline.includes('Shai Gilgeous-Alexander'));
+
+    const teamRes = await server.inject({ method: 'GET', url: '/api/v1/basketball/query?q=' + encodeURIComponent('How are the Celtics doing?') });
+    assert.equal(teamRes.statusCode, 200);
+    const team = teamRes.json();
+    assert.equal(team.type, 'team_scouting');
+    assert.ok(team.headline.includes('Boston Celtics'));
+
+    const orlPre = basketballResearchService.buildGameAnalyticsFromPlayers({
+      eventId: 'pre-bos-orl',
+      status: 'Scheduled',
+      detail: '11/16 - 7:00 PM EST',
+      isLive: false,
+      gameState: 'pre',
+      venue: 'Kia Center',
+      broadcast: 'NBA League Pass',
+      team1Meta: { id: '2', name: 'Boston Celtics', abbr: 'BOS', logo: '', score: '0' },
+      team2Meta: { id: '19', name: 'Orlando Magic', abbr: 'ORL', logo: '', score: '0' },
+      rawPlayers1: [],
+      rawPlayers2: [],
+    });
+    assert.ok(orlPre.onCourtLineup.team2Five.some((p) => p.name.includes('Paolo Banchero') || p.name.includes('Franz Wagner')));
+    assert.ok(!orlPre.onCourtLineup.team2Five.some((p) => p.name.includes('Gilgeous-Alexander')), 'ORL pre-game must never show OKC players');
+  });
+
   await server.close();
 });
 

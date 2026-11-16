@@ -96,11 +96,11 @@
     };
 
     const filterButtonsHtml = `
-      <div class="fbs-shotchart-filters" style="display:flex;gap:4px;">
-        <button type="button" class="fbs-sc-filter-btn ${filterSide === 'all' ? 'active' : ''}" data-sc-filter="all">All</button>
-        <button type="button" class="fbs-sc-filter-btn ${filterSide === 'team1' ? 'active' : ''}" data-sc-filter="team1">${esc(t1Abbr)}</button>
-        <button type="button" class="fbs-sc-filter-btn ${filterSide === 'team2' ? 'active' : ''}" data-sc-filter="team2">${esc(t2Abbr)}</button>
-        <button type="button" class="fbs-sc-filter-btn ${filterSide === 'zones' ? 'active' : ''}" data-sc-filter="zones">Zones</button>
+      <div class="fbs-shotchart-filters" style="display:flex;gap:4px;flex-wrap:wrap;">
+        <button type="button" class="fbs-sc-filter-btn ${filterSide === 'all' ? 'active' : ''}" data-sc-filter="all">All Shots</button>
+        <button type="button" class="fbs-sc-filter-btn ${filterSide === 'team1' ? 'active' : ''}" data-sc-filter="team1">${esc(t1Abbr)} Only</button>
+        <button type="button" class="fbs-sc-filter-btn ${filterSide === 'team2' ? 'active' : ''}" data-sc-filter="team2">${esc(t2Abbr)} Only</button>
+        <button type="button" class="fbs-sc-filter-btn ${filterSide === 'zones' ? 'active' : ''}" data-sc-filter="zones">Zones Breakdown</button>
       </div>
     `;
 
@@ -539,21 +539,23 @@
             .join('');
 
     const zoneLabelsSvg = [
-      { key: 'restricted_area', x: 250, y: 74 },
-      { key: 'paint_non_ra', x: 250, y: 148 },
-      { key: 'midrange', x: 135, y: 170 },
-      { key: 'corner_3_left', x: 30, y: 95 },
-      { key: 'corner_3_right', x: 470, y: 95 },
-      { key: 'above_break_3', x: 250, y: 315 },
+      { key: 'restricted_area', shortLbl: 'AT RIM', friendlyName: 'At Rim (Restricted Area)', x: 250, y: 74 },
+      { key: 'paint_non_ra', shortLbl: 'PAINT', friendlyName: 'In the Paint (Floaters)', x: 250, y: 148 },
+      { key: 'midrange', shortLbl: 'MID-RNG', friendlyName: 'Mid-Range Jumper', x: 120, y: 175 },
+      { key: 'corner_3_left', shortLbl: 'L COR 3', friendlyName: 'Left Corner 3PT', x: 35, y: 90 },
+      { key: 'corner_3_right', shortLbl: 'R COR 3', friendlyName: 'Right Corner 3PT', x: 465, y: 90 },
+      { key: 'above_break_3', shortLbl: 'ARC 3PT', friendlyName: 'Top / Wing 3PT', x: 250, y: 315 },
     ]
       .map((pos) => {
         const z = zMap[pos.key];
         if (!z || z.fgm === undefined) return '';
         const sign = z.deltaVsLeague >= 0 ? '+' : '';
         return `<g transform="translate(${pos.x}, ${pos.y})">
-          <rect x="-42" y="-16" width="84" height="32" rx="6" fill="rgba(7, 9, 14, 0.84)" stroke="rgba(255,255,255,0.18)" stroke-width="1"/>
-          <text x="0" y="-2" text-anchor="middle" fill="#ffffff" font-size="10" font-weight="800">${z.fgm}/${z.fga} (${z.fgPct}%)</text>
-          <text x="0" y="10" text-anchor="middle" fill="${z.deltaVsLeague >= 0 ? '#10b981' : '#f87171'}" font-size="8.5" font-weight="700">${sign}${z.deltaVsLeague}% vs Lg</text>
+          <rect x="-44" y="-20" width="88" height="40" rx="6" fill="rgba(7, 9, 14, 0.88)" stroke="${z.deltaVsLeague >= 0 ? 'rgba(16,185,129,0.55)' : 'rgba(248,113,113,0.45)'}" stroke-width="1.2"/>
+          <text x="0" y="-8" text-anchor="middle" fill="#94a3b8" font-size="7.5" font-weight="800">${pos.shortLbl}</text>
+          <text x="0" y="3" text-anchor="middle" fill="#ffffff" font-size="9.5" font-weight="800">${z.fgm}/${z.fga} (${z.fgPct}%)</text>
+          <text x="0" y="14" text-anchor="middle" fill="${z.deltaVsLeague >= 0 ? '#10b981' : '#f87171'}" font-size="8" font-weight="700">${sign}${z.deltaVsLeague}% vs NBA</text>
+          <title>${pos.friendlyName}: ${z.fgm}/${z.fga} (${z.fgPct}% FG, ${sign}${z.deltaVsLeague}% vs NBA Average)</title>
         </g>`;
       })
       .join('');
@@ -561,6 +563,38 @@
     const raZone = zMap['restricted_area'] || { deltaVsLeague: 2 };
     const paintZone = zMap['paint_non_ra'] || { deltaVsLeague: 0 };
     const ab3Zone = zMap['above_break_3'] || { deltaVsLeague: 1 };
+
+    const readableZoneMeta = [
+      { key: 'restricted_area', title: '🎯 At Rim (0-4 ft)' },
+      { key: 'paint_non_ra', title: '🖌️ Non-Rim Paint' },
+      { key: 'midrange', title: '📏 Mid-Range' },
+      { key: 'corner_3_left', title: '📐 Left Corner 3' },
+      { key: 'corner_3_right', title: '📐 Right Corner 3' },
+      { key: 'above_break_3', title: '🏹 Above-the-Break 3' },
+    ];
+    const zoneBreakdownCardsHtml =
+      compact || zones.length === 0
+        ? ''
+        : `
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:6px;margin-top:8px;">
+            ${readableZoneMeta
+              .map((zm) => {
+                const z = zMap[zm.key];
+                if (!z || z.fga === undefined) return '';
+                const hot = z.deltaVsLeague >= 0;
+                return `
+                  <div style="background:rgba(255,255,255,0.03);border:1px solid ${hot ? 'rgba(16,185,129,0.28)' : 'rgba(248,113,113,0.25)'};border-radius:7px;padding:6px 8px;font-size:10px;">
+                    <div style="font-weight:800;color:#e2e8f0;">${zm.title}</div>
+                    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:3px;">
+                      <strong style="color:#fff;font-size:11px;">${z.fgm}/${z.fga} (${z.fgPct}%)</strong>
+                      <span style="font-weight:800;color:${hot ? '#10b981' : '#f87171'};">${hot ? '+' : ''}${z.deltaVsLeague}% vs Avg</span>
+                    </div>
+                  </div>
+                `;
+              })
+              .join('')}
+          </div>
+        `;
 
     return `
       <div class="fbs-shotchart-wrap">
@@ -593,10 +627,11 @@
           ${zoneLabelsSvg}
         </svg>
 
-        <div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#94a3b8;margin-top:6px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#94a3b8;margin-top:6px;flex-wrap:wrap;gap:6px;">
           <span><strong style="color:#00f2fe;">●</strong> ${esc(t1Abbr)} Make &nbsp; <strong style="color:#f97316;">●</strong> ${esc(t2Abbr)} Make &nbsp; <strong style="color:#ef4444;">✕</strong> Miss</span>
-          <span>Zone Pills: <strong>${esc(activeTeamAbbr)}</strong> FG% &amp; Delta vs Avg</span>
+          <span>Court Heat = <strong>${esc(activeTeamAbbr)}</strong> FG% vs NBA Average (<span style="color:#10b981;">Green = Hot</span> • <span style="color:#f87171;">Red = Cold</span>)</span>
         </div>
+        ${zoneBreakdownCardsHtml}
       </div>
     `;
   }
@@ -2019,36 +2054,83 @@
 
   /**
    * Mount Persistent Smart Mini-Player Dock inside /basketball.html (Research Lab)
+   * Includes a live Stream Switcher dropdown so users can switch to any live broadcast directly.
    */
-  function mountResearchLabSmartDock() {
+  async function mountResearchLabSmartDock(forceOpen = false) {
     const params = new URLSearchParams(window.location.search);
     const dockParam = params.get('dock');
     const saved = getSavedDockStream();
-    const activeStreamKey = dockParam || saved?.stream_key;
+    let activeStreamKey = dockParam || saved?.stream_key;
+    let streamCategory = saved?.category || 'basketball';
+    let streamTitle = saved?.name || activeStreamKey || 'Live Stream';
+
+    let availableStreams = [];
+    try {
+      const sRes = await fetch('/api/v1/streams');
+      if (sRes.ok) {
+        const sJson = await sRes.json();
+        availableStreams = sJson.streams || [];
+      }
+    } catch {}
+
+    // If explicitly requested or launching without a saved key, default to the top live Basketball stream
+    if (!activeStreamKey && forceOpen) {
+      const preferred = availableStreams.find((s) => s.category === 'basketball') || availableStreams[0];
+      if (!preferred) return;
+      activeStreamKey = preferred.stream_key;
+      streamCategory = preferred.category;
+      streamTitle = preferred.name;
+      saveActiveStreamForDock(preferred);
+    }
     if (!activeStreamKey) return;
 
-    const streamCategory = saved?.category || 'basketball';
-    const streamTitle = saved?.name || activeStreamKey;
+    const matchedCurrent = availableStreams.find((s) => s.stream_key === activeStreamKey);
+    if (matchedCurrent) {
+      streamCategory = matchedCurrent.category;
+      streamTitle = matchedCurrent.name;
+    }
 
-    if (document.getElementById('fbs-research-smart-dock')) return;
+    const existingDock = document.getElementById('fbs-research-smart-dock');
+    if (existingDock) {
+      if (forceOpen) existingDock.classList.remove('minimized');
+      return;
+    }
+
+    const buildStreamOptionsHtml = (selectedKey) => {
+      const bball = availableStreams.filter((s) => s.category === 'basketball');
+      const others = availableStreams.filter((s) => s.category !== 'basketball');
+      const opt = (s) =>
+        `<option value="${esc(s.stream_key)}" data-cat="${esc(s.category)}" ${s.stream_key === selectedKey ? 'selected' : ''}>${esc(s.name)} (${esc((s.category || '').toUpperCase())})</option>`;
+      let html = '';
+      if (bball.length) html += `<optgroup label="🏀 Basketball">${bball.map(opt).join('')}</optgroup>`;
+      if (others.length) html += `<optgroup label="🌐 Other Live Broadcasts">${others.map(opt).join('')}</optgroup>`;
+      if (!html) html = `<option value="${esc(selectedKey)}" data-cat="${esc(streamCategory)}" selected>${esc(streamTitle)}</option>`;
+      return html;
+    };
 
     const dockEl = document.createElement('div');
     dockEl.id = 'fbs-research-smart-dock';
     dockEl.className = 'fbs-research-smart-dock';
     dockEl.innerHTML = `
       <div class="fbs-rsd-header">
-        <div style="display:flex;align-items:center;gap:6px;overflow:hidden;">
-          <span class="dot" style="width:7px;height:7px;border-radius:50%;background:#ef4444;display:inline-block;"></span>
+        <div style="display:flex;align-items:center;gap:6px;overflow:hidden;flex:1;min-width:0;">
+          <span class="dot" style="width:7px;height:7px;border-radius:50%;background:#ef4444;display:inline-block;flex-shrink:0;"></span>
           <span style="font-size:11px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" id="fbs-rsd-title">${esc(streamTitle)}</span>
         </div>
-        <div style="display:flex;gap:4px;">
+        <div style="display:flex;gap:4px;flex-shrink:0;">
           <button type="button" class="fbs-rsd-btn" id="fbs-rsd-expand" title="Open Full Smart Screen Player">⛶</button>
           <button type="button" class="fbs-rsd-btn" id="fbs-rsd-minimize" title="Minimize / Restore Mini-Player">_</button>
           <button type="button" class="fbs-rsd-btn" id="fbs-rsd-close" title="Close Dock">&times;</button>
         </div>
       </div>
+      <div style="padding:5px 8px;background:#090b12;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;gap:6px;">
+        <span style="font-size:9.5px;font-weight:800;color:#94a3b8;white-space:nowrap;">📺 Switch:</span>
+        <select id="fbs-rsd-stream-select" style="flex:1;min-width:0;background:#131624;color:#e2e8f0;border:1px solid rgba(255,255,255,0.16);border-radius:5px;padding:3px 6px;font-size:10.5px;font-weight:700;outline:none;">
+          ${buildStreamOptionsHtml(activeStreamKey)}
+        </select>
+      </div>
       <div class="fbs-rsd-video-wrap" id="fbs-rsd-video-wrap">
-        <iframe src="/embed/${encodeURIComponent(streamCategory)}/${encodeURIComponent(activeStreamKey)}?hud=0" allow="autoplay; fullscreen" allowfullscreen style="width:100%;height:100%;border:0;"></iframe>
+        <iframe id="fbs-rsd-iframe" src="/embed/${encodeURIComponent(streamCategory)}/${encodeURIComponent(activeStreamKey)}?hud=0" allow="autoplay; fullscreen" allowfullscreen style="width:100%;height:100%;border:0;"></iframe>
       </div>
       <div class="fbs-rsd-telemetry" id="fbs-rsd-telemetry">
         <span>Loading live Smart Screen telemetry...</span>
@@ -2057,7 +2139,9 @@
 
     document.body.appendChild(dockEl);
 
+    let dockPollId = null;
     document.getElementById('fbs-rsd-close')?.addEventListener('click', () => {
+      if (dockPollId) clearInterval(dockPollId);
       dockEl.remove();
     });
 
@@ -2079,23 +2163,44 @@
           const telEl = document.getElementById('fbs-rsd-telemetry');
           if (telEl) {
             const p1 = hud.sportAnalytics?.fourPillars?.[0];
+            const midLabel = p1 ? (p1.code || p1.shortLabel || p1.label) : 'eFG%';
             const midText = p1
-              ? `${p1.shortLabel}: ${p1.team1Value} / ${p1.team2Value}`
-              : `eFG: ${t1.efgPct || 55}%/${t2.efgPct || 52}%`;
+              ? `${midLabel}: ${p1.team1Value} / ${p1.team2Value}`
+              : `eFG%: ${t1.efgPct || 55}% / ${t2.efgPct || 52}%`;
             telEl.innerHTML = `
-              <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
+              <div style="display:flex;justify-content:space-between;align-items:center;width:100%;gap:6px;">
                 <strong>${esc(t1.abbreviation || 'TM1')} ${t1.score ?? 0} - ${t2.score ?? 0} ${esc(t2.abbreviation || 'TM2')}</strong>
-                <span style="color:#00f2fe;">${esc(midText)}</span>
-                <span style="color:#fbbf24;">${hud.leverageIndex || 1.8}x LI</span>
+                <span style="color:#00f2fe;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(midText)}</span>
+                <span style="color:#fbbf24;flex-shrink:0;">${hud.leverageIndex || 1.8}x LI</span>
               </div>
             `;
           }
         }
       } catch (e) {}
     };
+
+    document.getElementById('fbs-rsd-stream-select')?.addEventListener('change', (e) => {
+      const sel = e.target;
+      const newKey = sel.value;
+      const picked = availableStreams.find((s) => s.stream_key === newKey);
+      activeStreamKey = newKey;
+      streamCategory = picked?.category || sel.selectedOptions?.[0]?.getAttribute('data-cat') || 'basketball';
+      streamTitle = picked?.name || newKey;
+      saveActiveStreamForDock({ stream_key: activeStreamKey, category: streamCategory, name: streamTitle });
+      const titleEl = document.getElementById('fbs-rsd-title');
+      if (titleEl) titleEl.textContent = streamTitle;
+      const iframeEl = document.getElementById('fbs-rsd-iframe');
+      if (iframeEl) {
+        iframeEl.src = `/embed/${encodeURIComponent(streamCategory)}/${encodeURIComponent(activeStreamKey)}?hud=0`;
+      }
+      refreshDockHud();
+    });
+
     refreshDockHud();
-    setInterval(refreshDockHud, 15000);
+    dockPollId = setInterval(refreshDockHud, 15000);
   }
+
+  window.launchResearchSmartDock = () => mountResearchLabSmartDock(true);
 
   document.addEventListener('keydown', (e) => {
     const tag = (e.target?.tagName || '').toLowerCase();

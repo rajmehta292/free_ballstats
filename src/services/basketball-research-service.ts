@@ -1639,27 +1639,53 @@ class BasketballResearchService {
         { starter: false, id: '5105565', name: 'Stephon Castle', jersey: '5', pos: 'PG', stats: ['25', '13', '5-11', '1-4', '2-3', '4', '4', '2', '1', '0', '1', '3', '2', '+2'] },
         { starter: false, id: '4397003', name: 'Keldon Johnson', jersey: '0', pos: 'SF', stats: ['22', '11', '4-9', '1-4', '2-2', '5', '2', '1', '1', '0', '1', '4', '2', '+1'] },
       ];
+    } else if (low.includes('magic') || low.includes('orlando') || low.includes('orl')) {
+      specs = [
+        { starter: true, id: '4432573', name: 'Paolo Banchero', jersey: '5', pos: 'PF', stats: ['35', '26', '9-19', '2-6', '6-8', '8', '5', '3', '1', '1', '2', '6', '2', '+6'] },
+        { starter: true, id: '4566434', name: 'Franz Wagner', jersey: '22', pos: 'SF', stats: ['34', '24', '9-18', '2-6', '4-5', '6', '5', '2', '2', '0', '1', '5', '2', '+5'] },
+        { starter: true, id: '4432165', name: 'Jalen Suggs', jersey: '4', pos: 'PG', stats: ['31', '16', '6-13', '3-7', '1-2', '4', '4', '2', '2', '1', '1', '3', '3', '+4'] },
+        { starter: true, id: '4277847', name: 'Wendell Carter Jr.', jersey: '34', pos: 'C', stats: ['29', '12', '5-9', '1-3', '1-2', '9', '3', '1', '1', '1', '3', '6', '2', '+3'] },
+        { starter: true, id: '2581018', name: 'Kentavious Caldwell-Pope', jersey: '3', pos: 'SG', stats: ['29', '10', '3-8', '2-6', '2-2', '3', '2', '1', '2', '0', '0', '3', '2', '+2'] },
+        { starter: false, id: '4432807', name: 'Anthony Black', jersey: '0', pos: 'PG', stats: ['22', '9', '4-8', '1-3', '0-0', '3', '4', '1', '1', '0', '1', '2', '2', '+1'] },
+        { starter: false, id: '4278067', name: 'Jonathan Isaac', jersey: '1', pos: 'PF', stats: ['18', '7', '3-6', '1-2', '0-0', '5', '1', '0', '1', '2', '2', '3', '1', '+3'] },
+      ];
+    } else if (low.includes('rocket') || low.includes('houston') || low.includes('hou')) {
+      specs = [
+        { starter: true, id: '4871144', name: 'Alperen Sengun', jersey: '28', pos: 'C', stats: ['33', '21', '8-15', '0-1', '5-7', '11', '6', '3', '1', '1', '4', '7', '2', '+8'] },
+        { starter: true, id: '4684740', name: 'Amen Thompson', jersey: '1', pos: 'SG', stats: ['33', '18', '7-12', '1-2', '3-4', '8', '5', '2', '2', '1', '2', '6', '2', '+9'] },
+        { starter: true, id: '4432639', name: 'Jabari Smith Jr.', jersey: '10', pos: 'PF', stats: ['31', '14', '5-11', '2-6', '2-2', '7', '2', '1', '1', '1', '2', '5', '2', '+6'] },
+        { starter: true, id: '4437244', name: 'Jalen Green', jersey: '4', pos: 'SG', stats: ['33', '22', '8-18', '3-9', '3-4', '4', '4', '2', '1', '0', '1', '3', '2', '+6'] },
+        { starter: true, id: '2991230', name: 'Fred VanVleet', jersey: '5', pos: 'PG', stats: ['34', '15', '5-13', '3-8', '2-2', '4', '7', '1', '2', '0', '0', '4', '2', '+7'] },
+        { starter: false, id: '4278075', name: 'Tari Eason', jersey: '17', pos: 'SF', stats: ['24', '12', '5-9', '1-3', '1-2', '7', '2', '1', '2', '1', '3', '4', '2', '+5'] },
+        { starter: false, id: '4066336', name: 'Dillon Brooks', jersey: '9', pos: 'SF', stats: ['27', '13', '5-10', '2-5', '1-1', '4', '2', '1', '1', '0', '1', '3', '3', '+4'] },
+      ];
+    } else if (low.includes('heat') || low.includes('miami') || low.includes('mia')) {
+      specs = [
+        { starter: true, id: '4395723', name: 'Tyler Herro', jersey: '14', pos: 'PG', stats: ['35', '24', '9-18', '4-9', '2-2', '5', '5', '2', '1', '0', '1', '4', '2', '+4'] },
+        { starter: true, id: '4066261', name: 'Bam Adebayo', jersey: '13', pos: 'C', stats: ['35', '19', '8-15', '1-2', '2-3', '10', '5', '2', '1', '1', '3', '7', '2', '+5'] },
+        { starter: true, id: '3059319', name: 'Andrew Wiggins', jersey: '22', pos: 'SF', stats: ['32', '17', '6-13', '2-5', '3-4', '5', '3', '1', '1', '1', '1', '4', '2', '+3'] },
+        { starter: true, id: '4433192', name: 'Jaime Jaquez Jr.', jersey: '11', pos: 'SF', stats: ['27', '12', '5-10', '1-2', '1-2', '5', '3', '1', '1', '0', '2', '3', '2', '+2'] },
+        { starter: true, id: '4397117', name: 'Terry Rozier', jersey: '2', pos: 'SG', stats: ['28', '13', '5-12', '2-6', '1-1', '4', '4', '2', '1', '0', '0', '4', '2', '+2'] },
+      ];
+    } else if (low.includes('76er') || low.includes('philadelphia') || low.includes('phi')) {
+      specs = [
+        { starter: true, id: '4431678', name: 'Tyrese Maxey', jersey: '0', pos: 'PG', stats: ['36', '27', '10-21', '4-10', '3-4', '4', '7', '2', '2', '0', '1', '3', '2', '+5'] },
+        { starter: true, id: '3059318', name: 'Joel Embiid', jersey: '21', pos: 'C', stats: ['32', '28', '9-17', '2-4', '8-9', '11', '4', '3', '1', '2', '3', '8', '3', '+7'] },
+        { starter: true, id: '4251', name: 'Paul George', jersey: '8', pos: 'SF', stats: ['33', '19', '7-15', '3-8', '2-2', '6', '5', '2', '2', '1', '1', '5', '2', '+4'] },
+        { starter: true, id: '3064447', name: 'Kelly Oubre Jr.', jersey: '9', pos: 'SG', stats: ['30', '14', '5-11', '2-5', '2-2', '5', '2', '1', '1', '1', '1', '4', '2', '+2'] },
+        { starter: true, id: '4397009', name: 'Caleb Martin', jersey: '16', pos: 'PF', stats: ['28', '10', '4-8', '2-4', '0-0', '5', '2', '1', '1', '0', '1', '4', '2', '+2'] },
+      ];
     } else {
-      // Dynamic team-aware NBA rotation
-      specs = isTeam1
-        ? [
-            { starter: true, id: '3112335', name: 'Nikola Jokic', jersey: '15', pos: 'C', stats: ['35', '28', '11-18', '2-4', '4-5', '12', '9', '3', '2', '1', '3', '9', '2', '+7'] },
-            { starter: true, id: '3936299', name: 'Jamal Murray', jersey: '27', pos: 'PG', stats: ['34', '22', '8-16', '3-7', '3-3', '4', '7', '2', '1', '0', '1', '3', '2', '+5'] },
-            { starter: true, id: '4278104', name: 'Michael Porter Jr.', jersey: '1', pos: 'SF', stats: ['32', '18', '7-14', '3-7', '1-1', '7', '2', '1', '1', '1', '2', '5', '2', '+4'] },
-            { starter: true, id: '3064290', name: 'Aaron Gordon', jersey: '32', pos: 'PF', stats: ['31', '14', '6-10', '1-3', '1-2', '8', '4', '1', '1', '1', '3', '5', '2', '+4'] },
-            { starter: true, id: '4432848', name: 'Christian Braun', jersey: '0', pos: 'SG', stats: ['29', '12', '5-9', '1-3', '1-2', '5', '2', '1', '2', '1', '1', '4', '2', '+3'] },
-            { starter: false, id: '3468', name: 'Russell Westbrook', jersey: '4', pos: 'PG', stats: ['22', '11', '4-9', '1-3', '2-2', '5', '6', '2', '1', '0', '1', '4', '2', '+2'] },
-            { starter: false, id: '4397142', name: 'Peyton Watson', jersey: '8', pos: 'SF', stats: ['19', '7', '3-6', '1-3', '0-0', '4', '1', '1', '1', '2', '1', '3', '2', '+1'] },
-          ]
-        : [
-            { starter: true, id: '4278073', name: 'Shai Gilgeous-Alexander', jersey: '2', pos: 'PG', stats: ['35', '30', '11-20', '2-5', '6-7', '6', '7', '2', '2', '1', '1', '5', '2', '+5'] },
-            { starter: true, id: '4593803', name: 'Jalen Williams', jersey: '8', pos: 'SF', stats: ['34', '21', '8-16', '3-6', '2-2', '5', '6', '2', '2', '0', '1', '4', '2', '+4'] },
-            { starter: true, id: '4433255', name: 'Chet Holmgren', jersey: '7', pos: 'C', stats: ['32', '18', '7-13', '2-5', '2-2', '10', '3', '2', '1', '3', '2', '8', '2', '+4'] },
-            { starter: true, id: '4397002', name: 'Luguentz Dort', jersey: '5', pos: 'SG', stats: ['30', '12', '4-9', '4-8', '0-0', '4', '2', '1', '1', '0', '1', '3', '2', '+2'] },
-            { starter: true, id: '3908845', name: 'Alex Caruso', jersey: '9', pos: 'SG', stats: ['25', '9', '3-6', '2-4', '1-1', '4', '4', '1', '3', '1', '1', '3', '2', '+2'] },
-            { starter: false, id: '4431678', name: 'Cason Wallace', jersey: '22', pos: 'PG', stats: ['21', '8', '3-6', '2-4', '0-0', '3', '3', '1', '2', '0', '1', '2', '1', '+1'] },
-            { starter: false, id: '4397014', name: 'Isaiah Hartenstein', jersey: '55', pos: 'C', stats: ['23', '9', '4-6', '0-0', '1-2', '9', '3', '1', '1', '1', '3', '6', '2', '+1'] },
-          ];
+      // Dynamic team-branded rotation for any remaining NBA club (never cross-contaminates OKC/DEN onto another franchise)
+      const tag = teamName.split(' ').slice(-1)[0] || 'NBA';
+      specs = [
+        { starter: true, id: `${tag.toLowerCase()}_1`, name: `${tag} Lead Guard`, jersey: '1', pos: 'PG', stats: ['34', '22', '8-17', '3-7', '3-4', '4', '7', '2', '1', '0', '1', '3', '2', isTeam1 ? '+4' : '-2'] },
+        { starter: true, id: `${tag.toLowerCase()}_2`, name: `${tag} Wing Scorer`, jersey: '7', pos: 'SF', stats: ['33', '20', '7-15', '3-7', '3-3', '6', '4', '2', '1', '1', '1', '5', '2', isTeam1 ? '+3' : '-2'] },
+        { starter: true, id: `${tag.toLowerCase()}_3`, name: `${tag} Off-Guard`, jersey: '11', pos: 'SG', stats: ['30', '15', '5-12', '3-7', '2-2', '4', '3', '1', '1', '0', '1', '3', '2', isTeam1 ? '+2' : '-1'] },
+        { starter: true, id: `${tag.toLowerCase()}_4`, name: `${tag} Stretch Four`, jersey: '24', pos: 'PF', stats: ['29', '13', '5-10', '2-5', '1-2', '7', '2', '1', '1', '1', '2', '5', '2', isTeam1 ? '+2' : '-1'] },
+        { starter: true, id: `${tag.toLowerCase()}_5`, name: `${tag} Starting Center`, jersey: '34', pos: 'C', stats: ['29', '14', '6-10', '0-1', '2-3', '10', '3', '2', '1', '2', '3', '7', '3', isTeam1 ? '+3' : '-2'] },
+        { starter: false, id: `${tag.toLowerCase()}_6`, name: `${tag} Sixth Man`, jersey: '6', pos: 'SG', stats: ['23', '12', '5-10', '2-5', '0-0', '3', '3', '1', '1', '0', '0', '3', '1', '+1'] },
+      ];
     }
 
     return specs.map(sp =>
@@ -2799,48 +2825,150 @@ class BasketballResearchService {
 
   /**
    * StatMuse-style Natural Language Research Query Engine
+   * Handles MVP Race modeling, Live Team Standings/Records, Nicknames/Aliases, Position/Threshold filters,
+   * Player Comparisons, and Custom Statistical Leaderboards.
    */
   public async queryResearch(rawQuery: string) {
     const q = (rawQuery || '').toLowerCase().trim();
 
-    // Check if query asks to compare two players ("vs" or "compare")
-    for (let i = 0; i < CURATED_NBA_PLAYERS.length; i++) {
-      for (let j = i + 1; j < CURATED_NBA_PLAYERS.length; j++) {
-        const p1 = CURATED_NBA_PLAYERS[i];
-        const p2 = CURATED_NBA_PLAYERS[j];
-        const p1Last = p1.name.split(' ').slice(-1)[0].toLowerCase();
-        const p2Last = p2.name.split(' ').slice(-1)[0].toLowerCase();
-        if (q.includes(p1Last) && q.includes(p2Last)) {
-          const comp = this.comparePlayers(p1.id, p2.id);
-          return {
-            query: rawQuery,
-            type: 'comparison',
-            headline: `${p1.name} vs. ${p2.name} — Advanced Analytics Showdown`,
-            narrative: comp.summaryVerdict,
-            heroPlayer: p1,
-            secondaryPlayer: p2,
-            keyStats: [
-              { label: `${p1Last.toUpperCase()} PPG / TS%`, value: `${p1.ppg} / ${p1.tsPct}%` },
-              { label: `${p2Last.toUpperCase()} PPG / TS%`, value: `${p2.ppg} / ${p2.tsPct}%` },
-              { label: 'PER Edge', value: `${p1.per >= p2.per ? p1.name : p2.name} (${Math.max(p1.per, p2.per)})` },
-              { label: 'BPM Edge', value: `${p1.bpm >= p2.bpm ? p1.name : p2.name} (+${Math.max(p1.bpm, p2.bpm)})` },
-            ],
-            tableHeaders: ['PLAYER', 'TEAM', 'PPG', 'RPG', 'APG', 'TS%', 'eFG%', 'PER', 'BPM', 'VORP'],
-            tableRows: [p1, p2].map(p => [
-              p.name, p.teamAbbr, p.ppg, p.rpg, p.apg, `${p.tsPct}%`, `${p.efgPct}%`, p.per, `+${p.bpm}`, p.vorp,
-            ]),
-          };
-        }
-      }
+    // Alias matching helper supporting nicknames & multi-word last names
+    const matchesPlayerQuery = (p: (typeof CURATED_NBA_PLAYERS)[number], text: string): boolean => {
+      const full = p.name.toLowerCase();
+      const tokens = full.split(/\s+/);
+      const last = (tokens[tokens.length - 1] === 'jr.' || tokens[tokens.length - 1] === 'iii' ? tokens[tokens.length - 2] : tokens[tokens.length - 1]) || '';
+      if (text.includes(full) || (last.length >= 4 && text.includes(last))) return true;
+      const aliases: Record<string, string[]> = {
+        'shai gilgeous-alexander': ['sga', 'shai'],
+        'victor wembanyama': ['wemby'],
+        'nikola jokic': ['joker', 'jokic'],
+        'luka doncic': ['luka', 'doncic'],
+        'lebron james': ['lebron', 'bron'],
+        'stephen curry': ['steph', 'curry'],
+        'giannis antetokounmpo': ['giannis', 'greek freak'],
+        'kevin durant': ['durant', 'kd'],
+        'jayson tatum': ['tatum'],
+        'anthony edwards': ['ant man', 'edwards'],
+        'anthony davis': ['davis'],
+        'tyrese haliburton': ['hali', 'haliburton'],
+      };
+      return (aliases[full] || []).some((a) => new RegExp(`\\b${a}\\b`, 'i').test(text));
+    };
+
+    // 1. Two-player Head-to-Head comparison ("Jokic vs SGA")
+    const matchedPlayers = CURATED_NBA_PLAYERS.filter((p) => matchesPlayerQuery(p, q));
+    if (matchedPlayers.length >= 2) {
+      const p1 = matchedPlayers[0];
+      const p2 = matchedPlayers[1];
+      const comp = this.comparePlayers(p1.id, p2.id);
+      return {
+        query: rawQuery,
+        type: 'comparison',
+        headline: `${p1.name} vs. ${p2.name} — Advanced Analytics Showdown`,
+        narrative: comp.summaryVerdict,
+        heroPlayer: p1,
+        secondaryPlayer: p2,
+        keyStats: [
+          { label: `${p1.name.split(' ').pop()} PPG / TS%`, value: `${p1.ppg} / ${p1.tsPct}%` },
+          { label: `${p2.name.split(' ').pop()} PPG / TS%`, value: `${p2.ppg} / ${p2.tsPct}%` },
+          { label: 'PER Edge', value: `${p1.per >= p2.per ? p1.name : p2.name} (${Math.max(p1.per, p2.per)})` },
+          { label: 'BPM Edge', value: `${p1.bpm >= p2.bpm ? p1.name : p2.name} (+${Math.max(p1.bpm, p2.bpm)})` },
+        ],
+        tableHeaders: ['PLAYER', 'TEAM', 'PPG', 'RPG', 'APG', 'TS%', 'eFG%', 'PER', 'BPM', 'VORP'],
+        tableRows: [p1, p2].map((p) => [
+          p.name, p.teamAbbr, p.ppg, p.rpg, p.apg, `${p.tsPct}%`, `${p.efgPct}%`, p.per, `+${p.bpm}`, p.vorp,
+        ]),
+      };
     }
 
-    // Check if query mentions a specific player
-    const matchedPlayer = CURATED_NBA_PLAYERS.find(p => {
-      const last = p.name.split(' ').slice(-1)[0].toLowerCase();
-      return q.includes(p.name.toLowerCase()) || q.includes(last);
+    // Load live conference standings once for team & MVP questions
+    let allStandings: ConferenceStandingRow[] = [];
+    try {
+      const st = await this.getStandings();
+      allStandings = [...(st.eastern || []), ...(st.western || [])];
+    } catch {}
+
+    const standingByAbbr = new Map<string, ConferenceStandingRow>();
+    for (const row of allStandings) {
+      standingByAbbr.set(row.abbreviation.toUpperCase(), row);
+    }
+
+    // 2. MVP Race / Award Ladder query
+    if (/\bmvp\b|most valuable|mvp race|mvp ladder|award/i.test(q)) {
+      const scored = CURATED_NBA_PLAYERS.map((p) => {
+        const teamRow = standingByAbbr.get(p.teamAbbr.toUpperCase());
+        const winPctVal = teamRow ? Number(teamRow.winPct) || 0.55 : 0.6;
+        const mvpScore = Number(
+          (p.per * 0.45 + p.bpm * 0.9 + p.vorp * 1.45 + p.ppg * 0.28 + winPctVal * 18).toFixed(1)
+        );
+        return { p, teamRow, mvpScore };
+      }).sort((a, b) => b.mvpScore - a.mvpScore);
+
+      const lead = scored[0];
+      const runner = scored[1];
+      return {
+        query: rawQuery,
+        type: 'mvp_race',
+        headline: `NBA MVP Race Ladder — ${lead.p.name} (${lead.p.teamAbbr}) Leads Ahead of ${runner.p.name} (${runner.p.teamAbbr})`,
+        narrative: `${lead.p.name} leads the composite MVP Race Index (${lead.mvpScore}) behind ${lead.p.ppg} PPG, ${lead.p.rpg} RPG, ${lead.p.apg} APG on ${lead.p.tsPct}% TS, an NBA-best ${lead.p.per} PER, and +${lead.p.bpm} BPM (${lead.teamRow ? `${lead.teamRow.wins}-${lead.teamRow.losses} team record` : lead.p.teamAbbr}). ${runner.p.name} ranks #2 (${runner.mvpScore}) averaging ${runner.p.ppg} PPG with +${runner.p.bpm} BPM.`,
+        heroPlayer: lead.p,
+        keyStats: [
+          { label: '#1 MVP Candidate', value: `${lead.p.name} (${lead.mvpScore} IDX)` },
+          { label: '#2 Runner-Up', value: `${runner.p.name} (${runner.mvpScore} IDX)` },
+          { label: `${lead.p.teamAbbr} Leader Line`, value: `${lead.p.ppg}/${lead.p.rpg}/${lead.p.apg} (${lead.p.tsPct}% TS)` },
+          { label: 'PER / BPM / VORP', value: `${lead.p.per} / +${lead.p.bpm} / ${lead.p.vorp}` },
+        ],
+        tableHeaders: ['MVP RANK', 'CANDIDATE', 'TEAM', 'RECORD', 'PPG', 'RPG', 'APG', 'TS%', 'PER', 'BPM', 'MVP IDX'],
+        tableRows: scored.slice(0, 8).map((item, idx) => [
+          idx + 1,
+          item.p.name,
+          item.p.teamAbbr,
+          item.teamRow ? `${item.teamRow.wins}-${item.teamRow.losses}` : 'Active',
+          item.p.ppg,
+          item.p.rpg,
+          item.p.apg,
+          `${item.p.tsPct}%`,
+          item.p.per,
+          `+${item.p.bpm}`,
+          item.mvpScore,
+        ]),
+      };
+    }
+
+    // 3. Team Standing / Team Scouting Query ("how are the celtics doing", "rockets record", etc.)
+    const matchedTeam = allStandings.find((t) => {
+      const full = t.teamName.toLowerCase();
+      const abbr = t.abbreviation.toLowerCase();
+      const mascot = full.split(' ').slice(-1)[0] || '';
+      return q.includes(full) || (mascot.length >= 4 && q.includes(mascot)) || new RegExp(`\\b${abbr}\\b`, 'i').test(q);
     });
 
-    if (matchedPlayer) {
+    if (matchedTeam && matchedPlayers.length === 0) {
+      const teamPlayers = CURATED_NBA_PLAYERS.filter((p) => p.teamAbbr.toUpperCase() === matchedTeam.abbreviation.toUpperCase());
+      const star = teamPlayers[0] || CURATED_NBA_PLAYERS[0];
+      return {
+        query: rawQuery,
+        type: 'team_scouting',
+        headline: `${matchedTeam.teamName} (${matchedTeam.wins}-${matchedTeam.losses}) — #${matchedTeam.rank} in ${matchedTeam.conference} Conference`,
+        narrative: `The ${matchedTeam.teamName} sit #${matchedTeam.rank} in the ${matchedTeam.conference}ern Conference at ${matchedTeam.wins}-${matchedTeam.losses} (${matchedTeam.winPct} WIN%, ${matchedTeam.gamesBehind} GB). They average ${matchedTeam.ppg} PPG while allowing ${matchedTeam.oppPpg} Opp PPG (${matchedTeam.netDiff} Point Diff), with a ${matchedTeam.last10} Last-10 stretch and ${matchedTeam.streak} current streak.`,
+        heroPlayer: star,
+        keyStats: [
+          { label: 'Record & Conf Seed', value: `${matchedTeam.wins}-${matchedTeam.losses} (#${matchedTeam.rank} ${matchedTeam.conference})` },
+          { label: 'PPG / Opp PPG (Diff)', value: `${matchedTeam.ppg} / ${matchedTeam.oppPpg} (${matchedTeam.netDiff})` },
+          { label: 'Home / Road Splits', value: `${matchedTeam.homeRecord} H • ${matchedTeam.awayRecord} A` },
+          { label: 'Last 10 & Streak', value: `${matchedTeam.last10} • ${matchedTeam.streak}` },
+        ],
+        tableHeaders: teamPlayers.length > 0
+          ? ['PLAYER', 'POS', 'PPG', 'RPG', 'APG', 'TS%', 'PER', 'BPM']
+          : ['TEAM', 'CONF', 'SEED', 'W-L', 'PPG', 'OPP PPG', 'DIFF', 'STREAK'],
+        tableRows: teamPlayers.length > 0
+          ? teamPlayers.map((p) => [p.name, p.position, p.ppg, p.rpg, p.apg, `${p.tsPct}%`, p.per, `+${p.bpm}`])
+          : [[matchedTeam.teamName, matchedTeam.conference, `#${matchedTeam.rank}`, `${matchedTeam.wins}-${matchedTeam.losses}`, matchedTeam.ppg, matchedTeam.oppPpg, matchedTeam.netDiff, matchedTeam.streak]],
+      };
+    }
+
+    // 4. Single Player Spotlight
+    if (matchedPlayers.length === 1) {
+      const matchedPlayer = matchedPlayers[0];
       return {
         query: rawQuery,
         type: 'player_spotlight',
@@ -2874,34 +3002,100 @@ class BasketballResearchService {
       };
     }
 
-    // Topic-based queries (True Shooting, Defense/Stocks, Playmaking/Assists, Four Factors, Scoring)
-    let sorted = [...CURATED_NBA_PLAYERS];
-    let metricTitle = 'Player Efficiency Rating (PER) & True Shooting';
-    if (q.includes('true shooting') || q.includes('ts%') || q.includes('efficien')) {
-      sorted.sort((a, b) => b.tsPct - a.tsPct);
-      metricTitle = 'True Shooting Efficiency (TS%) Leaders';
-    } else if (q.includes('defen') || q.includes('block') || q.includes('steal') || q.includes('stock')) {
-      sorted.sort((a, b) => b.stocks - a.stocks);
-      metricTitle = 'Two-Way Defensive Impact (Stocks: STL + BLK) Leaders';
-    } else if (q.includes('assist') || q.includes('playmak') || q.includes('pass')) {
-      sorted.sort((a, b) => b.apg - a.apg);
-      metricTitle = 'Playmaking & Assist Rate Leaders';
-    } else if (q.includes('scor') || q.includes('point') || q.includes('ppg')) {
-      sorted.sort((a, b) => b.ppg - a.ppg);
-      metricTitle = 'NBA Scoring Volume & Efficiency Leaders';
-    } else if (q.includes('rebound') || q.includes('glass') || q.includes('board')) {
-      sorted.sort((a, b) => b.rpg - a.rpg);
-      metricTitle = 'Rebounding & Interior Control Leaders';
-    } else {
-      sorted.sort((a, b) => b.per - a.per);
+    // 5. Dynamic Position, Threshold & Topic Queries (e.g. "best shooting centers", "3pt leaders", "25+ ppg")
+    let pool = [...CURATED_NBA_PLAYERS];
+    let posLabel = '';
+    if (/\bcenter|\bcenters|\bbig\b|\bbigs\b|\bc\b/i.test(q)) {
+      pool = pool.filter((p) => p.position === 'C');
+      posLabel = 'Centers ';
+    } else if (/\bpoint guard|\bpg\b/i.test(q)) {
+      pool = pool.filter((p) => p.position === 'PG');
+      posLabel = 'Point Guards ';
+    } else if (/\bshooting guard|\bsg\b/i.test(q)) {
+      pool = pool.filter((p) => p.position === 'SG');
+      posLabel = 'Shooting Guards ';
+    } else if (/\bsmall forward|\bsf\b/i.test(q)) {
+      pool = pool.filter((p) => p.position === 'SF');
+      posLabel = 'Small Forwards ';
+    } else if (/\bpower forward|\bpf\b/i.test(q)) {
+      pool = pool.filter((p) => p.position === 'PF');
+      posLabel = 'Power Forwards ';
     }
 
-    const top = sorted[0];
+    const ppgMinMatch = q.match(/(\d+(?:\.\d+)?)\+?\s*(?:ppg|points?)/i);
+    const apgMinMatch = q.match(/(\d+(?:\.\d+)?)\+?\s*(?:apg|assists?)/i);
+    const rpgMinMatch = q.match(/(\d+(?:\.\d+)?)\+?\s*(?:rpg|rebounds?)/i);
+    const tsMinMatch = q.match(/(\d+(?:\.\d+)?)\s*%?\s*ts/i);
+
+    if (ppgMinMatch) pool = pool.filter((p) => p.ppg >= Number(ppgMinMatch[1]));
+    if (apgMinMatch) pool = pool.filter((p) => p.apg >= Number(apgMinMatch[1]));
+    if (rpgMinMatch) pool = pool.filter((p) => p.rpg >= Number(rpgMinMatch[1]));
+    if (tsMinMatch) pool = pool.filter((p) => p.tsPct >= Number(tsMinMatch[1]));
+    if (pool.length === 0) pool = [...CURATED_NBA_PLAYERS];
+
+    let metricTitle = `${posLabel}Player Efficiency Rating (PER) & Impact Leaders`;
+    let focusReason = 'overall Hollinger PER and two-way impact';
+    if (/\b(three|3pt|3-point|sniper|shooter|efg|true shooting|ts%|efficien)\b/i.test(q)) {
+      pool.sort((a, b) => b.tsPct - a.tsPct);
+      metricTitle = `${posLabel}True Shooting & Perimeter Efficiency (TS% / eFG%) Leaders`;
+      focusReason = 'True Shooting % (TS%) and Effective Field Goal % (eFG%)';
+    } else if (/\b(defen|dpoy|block|steal|stock|rim protector)\b/i.test(q)) {
+      pool.sort((a, b) => b.stocks - a.stocks);
+      metricTitle = `${posLabel}Two-Way Defensive Impact & DPOY Stocks (STL + BLK) Leaders`;
+      focusReason = 'combined Steals + Blocks (Stocks) and Defensive BPM';
+    } else if (/\b(assist|playmak|pass|apg)\b/i.test(q)) {
+      pool.sort((a, b) => b.apg - a.apg);
+      metricTitle = `${posLabel}Playmaking & Assist Rate Leaders`;
+      focusReason = 'Assists Per Game (APG) and playmaking creation';
+    } else if (/\b(scor|point|ppg|bucket)\b/i.test(q)) {
+      pool.sort((a, b) => b.ppg - a.ppg);
+      metricTitle = `${posLabel}NBA Scoring Volume & Efficiency Leaders`;
+      focusReason = 'Points Per Game (PPG) combined with scoring efficiency';
+    } else if (/\b(rebound|glass|board|rpg)\b/i.test(q)) {
+      pool.sort((a, b) => b.rpg - a.rpg);
+      metricTitle = `${posLabel}Rebounding & Glass Control Leaders`;
+      focusReason = 'Rebounds Per Game (RPG) and defensive interior control';
+    } else if (/\b(standings|east|west|conference|top teams|best team)\b/i.test(q) && allStandings.length > 0) {
+      const confPool = q.includes('east')
+        ? allStandings.filter((s) => s.conference === 'Eastern')
+        : q.includes('west')
+        ? allStandings.filter((s) => s.conference === 'Western')
+        : [...allStandings].sort((a, b) => Number(b.winPct) - Number(a.winPct));
+      const topTeam = confPool[0];
+      return {
+        query: rawQuery,
+        type: 'standings_answer',
+        headline: `NBA ${q.includes('east') ? 'Eastern' : q.includes('west') ? 'Western' : 'League'} Standings — Led by ${topTeam.teamName} (${topTeam.wins}-${topTeam.losses})`,
+        narrative: `${topTeam.teamName} pace the standings at ${topTeam.wins}-${topTeam.losses} (${topTeam.winPct} WIN%, ${topTeam.netDiff} Point Diff, ${topTeam.streak} streak).`,
+        heroPlayer: CURATED_NBA_PLAYERS.find((p) => p.teamAbbr === topTeam.abbreviation) || CURATED_NBA_PLAYERS[0],
+        keyStats: [
+          { label: '#1 Team', value: `${topTeam.teamName} (${topTeam.wins}-${topTeam.losses})` },
+          { label: 'Point Differential', value: `${topTeam.netDiff} PPG` },
+          { label: 'Scoring / Allowed', value: `${topTeam.ppg} / ${topTeam.oppPpg}` },
+          { label: 'Last 10 & Streak', value: `${topTeam.last10} • ${topTeam.streak}` },
+        ],
+        tableHeaders: ['SEED', 'TEAM', 'CONF', 'W-L', 'WIN%', 'PPG', 'OPP PPG', 'DIFF', 'L10', 'STREAK'],
+        tableRows: confPool.slice(0, 10).map((t) => [
+          `#${t.rank}`, t.teamName, t.conference, `${t.wins}-${t.losses}`, t.winPct, t.ppg, t.oppPpg, t.netDiff, t.last10, t.streak,
+        ]),
+      };
+    } else if (/\b(vorp|bpm|net rating|usage|usg|gmsc|game score)\b/i.test(q)) {
+      if (q.includes('vorp')) pool.sort((a, b) => b.vorp - a.vorp);
+      else if (q.includes('bpm')) pool.sort((a, b) => b.bpm - a.bpm);
+      else if (q.includes('usg') || q.includes('usage')) pool.sort((a, b) => b.usgPct - a.usgPct);
+      else pool.sort((a, b) => b.netRtg - a.netRtg);
+      metricTitle = `${posLabel}Advanced All-In-One Impact Metric Leaders`;
+      focusReason = 'all-in-one Box Plus/Minus (BPM), VORP, and Net Rating';
+    } else {
+      pool.sort((a, b) => b.per - a.per);
+    }
+
+    const top = pool[0];
     return {
       query: rawQuery || 'NBA Advanced Impact Leaders',
       type: 'leaderboard_answer',
       headline: `${metricTitle} — Led by ${top.name} (${top.teamAbbr})`,
-      narrative: `${top.name} headlines the league leaderboard in this category (${top.ppg} PPG, ${top.rpg} RPG, ${top.apg} APG, ${top.tsPct}% TS, ${top.per} PER). Below is the complete Reference & Cleaning-the-Glass style breakdown of the top NBA performers.`,
+      narrative: `Ranked by ${focusReason}: ${top.name} (${top.teamAbbr}) sits #1 at ${top.ppg} PPG, ${top.rpg} RPG, ${top.apg} APG on ${top.tsPct}% TS (${top.per} PER, +${top.bpm} BPM).`,
       heroPlayer: top,
       keyStats: [
         { label: '#1 Performer', value: `${top.name} (${top.teamAbbr})` },
@@ -2909,10 +3103,11 @@ class BasketballResearchService {
         { label: 'Hollinger PER', value: `${top.per}` },
         { label: 'Box Plus/Minus', value: `+${top.bpm}` },
       ],
-      tableHeaders: ['RANK', 'PLAYER', 'TEAM', 'PPG', 'RPG', 'APG', 'TS%', 'eFG%', 'STOCKS', 'PER', 'BPM'],
-      tableRows: sorted.slice(0, 8).map((p, idx) => [
+      tableHeaders: ['RANK', 'PLAYER', 'POS', 'TEAM', 'PPG', 'RPG', 'APG', 'TS%', 'eFG%', 'STOCKS', 'PER', 'BPM'],
+      tableRows: pool.slice(0, 8).map((p, idx) => [
         idx + 1,
         p.name,
+        p.position,
         p.teamAbbr,
         p.ppg,
         p.rpg,
