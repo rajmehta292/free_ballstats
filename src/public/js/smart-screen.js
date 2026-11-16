@@ -578,10 +578,16 @@
         <div style="display:grid;grid-template-columns:repeat(5, 1fr);gap:5px;">
           ${(players || []).slice(0, 5).map((p) => {
             const foulWarn = p.pf >= 4;
+            const nameTokens = String(p.name || '').trim().split(/\s+/).filter(Boolean);
+            const isSuffix = /^(Jr\.?|Sr\.?|II|III|IV|V)$/i.test(nameTokens[nameTokens.length - 1] || '');
+            const shortLastName =
+              nameTokens.length >= 2 && isSuffix
+                ? `${nameTokens[nameTokens.length - 2]} ${nameTokens[nameTokens.length - 1]}`
+                : nameTokens[nameTokens.length - 1] || p.name;
             return `
               <div style="background:rgba(6,7,10,0.75);border:1px solid ${p.hotStreak ? 'rgba(245,158,11,0.5)' : foulWarn ? 'rgba(239,68,68,0.55)' : 'rgba(255,255,255,0.07)'};border-radius:6px;padding:5px;text-align:center;cursor:pointer;" onclick="if(window.openAthleteProfile) window.openAthleteProfile('${esc(p.id)}', 'basketball/nba', '${esc(p.name)}')">
                 <div style="font-size:9px;color:#94a3b8;font-weight:700;">${esc(p.position)} #${esc(p.jersey)}</div>
-                <div style="font-size:10.5px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(p.name)}">${esc(p.name.split(' ').slice(-1)[0])}</div>
+                <div style="font-size:10.5px;font-weight:800;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(p.name)}">${esc(shortLastName)}</div>
                 <div style="font-size:10px;color:${accent};font-weight:800;margin-top:2px;">${p.pts}p/${p.reb}r/${p.ast}a</div>
                 <div style="font-size:9px;color:#cbd5e1;display:flex;justify-content:center;gap:4px;margin-top:2px;">
                   <span>${p.plusMinus >= 0 ? '+' : ''}${p.plusMinus}</span>
@@ -1050,7 +1056,7 @@
           team2Analytics: ba.team2Analytics,
           mvpPerformer: ba.mvpPerformer,
           inGameInsights: ba.inGameInsights,
-          sportAnalytics: intel.sportAnalytics,
+          sportAnalytics: intel.sportAnalytics?.sportType === 'basketball' ? intel.sportAnalytics : undefined,
         };
         this.renderAll();
       } else if (intel.sportAnalytics) {
@@ -1114,8 +1120,11 @@
 
     applyModeClasses() {
       if (!this.stageEl) return;
-      this.stageEl.classList.remove('mode-triggers', 'mode-lbar', 'mode-hud', 'mode-off');
+      this.stageEl.classList.remove('mode-triggers', 'mode-lbar', 'mode-hud', 'mode-off', 'has-lbar');
       this.stageEl.classList.add(`mode-${this.mode}`);
+      if (this.mode === 'lbar') {
+        this.stageEl.classList.add('has-lbar');
+      }
     }
 
     toggleFullscreen() {
@@ -1195,7 +1204,7 @@
             ⚡ Smart Cards
           </button>
           <button type="button" class="fbs-sm-btn ${this.mode === 'lbar' ? 'active' : ''}" data-sm-mode="lbar" title="Prime X-Ray / ESPN Squeeze-Back L-Bar Mode (Hotkey: L)">
-            📐 L-Bar Squeeze-Back
+            📐 L-Bar
           </button>
           <button type="button" class="fbs-sm-btn ${this.mode === 'hud' ? 'active' : ''}" data-sm-mode="hud" title="Translucent Glass HUD Overlay (Hotkey: H)">
             🥽 Glass HUD
@@ -1204,10 +1213,10 @@
             Clean
           </button>
           <button type="button" class="fbs-sm-btn fbs-sm-action" data-sm-action="dock-lab" title="Keep Live Stream in Mini-Player & Open Sports Research Lab">
-            🔬 Dock to Lab
+            🔬 Lab
           </button>
           <button type="button" class="fbs-sm-btn fbs-sm-action" data-sm-action="fullscreen" title="Fullscreen WITH Smart Screen Overlays & L-Bar">
-            ⛶ Smart Fullscreen
+            ⛶ Fullscreen
           </button>
         </div>
       `;
@@ -1525,7 +1534,13 @@
       const t1Total = ls?.team1Total ?? ls?.team1?.total ?? t1.score ?? 0;
       const t2Total = ls?.team2Total ?? ls?.team2?.total ?? t2.score ?? 0;
 
-      if (sa && sa.sportType !== 'basketball') {
+      if (sa && sa.sportType !== 'basketball' && this.hudData.sportType !== 'basketball') {
+        const mvpLine = mvp
+          ? mvp.primaryLine || (mvp.pts !== undefined ? `${mvp.pts} PTS, ${mvp.reb} REB, ${mvp.ast} AST` : '')
+          : '';
+        const mvpEffLine = mvp
+          ? mvp.efficiencyLine || (mvp.gameScore !== undefined ? `${mvp.gameScore} GmSc • +${mvp.bpm || 0} BPM` : '')
+          : sa.paceAndProjection?.projectedFinal || '';
         this.bottomRail.innerHTML = `
           <div class="fbs-lbar-bottom-cell">
             <div style="font-size:10px;font-weight:800;color:#00f2fe;margin-bottom:3px;">📊 LIVE LINESCORE &amp; TEMPO</div>
@@ -1535,12 +1550,12 @@
             </div>
           </div>
           <div class="fbs-lbar-bottom-cell">
-            <div style="font-size:10px;font-weight:800;color:#fbbf24;margin-bottom:3px;">🌟 MATCH IMPACT LEADER (${esc(mvp?.impactBadge || 'MVP')})</div>
+            <div style="font-size:10px;font-weight:800;color:#fbbf24;margin-bottom:3px;">🌟 MATCH IMPACT LEADER (${esc(mvp?.impactBadge || mvp?.impactTier || 'MVP')})</div>
             <div style="font-size:11px;color:#fff;font-weight:700;">
-              ${mvp ? `${esc(mvp.name)} (${esc(mvp.teamAbbr)}): ${esc(mvp.primaryLine)}` : 'Calculating live player impact...'}
+              ${mvp ? `${esc(mvp.name)} (${esc(mvp.teamAbbr)}): ${esc(mvpLine)}` : 'Calculating live player impact...'}
             </div>
             <div style="font-size:10px;color:#94a3b8;">
-              ${esc(mvp?.efficiencyLine || sa.paceAndProjection?.projectedFinal || '')}
+              ${esc(mvpEffLine)}
             </div>
           </div>
           <div class="fbs-lbar-bottom-cell">

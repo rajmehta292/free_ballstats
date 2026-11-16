@@ -933,8 +933,107 @@ class SportsIntelService {
         team2Record: comp2?.records?.[0]?.summary,
         team1Logo: comp1?.team?.logo,
         team2Logo: comp2?.team?.logo,
+        situationBanner:
+          summary.drives?.current?.description ||
+          basketballAnalytics?.onCourtLineup?.activeStintMargin ||
+          undefined,
       }
     );
+
+    // Synchronize real NBA ESPN metrics into sportAnalytics (without overwriting NCAAB sportType)
+    if (basketballAnalytics && sportAnalyticsObj.sportType !== 'ncaab') {
+      const ba = basketballAnalytics;
+      const t1AbbrNba = comp1?.team?.abbreviation || ba.team1Analytics.abbreviation || sportAnalyticsObj.team1Meta.abbreviation;
+      const t2AbbrNba = comp2?.team?.abbreviation || ba.team2Analytics.abbreviation || sportAnalyticsObj.team2Meta.abbreviation;
+      sportAnalyticsObj.sportType = 'basketball';
+      sportAnalyticsObj.surfaceType = 'basketball_halfcourt';
+      sportAnalyticsObj.team1Meta.abbreviation = t1AbbrNba;
+      sportAnalyticsObj.team2Meta.abbreviation = t2AbbrNba;
+      sportAnalyticsObj.linescore = linescoreObj || sportAnalyticsObj.linescore;
+      sportAnalyticsObj.leverageIndex = ba.leverageIndex;
+      sportAnalyticsObj.leverageTier =
+        ba.leverageTier === 'Clutch Critical'
+          ? 'CRUNCH TIME'
+          : (String(ba.leverageTier || 'LOW').toUpperCase() as 'LOW' | 'MEDIUM' | 'HIGH' | 'CRUNCH TIME');
+      sportAnalyticsObj.isClutchTime = ba.isClutchTime;
+      sportAnalyticsObj.situationBanner =
+        ba.gameState === 'pre'
+          ? `🏀 Pre-Game Scouting Preview • ${t1AbbrNba} vs ${t2AbbrNba}`
+          : `🏀 ${ba.detail} • ${ba.onCourtLineup?.activeStintMargin || ba.projectedPaceScore?.activeRun || `${t1AbbrNba} vs ${t2AbbrNba}`} • Bonus: ${ba.bonusState.team1InBonus ? t1AbbrNba : ''}${ba.bonusState.team1InBonus && ba.bonusState.team2InBonus ? ' & ' : ''}${ba.bonusState.team2InBonus ? t2AbbrNba : !ba.bonusState.team1InBonus ? 'None' : ''}`;
+      if (ba.projectedPaceScore) {
+        sportAnalyticsObj.paceAndProjection = {
+          tempoLabel: '48-MIN PACE',
+          tempoValue: `${ba.projectedPaceScore.pace48} Poss / 48 Min`,
+          projectedFinal: `Pace Projection: ${t1AbbrNba} ${ba.projectedPaceScore.team1Projected} — ${ba.projectedPaceScore.team2Projected} ${t2AbbrNba}`,
+          primaryRateLabel: 'TEAM ORTG',
+          team1RateValue: String(ba.team1Analytics.ortg),
+          team2RateValue: String(ba.team2Analytics.ortg),
+        };
+      }
+      if (ba.mvpPerformer) {
+        sportAnalyticsObj.mvpPerformer = {
+          id: ba.mvpPerformer.id,
+          name: ba.mvpPerformer.name,
+          teamAbbr: ba.mvpPerformer.teamAbbr,
+          position: ba.mvpPerformer.position,
+          jersey: ba.mvpPerformer.jersey,
+          headshot: ba.mvpPerformer.headshot,
+          primaryLine: `${ba.mvpPerformer.pts} PTS • ${ba.mvpPerformer.reb} REB • ${ba.mvpPerformer.ast} AST (${ba.mvpPerformer.fg} FG)`,
+          efficiencyLine: `${ba.mvpPerformer.gameScore} GmSc • ${ba.mvpPerformer.tsPct}% TS% • ${ba.mvpPerformer.bpm >= 0 ? '+' : ''}${ba.mvpPerformer.bpm} BPM`,
+          impactBadge: ba.mvpPerformer.impactTier || 'FLOOR LEADER',
+        };
+      }
+      sportAnalyticsObj.fourPillars = [
+        {
+          code: 'eFG%',
+          label: 'Effective Field Goal %',
+          weightLabel: '40% WEIGHT',
+          team1Value: `${ba.team1Analytics.efgPct}%`,
+          team2Value: `${ba.team2Analytics.efgPct}%`,
+          team1Numeric: ba.team1Analytics.efgPct,
+          team2Numeric: ba.team2Analytics.efgPct,
+          leagueAverage: '54.2%',
+          edgeTeam: ba.team1Analytics.efgPct >= ba.team2Analytics.efgPct ? 'team1' : 'team2',
+          description: 'Live shooting efficiency weighting 3-pointers at 1.5x field goal value.',
+        },
+        {
+          code: 'TOV%',
+          label: 'Turnover Rate',
+          weightLabel: '25% WEIGHT',
+          team1Value: `${ba.team1Analytics.fourFactors.tovPct}%`,
+          team2Value: `${ba.team2Analytics.fourFactors.tovPct}%`,
+          team1Numeric: ba.team1Analytics.fourFactors.tovPct,
+          team2Numeric: ba.team2Analytics.fourFactors.tovPct,
+          leagueAverage: '13.5%',
+          edgeTeam: ba.team1Analytics.fourFactors.tovPct <= ba.team2Analytics.fourFactors.tovPct ? 'team1' : 'team2',
+          description: 'Turnovers per 100 possessions (lower is better).',
+        },
+        {
+          code: 'ORB%',
+          label: 'Offensive Rebound Rate',
+          weightLabel: '20% WEIGHT',
+          team1Value: `${ba.team1Analytics.fourFactors.orbPct}%`,
+          team2Value: `${ba.team2Analytics.fourFactors.orbPct}%`,
+          team1Numeric: ba.team1Analytics.fourFactors.orbPct,
+          team2Numeric: ba.team2Analytics.fourFactors.orbPct,
+          leagueAverage: '26.5%',
+          edgeTeam: ba.team1Analytics.fourFactors.orbPct >= ba.team2Analytics.fourFactors.orbPct ? 'team1' : 'team2',
+          description: 'Second-chance offensive glass recovery percentage.',
+        },
+        {
+          code: 'FTR',
+          label: 'Free Throw Rate (FT/FGA)',
+          weightLabel: '15% WEIGHT',
+          team1Value: `${ba.team1Analytics.fourFactors.ftRate}%`,
+          team2Value: `${ba.team2Analytics.fourFactors.ftRate}%`,
+          team1Numeric: ba.team1Analytics.fourFactors.ftRate,
+          team2Numeric: ba.team2Analytics.fourFactors.ftRate,
+          leagueAverage: '25.8%',
+          edgeTeam: ba.team1Analytics.fourFactors.ftRate >= ba.team2Analytics.fourFactors.ftRate ? 'team1' : 'team2',
+          description: 'Free throw pressure per field goal attempt.',
+        },
+      ];
+    }
 
     return {
       stream_key: stream.stream_key,

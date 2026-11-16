@@ -835,6 +835,7 @@ class MultiSportAnalyticsService {
       team2Record?: string;
       team1Logo?: string;
       team2Logo?: string;
+      situationBanner?: string;
     }
   ): UniversalSportDeepAnalytics {
     const sportType = this.detectSportType(stream);
@@ -850,7 +851,9 @@ class MultiSportAnalyticsService {
     } else if (sportType === 'nfl' || sportType === 'ncaaf') {
       base = this.buildFootballAnalytics(stream, rawT1, rawT2, sportType === 'ncaaf');
     } else if (sportType === 'ncaab') {
-      base = this.buildCollegeBasketballAnalytics(stream, rawT1, rawT2);
+      base = this.buildCollegeBasketballAnalytics(stream, rawT1, rawT2, 'ncaab');
+    } else if (sportType === 'basketball') {
+      base = this.buildCollegeBasketballAnalytics(stream, rawT1, rawT2, 'basketball');
     } else {
       base = this.buildFootballAnalytics(stream, rawT1, rawT2, false);
     }
@@ -946,6 +949,22 @@ class MultiSportAnalyticsService {
         base.linescore.team2Quarters = splitTotal(s2, liveOverride.team2Quarters);
         base.linescore.team1Total = s1;
         base.linescore.team2Total = s2;
+        if (liveOverride.situationBanner) {
+          base.situationBanner = liveOverride.situationBanner;
+        }
+        const diff = s1 - s2;
+        const leaderAbbr = diff > 0 ? base.team1Meta.abbreviation : diff < 0 ? base.team2Meta.abbreviation : base.team1Meta.abbreviation;
+        const leadAmt = Math.abs(diff);
+        if (!liveOverride.situationBanner) {
+          base.situationBanner =
+            diff === 0
+              ? `Tied ${s1}-${s2} • ${liveOverride.detail}`
+              : `${leaderAbbr} leads ${Math.max(s1, s2)}-${Math.min(s1, s2)} (+${leadAmt}) • ${liveOverride.detail}`;
+        }
+        base.paceAndProjection.projectedFinal =
+          diff === 0
+            ? `Tied ${s1}-${s2} (${liveOverride.detail})`
+            : `Live Pace: ${leaderAbbr} leads ${Math.max(s1, s2)}-${Math.min(s1, s2)} (+${leadAmt})`;
       }
     }
 
@@ -2141,11 +2160,17 @@ class MultiSportAnalyticsService {
   }
 
   // ==========================================================================
-  // 4. COLLEGE BASKETBALL (NCAAB) DEEP ANALYTICS (KENPOM / BARTTORVIK / 4 FACTORS)
+  // 4. BASKETBALL (NBA & NCAAB) DEEP ANALYTICS (KENPOM / COURTOPTIX / 4 FACTORS)
   // ==========================================================================
-  private buildCollegeBasketballAnalytics(stream: StreamItem, rawT1: string, rawT2: string): UniversalSportDeepAnalytics {
-    const t1Template = this.matchTemplate(rawT1, NCAAB_TEAMS_DB, '#003087', '#ffffff', '5-Out Switching & Rim Deterrence', '9-2 (KenPom #2)');
-    const t2Template = this.matchTemplate(rawT2, NCAAB_TEAMS_DB, '#0051ba', '#e8000d', 'Hi-Lo Post & Transition', '9-1 (KenPom #4)');
+  private buildCollegeBasketballAnalytics(
+    stream: StreamItem,
+    rawT1: string,
+    rawT2: string,
+    variant: 'ncaab' | 'basketball' = 'ncaab'
+  ): UniversalSportDeepAnalytics {
+    const isProNba = variant === 'basketball';
+    const t1Template = this.matchTemplate(rawT1, NCAAB_TEAMS_DB, '#003087', '#ffffff', isProNba ? '5-Out Spacing & Switch Defense' : '5-Out Switching & Rim Deterrence', isProNba ? 'Season Active' : '9-2 (KenPom #2)');
+    const t2Template = this.matchTemplate(rawT2, NCAAB_TEAMS_DB, '#0051ba', '#e8000d', isProNba ? 'Motion Pace & Rim Pressure' : 'Hi-Lo Post & Transition', isProNba ? 'Season Active' : '9-1 (KenPom #4)');
 
     const t1Logo = stream.team1?.logo || t1Template.logo || buildSvgTeamCrestDataUri(t1Template.officialName, t1Template.primaryHex, t1Template.secondaryHex);
     const t2Logo = stream.team2?.logo || t2Template.logo || buildSvgTeamCrestDataUri(t2Template.officialName, t2Template.primaryHex, t2Template.secondaryHex);
@@ -2195,33 +2220,49 @@ class MultiSportAnalyticsService {
 
     return {
       eventId: stream.stream_key,
-      sportType: 'ncaab',
-      sportBadge: 'NCAA MEN\'S BASKETBALL • KENPOM AdjEM & DEAN OLIVER FOUR FACTORS',
-      analyticsMethodology: 'KenPom Adjusted Efficiency (AdjO / AdjD / AdjT) • Dean Oliver Four Factors • BartTorvik T-Rank & Kill Shots',
+      sportType: variant,
+      sportBadge: isProNba
+        ? 'NBA COURTOPTIX • DEAN OLIVER FOUR FACTORS & PACE ENGINE'
+        : 'NCAA MEN\'S BASKETBALL • KENPOM AdjEM & DEAN OLIVER FOUR FACTORS',
+      analyticsMethodology: isProNba
+        ? 'Dean Oliver Four Factors (eFG%, TOV%, ORB%, FTR) • CourtOptix Spatial Shot Diet & Stint Flow'
+        : 'KenPom Adjusted Efficiency (AdjO / AdjD / AdjT) • Dean Oliver Four Factors • BartTorvik T-Rank & Kill Shots',
       surfaceType: 'basketball_halfcourt',
-      status: '2nd Half • 3:42 Remaining',
-      detail: '2H 3:42',
+      status: isProNba ? 'Live NBA Telemetry' : '2nd Half • 3:42 Remaining',
+      detail: isProNba ? 'LIVE' : '2H 3:42',
       isLive: true,
-      venue: 'Cameron Indoor / Neutral Championship Arena (19,800)',
-      broadcast: 'ESPN College GameDay Primetime',
+      venue: isProNba ? 'NBA Arena Broadcast' : 'Cameron Indoor / Neutral Championship Arena (19,800)',
+      broadcast: isProNba ? 'NBA League Pass / National Feed' : 'ESPN College GameDay Primetime',
       leverageIndex: 2.48,
       leverageTier: 'CRUNCH TIME',
       isClutchTime: true,
-      situationBanner: `🏀 2nd Half 3:42 • ${t1Template.abbr} on 10-0 "Kill Shot" Run • Bonus: Double Bonus Both Teams`,
-      linescore: {
-        periodHeaders: ['1ST HALF', '2ND HALF'],
-        team1Quarters: [38, 41],
-        team2Quarters: [36, 37],
-        team1Total: 79,
-        team2Total: 73,
-      },
+      situationBanner: isProNba
+        ? `🏀 ${t1Template.abbr} vs ${t2Template.abbr} • Four Factors & Half-Court Shot Diet Tracking`
+        : `🏀 2nd Half 3:42 • ${t1Template.abbr} on 10-0 "Kill Shot" Run • Bonus: Double Bonus Both Teams`,
+      linescore: isProNba
+        ? {
+            periodHeaders: ['Q1', 'Q2', 'Q3', 'Q4'],
+            team1Quarters: [28, 27, 29, 26],
+            team2Quarters: [25, 26, 27, 24],
+            team1Total: 110,
+            team2Total: 102,
+          }
+        : {
+            periodHeaders: ['1ST HALF', '2ND HALF'],
+            team1Quarters: [38, 41],
+            team2Quarters: [36, 37],
+            team1Total: 79,
+            team2Total: 73,
+          },
       paceAndProjection: {
-        tempoLabel: 'KENPOM ADJUSTED TEMPO (AdjT)',
-        tempoValue: '68.4 Poss / 40 Min',
-        projectedFinal: `KenPom 40-Min Projection: ${t1Template.abbr} 84 — 78 ${t2Template.abbr}`,
-        primaryRateLabel: 'KENPOM AdjO / AdjD',
-        team1RateValue: '121.4 / 91.8',
-        team2RateValue: '118.9 / 93.2',
+        tempoLabel: isProNba ? '48-MIN PACE' : 'KENPOM ADJUSTED TEMPO (AdjT)',
+        tempoValue: isProNba ? '99.4 Poss / 48 Min' : '68.4 Poss / 40 Min',
+        projectedFinal: isProNba
+          ? `Pace Model Projection: ${t1Template.abbr} 114 — 108 ${t2Template.abbr}`
+          : `KenPom 40-Min Projection: ${t1Template.abbr} 84 — 78 ${t2Template.abbr}`,
+        primaryRateLabel: isProNba ? 'TEAM ORTG / DRTG' : 'KENPOM AdjO / AdjD',
+        team1RateValue: '121.4 / 109.8',
+        team2RateValue: '115.2 / 116.4',
       },
       team1Meta: {
         name: t1Template.officialName,

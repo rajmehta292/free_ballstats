@@ -736,15 +736,16 @@ function renderInGameAnalytics(intel) {
   const ba = intel.basketballAnalytics;
   const sa = intel.sportAnalytics;
 
-  // Update tab label dynamically for the active sport
+  // Update tab label dynamically for the active sport (always check RedZone & NBA basketballAnalytics first!)
   const tabBtn = document.getElementById('tab-btn-ingame-analytics');
   if (tabBtn) {
-    if (intel.redzoneIntel) tabBtn.innerHTML = '🚨 RedZone Multi-Game &amp; Spotlight';
-    else if (sa && sa.sportType === 'soccer') tabBtn.innerHTML = '⚽ Pitch xG Map &amp; Opta Analytics';
-    else if (sa && (sa.sportType === 'nfl' || sa.sportType === 'ncaaf')) tabBtn.innerHTML = '🏈 Field Map, EPA &amp; Down-Distance';
-    else if (sa && sa.sportType === 'hockey') tabBtn.innerHTML = '🏒 Ice Slot Map, Corsi &amp; xGF';
-    else if (sa && sa.sportType === 'ncaab') tabBtn.innerHTML = '🎓 KenPom, Shot Map &amp; Four Factors';
-    else tabBtn.innerHTML = '🏀 CourtOptix Shot Map &amp; Four Factors';
+    if (intel.redzoneIntel) tabBtn.innerHTML = '🚨 RedZone Hub';
+    else if (ba) tabBtn.innerHTML = '🏀 CourtOptix &amp; 4 Factors';
+    else if (sa && sa.sportType === 'soccer') tabBtn.innerHTML = '⚽ Pitch xG &amp; Opta';
+    else if (sa && (sa.sportType === 'nfl' || sa.sportType === 'ncaaf')) tabBtn.innerHTML = '🏈 Field Map &amp; EPA';
+    else if (sa && sa.sportType === 'hockey') tabBtn.innerHTML = '🏒 Ice Slot &amp; Corsi';
+    else if (sa && sa.sportType === 'ncaab') tabBtn.innerHTML = '🎓 KenPom &amp; Shot Map';
+    else tabBtn.innerHTML = '🏀 CourtOptix &amp; 4 Factors';
   }
 
   const ss = window.FreeBallStatsSmartScreen;

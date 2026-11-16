@@ -651,6 +651,16 @@ test('StreamFree API Streamer Suite', async (t) => {
     assert.ok(t1Ros.some((a: any) => a.unit === 'Offense') && t1Ros.some((a: any) => a.unit === 'Defense'), 'Roster must include Offense and Defense units');
   });
 
+  await t.test('NBA streams (e.g. Rockets vs Wizards) never contaminate intel.sportAnalytics with NFL football telemetry', async () => {
+    const res = await server.inject({ method: 'GET', url: '/api/v1/intel/houston-rockets-vs-washington-wizards' });
+    assert.equal(res.statusCode, 200);
+    const data = res.json();
+    assert.equal(data.sportAnalytics?.sportType, 'basketball', 'sportAnalytics.sportType must be basketball, never nfl');
+    assert.equal(data.sportAnalytics?.surfaceType, 'basketball_halfcourt', 'surfaceType must be basketball_halfcourt');
+    const banner = String(data.sportAnalytics?.situationBanner || '');
+    assert.ok(!/Yard Line|Red Zone|EPA|Drive:/i.test(banner), `NBA situationBanner must not contain NFL football terms: ${banner}`);
+  });
+
   await server.close();
 });
 

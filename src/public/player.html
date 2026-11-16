@@ -10,32 +10,51 @@
     body {
       background: #06070a;
       overflow-y: auto;
+      overflow-x: hidden;
     }
     .player-page-layout {
-      max-width: 1500px;
-      margin: 20px auto;
+      max-width: 1640px;
+      width: 100%;
+      margin: 16px auto;
       padding: 0 20px;
+      box-sizing: border-box;
       display: grid;
-      grid-template-columns: 1fr 360px;
-      gap: 20px;
+      grid-template-columns: minmax(0, 1fr) 330px;
+      gap: 18px;
+      align-items: start;
     }
     .player-page-layout.theater-mode {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
     }
     .main-stage {
+      min-width: 0;
+      width: 100%;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 14px;
+      box-sizing: border-box;
     }
     .video-viewport {
       position: relative;
       width: 100%;
+      min-width: 0;
       aspect-ratio: 16 / 9;
       background: #000;
       border-radius: var(--radius-lg);
       overflow: hidden;
-      border: 1px solid var(--border-color);
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 12px 44px rgba(0, 0, 0, 0.78);
+    }
+    .video-viewport.has-lbar,
+    .video-viewport:has(.fbs-smart-screen-stage.mode-lbar) {
+      aspect-ratio: auto;
+      height: auto;
+      min-height: 540px;
+    }
+    .gamecast-hub-container {
+      min-width: 0;
+      width: 100%;
+      box-sizing: border-box;
     }
     video#pro-video {
       width: 100%;
@@ -153,9 +172,9 @@
     .chat-input-bar input:focus {
       border-color: var(--accent);
     }
-    @media (max-width: 992px) {
-      .player-page-layout { grid-template-columns: 1fr; }
-      .chat-sidebar { height: 420px; }
+    @media (max-width: 1120px) {
+      .player-page-layout { grid-template-columns: minmax(0, 1fr); }
+      .chat-sidebar { height: 420px; position: static; }
     }
   </style>
 </head>
@@ -287,7 +306,7 @@
             📋 Box Score
           </button>
           <button class="gamecast-tab-btn" data-tab="pro-ingame-analytics" id="pro-tab-btn-ingame">
-            📐 Deep Analytics &amp; Spatial Map
+            📐 Deep Analytics
           </button>
           <button class="gamecast-tab-btn" data-tab="pro-rosters">
             👥 Rosters
@@ -296,13 +315,13 @@
             📊 Match Stats
           </button>
           <button class="gamecast-tab-btn" data-tab="pro-leaders">
-            🌟 Key Leaders
+            🌟 Leaders
           </button>
           <button class="gamecast-tab-btn" data-tab="pro-scoring">
-            📜 Scoring Timeline
+            📜 Scoring
           </button>
           <button class="gamecast-tab-btn" data-tab="pro-news">
-            📰 News & Analysis
+            📰 News
           </button>
         </div>
 
@@ -653,12 +672,13 @@
 
       const tabBtn = document.getElementById('pro-tab-btn-ingame');
       if (tabBtn) {
-        if (intel.redzoneIntel) tabBtn.innerHTML = '🚨 RedZone Multi-Game &amp; Spotlight';
-        else if (sa && sa.sportType === 'soccer') tabBtn.innerHTML = '⚽ Pitch xG Map &amp; Opta Analytics';
-        else if (sa && (sa.sportType === 'nfl' || sa.sportType === 'ncaaf')) tabBtn.innerHTML = '🏈 Field Map, EPA &amp; Down-Distance';
-        else if (sa && sa.sportType === 'hockey') tabBtn.innerHTML = '🏒 Ice Slot Map, Corsi &amp; xGF';
-        else if (sa && sa.sportType === 'ncaab') tabBtn.innerHTML = '🎓 KenPom, Shot Map &amp; Four Factors';
-        else tabBtn.innerHTML = '🏀 CourtOptix Shot Map &amp; Four Factors';
+        if (intel.redzoneIntel) tabBtn.innerHTML = '🚨 RedZone Hub';
+        else if (ba) tabBtn.innerHTML = '🏀 CourtOptix &amp; 4 Factors';
+        else if (sa && sa.sportType === 'soccer') tabBtn.innerHTML = '⚽ Pitch xG &amp; Opta';
+        else if (sa && (sa.sportType === 'nfl' || sa.sportType === 'ncaaf')) tabBtn.innerHTML = '🏈 Field Map &amp; EPA';
+        else if (sa && sa.sportType === 'hockey') tabBtn.innerHTML = '🏒 Ice Slot &amp; Corsi';
+        else if (sa && sa.sportType === 'ncaab') tabBtn.innerHTML = '🎓 KenPom &amp; Shot Map';
+        else tabBtn.innerHTML = '🏀 CourtOptix &amp; 4 Factors';
       }
 
       if (!ba && sa) {
