@@ -1023,6 +1023,8 @@ function renderBoxScore(boxscore) {
   tableContainer.innerHTML = tableHtml;
 }
 
+let activeRosterUnit = 'ALL';
+
 // Render Team Rosters Component
 function renderRosters(rosters) {
   const rosterNav = document.getElementById('roster-team-nav');
@@ -1036,47 +1038,91 @@ function renderRosters(rosters) {
 
   const t1Name = currentIntel?.scoreboard?.team1?.name || 'Team 1';
   const t2Name = currentIntel?.scoreboard?.team2?.name || 'Team 2';
+  const t1List = rosters.team1 || [];
+  const t2List = rosters.team2 || [];
 
+  const athletes = activeRosterTeam === 'team1' ? t1List : t2List;
+  const units = Array.from(new Set(athletes.map(a => a.unit).filter(Boolean)));
+  if (activeRosterUnit !== 'ALL' && !units.includes(activeRosterUnit)) {
+    activeRosterUnit = 'ALL';
+  }
+
+  const filteredAthletes = activeRosterUnit === 'ALL'
+    ? athletes
+    : athletes.filter(a => a.unit === activeRosterUnit);
+
+  rosterNav.style.flexWrap = 'wrap';
+  rosterNav.style.alignItems = 'center';
   rosterNav.innerHTML = `
-    <button class="btn ${activeRosterTeam === 'team1' ? 'btn-primary' : 'btn-outline'}" id="ros-btn-t1" style="font-size: 13px; padding: 6px 14px;">
-      ${escapeHtml(t1Name)} Roster
-    </button>
-    <button class="btn ${activeRosterTeam === 'team2' ? 'btn-primary' : 'btn-outline'}" id="ros-btn-t2" style="font-size: 13px; padding: 6px 14px;">
-      ${escapeHtml(t2Name)} Roster
-    </button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;width:100%;">
+      <button class="btn ${activeRosterTeam === 'team1' ? 'btn-primary' : 'btn-outline'}" id="ros-btn-t1" style="font-size: 13px; padding: 6px 14px;">
+        ${escapeHtml(t1Name)} (${t1List.length})
+      </button>
+      <button class="btn ${activeRosterTeam === 'team2' ? 'btn-primary' : 'btn-outline'}" id="ros-btn-t2" style="font-size: 13px; padding: 6px 14px;">
+        ${escapeHtml(t2Name)} (${t2List.length})
+      </button>
+      ${units.length > 1 ? `
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto;">
+          <button class="btn ${activeRosterUnit === 'ALL' ? 'btn-primary' : 'btn-outline'}" data-ros-unit="ALL" style="font-size:11px;padding:4px 10px;">
+            All (${athletes.length})
+          </button>
+          ${units.map(u => {
+            const cnt = athletes.filter(a => a.unit === u).length;
+            return `<button class="btn ${activeRosterUnit === u ? 'btn-primary' : 'btn-outline'}" data-ros-unit="${escapeHtml(u)}" style="font-size:11px;padding:4px 10px;">${escapeHtml(u)} (${cnt})</button>`;
+          }).join('')}
+        </div>
+      ` : ''}
+    </div>
   `;
 
   document.getElementById('ros-btn-t1').addEventListener('click', () => {
     activeRosterTeam = 'team1';
+    activeRosterUnit = 'ALL';
     renderRosters(rosters);
   });
   document.getElementById('ros-btn-t2').addEventListener('click', () => {
     activeRosterTeam = 'team2';
+    activeRosterUnit = 'ALL';
     renderRosters(rosters);
   });
+  rosterNav.querySelectorAll('[data-ros-unit]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeRosterUnit = btn.getAttribute('data-ros-unit') || 'ALL';
+      renderRosters(rosters);
+    });
+  });
 
-  const athletes = activeRosterTeam === 'team1' ? (rosters.team1 || []) : (rosters.team2 || []);
   const sportPath = currentIntel?.sportPath || '';
 
-  if (athletes.length === 0) {
-    gridContainer.innerHTML = `<div style="text-align: center; color: var(--text-dim); padding: 24px;">No roster members found for this team.</div>`;
+  if (filteredAthletes.length === 0) {
+    gridContainer.innerHTML = `<div style="text-align: center; color: var(--text-dim); padding: 24px;">No roster members found for this selection.</div>`;
     return;
   }
 
-  gridContainer.innerHTML = athletes.map(ath => `
-    <div class="roster-card" onclick="openAthleteProfile('${escapeHtml(ath.id)}', '${escapeHtml(sportPath)}', '${escapeHtml(ath.name)}')">
-      <img class="roster-avatar" src="${escapeHtml(ath.headshot)}" alt="${escapeHtml(ath.name)}" onerror="this.src='https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90'">
-      <div style="overflow: hidden;">
-        <div style="font-weight: 800; color: #fff; font-size: 13px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">
-          ${escapeHtml(ath.name)}
+  gridContainer.innerHTML = filteredAthletes.map(ath => {
+    const posLabel = ath.position || ath.unit || 'Active';
+    const subParts = [ath.unit, ath.height && ath.weight ? `${ath.height} • ${ath.weight}` : '', ath.experience].filter(Boolean);
+    return `
+      <div class="roster-card" onclick="openAthleteProfile('${escapeHtml(ath.id)}', '${escapeHtml(sportPath)}', '${escapeHtml(ath.name)}')">
+        <img class="roster-avatar" src="${escapeHtml(ath.headshot)}" alt="${escapeHtml(ath.name)}" onerror="this.src='https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90'">
+        <div style="overflow: hidden; flex: 1;">
+          <div style="display:flex;align-items:center;gap:6px;justify-content:space-between;">
+            <div style="font-weight: 800; color: #fff; font-size: 13px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">
+              ${escapeHtml(ath.name)}
+            </div>
+            ${ath.starter ? `<span style="font-size:9px;font-weight:900;background:rgba(16,185,129,0.18);color:#34d399;border:1px solid rgba(16,185,129,0.35);padding:1px 5px;border-radius:4px;flex-shrink:0;">STR</span>` : ''}
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;margin-top:3px;font-size:11px;font-weight:700;">
+            ${ath.jersey ? `<span style="color:#cbd5e1;">#${escapeHtml(ath.jersey)}</span>` : ''}
+            <span style="background:rgba(145,70,255,0.2);color:#c4b5fd;border:1px solid rgba(145,70,255,0.4);padding:1px 6px;border-radius:4px;font-size:10px;font-weight:800;">${escapeHtml(posLabel)}</span>
+          </div>
+          <div style="font-size: 10px; color: var(--text-dim); white-space: nowrap; text-overflow: ellipsis; overflow: hidden; margin-top: 3px;">
+            ${escapeHtml(subParts.join(' • ') || ath.teamName || '')}
+          </div>
         </div>
-        <div style="font-size: 11px; color: #a78bfa; font-weight: 700;">
-          ${ath.jersey ? '#' + escapeHtml(ath.jersey) + ' • ' : ''}${escapeHtml(ath.position || 'Player')}
-        </div>
-        ${ath.teamName ? `<div style="font-size: 10px; color: var(--text-dim); white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">${escapeHtml(ath.teamName)}</div>` : ''}
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 // Open StatMuse / Basketball-Reference Grade Athlete Profile

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { buildServer } from '../src/server.js';
 import { basketballResearchService } from '../src/services/basketball-research-service.js';
 import { redZoneIntelService } from '../src/services/redzone-intel-service.js';
+import { sportsIntelService } from '../src/services/sports-intel-service.js';
 
 test('StreamFree API Streamer Suite', async (t) => {
   const server = await buildServer();
@@ -583,6 +584,71 @@ test('StreamFree API Streamer Suite', async (t) => {
     assert.ok(patItem, 'PAT should be tracked cleanly');
     assert.equal(patItem.type, 'EXTRA_POINT', 'PAT +1 must classify as EXTRA_POINT, never TOUCHDOWN or FIELD_GOAL');
     assert.ok(!slatePat.smartCards.some((c) => c.id.includes('p-sf-pat') && c.badge.includes('TOUCHDOWN')));
+  });
+
+  await t.test('Official ESPN team roster parser hydrates complete active squads & exact positions (QB, WR, CB, PG, GK) across grouped & flat sports', async () => {
+    const groupedNflPayload = {
+      team: { displayName: 'Pittsburgh Steelers' },
+      athletes: [
+        {
+          position: 'offense',
+          items: [
+            { id: '1', fullName: 'Aaron Rodgers', jersey: '8', position: { abbreviation: 'QB' } },
+            { id: '2', fullName: 'DK Metcalf', jersey: '14', position: { abbreviation: 'WR' } },
+          ],
+        },
+        {
+          position: 'defense',
+          items: [
+            { id: '3', fullName: 'Jalen Ramsey', jersey: '5', position: { abbreviation: 'CB' } },
+          ],
+        },
+        {
+          position: 'specialTeam',
+          items: [
+            { id: '4', fullName: 'Chris Boswell', jersey: '9', position: { abbreviation: 'K' } },
+          ],
+        },
+        {
+          position: 'practiceSquad',
+          items: [
+            { id: '99', fullName: 'Practice Guy', jersey: '49', position: { abbreviation: 'WR' } },
+          ],
+        },
+      ],
+    };
+
+    const parsedNfl = sportsIntelService.parseEspnTeamRosterPayload(groupedNflPayload, 'Pittsburgh Steelers', 'football/nfl');
+    assert.equal(parsedNfl.length, 4, 'Should include Offense, Defense, and Special Teams while excluding practiceSquad');
+    assert.equal(parsedNfl[0].position, 'QB');
+    assert.equal(parsedNfl[0].unit, 'Offense');
+    assert.equal(parsedNfl[2].position, 'CB');
+    assert.equal(parsedNfl[2].unit, 'Defense');
+    assert.equal(parsedNfl[3].position, 'K');
+    assert.equal(parsedNfl[3].unit, 'Special Teams');
+
+    const flatSoccerPayload = {
+      team: { displayName: 'Liverpool' },
+      athletes: [
+        { id: '10', displayName: 'Alisson Becker', jersey: '1', position: { abbreviation: 'G', displayName: 'Goalkeeper' } },
+        { id: '11', displayName: 'Mohamed Salah', jersey: '11', position: { abbreviation: 'F', displayName: 'Forward' } },
+      ],
+    };
+    const parsedSoccer = sportsIntelService.parseEspnTeamRosterPayload(flatSoccerPayload, 'Liverpool', 'soccer/eng.1');
+    assert.equal(parsedSoccer.length, 2);
+    assert.equal(parsedSoccer[0].position, 'G');
+    assert.equal(parsedSoccer[0].unit, 'Goalkeepers');
+    assert.equal(parsedSoccer[1].position, 'F');
+    assert.equal(parsedSoccer[1].unit, 'Forwards');
+
+    // Live check on RedZone spotlight / NFL intel endpoint ensures full roster with real positions
+    const rzLiveRes = await server.inject({ method: 'GET', url: '/api/v1/intel/redzone' });
+    assert.equal(rzLiveRes.statusCode, 200);
+    const rzLive = rzLiveRes.json();
+    const t1Ros = rzLive.rosters?.team1 || [];
+    assert.ok(t1Ros.length >= 20, `Expected full active NFL roster (>=20 players), got ${t1Ros.length}`);
+    assert.ok(t1Ros.every((a: any) => Boolean(a.position) && a.position !== 'Player'), 'Every NFL roster entry must have a real position');
+    assert.ok(t1Ros.some((a: any) => a.unit === 'Offense') && t1Ros.some((a: any) => a.unit === 'Defense'), 'Roster must include Offense and Defense units');
   });
 
   await server.close();

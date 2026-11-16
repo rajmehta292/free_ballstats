@@ -18,6 +18,8 @@ export interface AthleteInfo {
   name: string;
   jersey?: string;
   position?: string;
+  unit?: string;
+  starter?: boolean;
   headshot: string;
   stats?: string[];
   teamName?: string;
@@ -133,6 +135,7 @@ export interface AthleteProfileDetails {
 class SportsIntelService {
   private cache: LRUCache<string, SportsGamecastIntel>;
   private athleteCache: LRUCache<string, AthleteProfileDetails>;
+  private teamRosterCache: LRUCache<string, AthleteInfo[]>;
 
   constructor() {
     this.cache = new LRUCache<string, SportsGamecastIntel>({
@@ -143,6 +146,11 @@ class SportsIntelService {
     this.athleteCache = new LRUCache<string, AthleteProfileDetails>({
       max: 500,
       ttl: 3600000, // 1 hour for athlete profiles
+    });
+
+    this.teamRosterCache = new LRUCache<string, AthleteInfo[]>({
+      max: 300,
+      ttl: 900000, // 15 minutes for official ESPN team rosters & positions
     });
   }
 
@@ -450,20 +458,10 @@ class SportsIntelService {
     const t1Raw = (stream.team1?.name || streamName.split(/vs|at/i)[0] || '').toLowerCase().trim();
     const t2Raw = (stream.team2?.name || streamName.split(/vs|at/i)[1] || '').toLowerCase().trim();
 
-    // Fetch deep summary (box score, players, drives, leaders)
-    let summary: any = {};
-    try {
-      const sumRes = await fetch(`https://site.api.espn.com/apis/site/v2/sports/${sportPath}/summary?event=${matchedEvent.id}`);
-      if (sumRes.ok) {
-        summary = (await sumRes.json()) as any;
-      }
-    } catch (e) {}
-
-    const comp = matchedEvent.competitions[0];
+    const comp = matchedEvent.competitions?.[0] || {};
     const competitors: any[] = comp.competitors || [];
 
-    // CRITICAL BUG FIX: Match comp1 with stream.team1, and comp2 with stream.team2
-    // Never assume competitors[0] is team1 or home is team1!
+    // Match comp1 with stream.team1, and comp2 with stream.team2 before parallel summary + roster fetches
     let comp1 = competitors.find((c: any) => {
       const dName = (c.team?.displayName || '').toLowerCase();
       const sName = (c.team?.shortDisplayName || '').toLowerCase();
@@ -488,6 +486,29 @@ class SportsIntelService {
     } else if (!comp2) {
       comp2 = competitors.find((c: any) => c !== comp1) || competitors[1];
     }
+
+    // Fetch deep summary + full official team rosters (for complete player lists & exact positions) in parallel
+    let summary: any = {};
+    const [sumResult, officialRoster1, officialRoster2] = await Promise.all([
+      fetch(`https://site.api.espn.com/apis/site/v2/sports/${sportPath}/summary?event=${matchedEvent.id}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+      })
+        .then((r) => (r.ok ? r.json() : {}))
+        .catch(() => ({})),
+      this.fetchTeamRoster(sportPath, comp1?.team?.id, comp1?.team?.displayName || stream.team1?.name),
+      this.fetchTeamRoster(sportPath, comp2?.team?.id, comp2?.team?.displayName || stream.team2?.name),
+    ]);
+    summary = (sumResult || {}) as any;
+
+    const rosterById1 = new Map<string, AthleteInfo>();
+    const rosterById2 = new Map<string, AthleteInfo>();
+    for (const a of officialRoster1) {
+      if (a.id) rosterById1.set(String(a.id), a);
+    }
+    for (const a of officialRoster2) {
+      if (a.id) rosterById2.set(String(a.id), a);
+    }
+    const allOfficialById = new Map<string, AthleteInfo>([...rosterById1, ...rosterById2]);
 
     // Correct Win Probability calculation
     let winProb: { team1Percentage: number; team2Percentage: number } | undefined;
@@ -555,14 +576,20 @@ class SportsIntelService {
       for (const cat of flatCats.slice(0, 6)) {
         const leaderObj = cat.leaders?.[0];
         if (leaderObj?.athlete) {
+          const officialAth = leaderObj.athlete.id ? allOfficialById.get(String(leaderObj.athlete.id)) : undefined;
+          const inferredPos =
+            leaderObj.athlete.position?.abbreviation ||
+            officialAth?.position ||
+            this.inferFallbackPosition(cat.name || cat.displayName);
           leadersList.push({
             category: cat.displayName || cat.name || 'Key Leader',
             athlete: {
               id: leaderObj.athlete.id,
               name: leaderObj.athlete.displayName,
-              headshot: leaderObj.athlete.headshot?.href || 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90',
-              position: leaderObj.athlete.position?.abbreviation,
-              jersey: leaderObj.athlete.jersey,
+              headshot: leaderObj.athlete.headshot?.href || officialAth?.headshot || 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90',
+              position: inferredPos,
+              unit: officialAth?.unit,
+              jersey: leaderObj.athlete.jersey || officialAth?.jersey,
             },
             statline: leaderObj.displayValue ? `${leaderObj.displayValue} ${cat.displayName || ''}`.trim() : (leaderObj.value ? String(leaderObj.value) : ''),
             teamName: cat.teamName || leaderObj.team?.displayName,
@@ -571,10 +598,10 @@ class SportsIntelService {
       }
     }
 
-    // DEEP BOX SCORE (Players by Category)
+    // DEEP BOX SCORE (Players by Category) + Matchday Lineup / Official Full Roster Merge
     let parsedBoxScore: { team1: TeamBoxScore; team2: TeamBoxScore } | undefined;
-    const team1Roster: AthleteInfo[] = [];
-    const team2Roster: AthleteInfo[] = [];
+    const boxAthletesT1 = new Map<string, AthleteInfo>();
+    const boxAthletesT2 = new Map<string, AthleteInfo>();
     const advPlayersT1: PlayerAdvancedBoxRow[] = [];
     const advPlayersT2: PlayerAdvancedBoxRow[] = [];
 
@@ -582,9 +609,13 @@ class SportsIntelService {
       const p1Obj = summary.boxscore.players.find((p: any) => p.team?.id === comp1.team?.id) || summary.boxscore.players[0];
       const p2Obj = summary.boxscore.players.find((p: any) => p.team?.id === comp2.team?.id) || summary.boxscore.players[1];
 
-      const parsePlayerTeam = (pObj: any, rosterArr: AthleteInfo[], advRowsOut: PlayerAdvancedBoxRow[]): TeamBoxScore => {
+      const parsePlayerTeam = (
+        pObj: any,
+        rosterLookup: Map<string, AthleteInfo>,
+        boxMapOut: Map<string, AthleteInfo>,
+        advRowsOut: PlayerAdvancedBoxRow[]
+      ): TeamBoxScore => {
         const cats: BoxScoreCategory[] = [];
-        const seenAthletes = new Set<string>();
         const teamName = pObj?.team?.displayName || 'Team';
         const teamAbbr = pObj?.team?.abbreviation || teamName.slice(0, 3).toUpperCase();
 
@@ -597,12 +628,21 @@ class SportsIntelService {
 
           for (const aObj of (statCat.athletes || [])) {
             const a = aObj.athlete || {};
+            const offMatch = a.id ? (rosterLookup.get(String(a.id)) || allOfficialById.get(String(a.id))) : undefined;
+            const resolvedPos =
+              a.position?.abbreviation ||
+              a.position?.name ||
+              offMatch?.position ||
+              this.inferFallbackPosition(statCat.name || statCat.displayName);
+            const resolvedUnit = offMatch?.unit || this.inferUnitFromPosition(resolvedPos, sportPath);
             const athInfo: AthleteInfo = {
               id: a.id,
-              name: a.displayName || 'Player',
-              jersey: a.jersey,
-              position: a.position?.abbreviation || a.position?.name,
-              headshot: a.headshot?.href || 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90',
+              name: a.displayName || offMatch?.name || 'Athlete',
+              jersey: a.jersey || offMatch?.jersey,
+              position: resolvedPos,
+              unit: resolvedUnit,
+              starter: typeof aObj.starter === 'boolean' ? aObj.starter : offMatch?.starter,
+              headshot: a.headshot?.href || offMatch?.headshot || 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90',
               stats: aObj.stats || [],
               teamName,
             };
@@ -634,9 +674,8 @@ class SportsIntelService {
               });
             }
 
-            if (a.id && !seenAthletes.has(a.id)) {
-              seenAthletes.add(a.id);
-              rosterArr.push(athInfo);
+            if (a.id && !boxMapOut.has(String(a.id))) {
+              boxMapOut.set(String(a.id), athInfo);
             }
           }
 
@@ -693,10 +732,71 @@ class SportsIntelService {
       };
 
       parsedBoxScore = {
-        team1: parsePlayerTeam(p1Obj, team1Roster, advPlayersT1),
-        team2: parsePlayerTeam(p2Obj, team2Roster, advPlayersT2),
+        team1: parsePlayerTeam(p1Obj, rosterById1, boxAthletesT1, advPlayersT1),
+        team2: parsePlayerTeam(p2Obj, rosterById2, boxAthletesT2, advPlayersT2),
       };
     }
+
+    // Parse ESPN matchday `summary.rosters` when present (e.g. Soccer lineups/subs where position lives on entry.position)
+    const summaryRosterMap1 = new Map<string, AthleteInfo>();
+    const summaryRosterMap2 = new Map<string, AthleteInfo>();
+    if (Array.isArray(summary.rosters)) {
+      const r1Obj = summary.rosters.find((r: any) => r.team?.id === comp1.team?.id) || summary.rosters[0];
+      const r2Obj = summary.rosters.find((r: any) => r.team?.id === comp2.team?.id) || summary.rosters[1];
+      const fillSummaryRoster = (rObj: any, officialLookup: Map<string, AthleteInfo>, outMap: Map<string, AthleteInfo>) => {
+        const teamName = rObj?.team?.displayName || 'Team';
+        for (const entry of (rObj?.roster || [])) {
+          const a = entry.athlete || {};
+          if (!a.id) continue;
+          const off = officialLookup.get(String(a.id));
+          const pos = entry.position?.abbreviation || entry.position?.name || a.position?.abbreviation || off?.position;
+          outMap.set(String(a.id), {
+            id: String(a.id),
+            name: a.displayName || off?.name || 'Athlete',
+            jersey: entry.jersey || a.jersey || off?.jersey,
+            position: pos,
+            unit: off?.unit || this.inferUnitFromPosition(pos, sportPath),
+            starter: Boolean(entry.starter),
+            headshot: a.headshot?.href || off?.headshot || 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90',
+            teamName,
+          });
+        }
+      };
+      if (r1Obj) fillSummaryRoster(r1Obj, rosterById1, summaryRosterMap1);
+      if (r2Obj) fillSummaryRoster(r2Obj, rosterById2, summaryRosterMap2);
+    }
+
+    const mergeTeamRoster = (
+      official: AthleteInfo[],
+      boxMap: Map<string, AthleteInfo>,
+      summaryMap: Map<string, AthleteInfo>
+    ): AthleteInfo[] => {
+      const mergedMap = new Map<string, AthleteInfo>();
+      for (const ath of official) {
+        const id = String(ath.id);
+        const box = boxMap.get(id);
+        const sumEntry = summaryMap.get(id);
+        mergedMap.set(id, {
+          ...ath,
+          jersey: ath.jersey || box?.jersey || sumEntry?.jersey,
+          position: ath.position || sumEntry?.position || box?.position,
+          unit: ath.unit || sumEntry?.unit || box?.unit,
+          starter: box?.starter ?? sumEntry?.starter ?? ath.starter,
+          stats: box?.stats || ath.stats,
+          headshot: box?.headshot && !box.headshot.includes('nophoto') ? box.headshot : ath.headshot,
+        });
+      }
+      for (const [id, sumEntry] of summaryMap.entries()) {
+        if (!mergedMap.has(id)) mergedMap.set(id, sumEntry);
+      }
+      for (const [id, box] of boxMap.entries()) {
+        if (!mergedMap.has(id)) mergedMap.set(id, box);
+      }
+      return this.sortRosterAthletes(Array.from(mergedMap.values()));
+    };
+
+    const team1Roster = mergeTeamRoster(officialRoster1, boxAthletesT1, summaryRosterMap1);
+    const team2Roster = mergeTeamRoster(officialRoster2, boxAthletesT2, summaryRosterMap2);
 
     // Scoring plays
     const scoringPlaysList: Array<{
@@ -880,6 +980,193 @@ class SportsIntelService {
       basketballAnalytics: basketballAnalytics || fallbackForMissing?.basketballAnalytics,
       sportAnalytics: sportAnalyticsObj,
     };
+  }
+
+  /**
+   * Fetch and cache full official ESPN team roster (`/teams/{teamId}/roster`).
+   * Supplies authoritative player positions (`QB`, `WR`, `CB`, `PG`, `LW`, `GK`, etc.)
+   * and full active squads when ESPN `/summary` omits `athlete.position` or has partial early-game box scores.
+   */
+  private async fetchTeamRoster(sportPath: string, teamId?: string, teamName?: string): Promise<AthleteInfo[]> {
+    if (!sportPath || !teamId) return [];
+    const cacheKey = `${sportPath}:${teamId}`;
+    const cached = this.teamRosterCache.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+      const url = `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/teams/${teamId}/roster`;
+      const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      if (!res.ok) return [];
+      const data: any = await res.json();
+      const parsed = this.parseEspnTeamRosterPayload(data, teamName || data?.team?.displayName || 'Team', sportPath);
+      if (parsed.length > 0) {
+        this.teamRosterCache.set(cacheKey, parsed);
+      }
+      return parsed;
+    } catch (err) {
+      return [];
+    }
+  }
+
+  /** Parse ESPN grouped (NFL/CFB/NHL) or flat (NBA/NCAAB/Soccer) `/teams/{id}/roster` payloads */
+  public parseEspnTeamRosterPayload(data: any, teamName: string, sportPath = ''): AthleteInfo[] {
+    const rawAthletes: any[] = Array.isArray(data?.athletes) ? data.athletes : [];
+    if (rawAthletes.length === 0) return [];
+
+    const resolvedTeamName = teamName || data?.team?.displayName || 'Team';
+    const out: AthleteInfo[] = [];
+    const seen = new Set<string>();
+
+    const normalizeUnitLabel = (rawUnit?: string, posAbbr?: string): string | undefined => {
+      const u = (rawUnit || '').toLowerCase();
+      if (u === 'offense') return 'Offense';
+      if (u === 'defense') return 'Defense';
+      if (u === 'specialteam' || u === 'special_teams' || u === 'special teams') return 'Special Teams';
+      if (u === 'forwards' || u === 'forward' || u === 'centers' || u === 'wings') return 'Forwards';
+      if (u === 'defensemen') return 'Defense';
+      if (u === 'goalies' || u === 'goalkeepers') return rawUnit || 'Goalies';
+      return this.inferUnitFromPosition(posAbbr, sportPath);
+    };
+
+    const pushAthlete = (item: any, rawGroupUnit?: string) => {
+      if (!item || !item.id) return;
+      const id = String(item.id);
+      if (seen.has(id)) return;
+      seen.add(id);
+
+      const pos =
+        item.position?.abbreviation ||
+        item.position?.displayName ||
+        item.position?.name ||
+        undefined;
+      const unit = normalizeUnitLabel(rawGroupUnit || item.position?.parent?.abbreviation, pos);
+      const headshot =
+        item.headshot?.href ||
+        (sportPath.startsWith('football/nfl')
+          ? `https://a.espncdn.com/i/headshots/nfl/players/full/${id}.png`
+          : 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90');
+
+      out.push({
+        id,
+        name: item.displayName || item.fullName || 'Athlete',
+        jersey: item.jersey ? String(item.jersey) : undefined,
+        position: pos,
+        unit,
+        headshot,
+        teamName: resolvedTeamName,
+        height: item.displayHeight,
+        weight: item.displayWeight,
+        age: typeof item.age === 'number' ? item.age : undefined,
+        experience:
+          item.experience?.years !== undefined
+            ? item.experience.years === 0
+              ? 'Rookie'
+              : `${item.experience.years} Yrs`
+            : undefined,
+      });
+    };
+
+    const isGrouped = Boolean(rawAthletes[0] && Array.isArray(rawAthletes[0].items));
+    if (isGrouped) {
+      const excludedGroups = new Set(['practicesquad', 'suspended', 'injuredreserveorout']);
+      for (const grp of rawAthletes) {
+        const grpKey = String(grp.position || '').toLowerCase();
+        if (excludedGroups.has(grpKey)) continue;
+        for (const item of (grp.items || [])) {
+          pushAthlete(item, grp.position);
+        }
+      }
+      // Fallback if only IR/reserve existed in a pre-season payload
+      if (out.length === 0) {
+        for (const grp of rawAthletes) {
+          for (const item of (grp.items || [])) {
+            pushAthlete(item, grp.position);
+          }
+        }
+      }
+    } else {
+      for (const item of rawAthletes) {
+        pushAthlete(item);
+      }
+    }
+
+    return out;
+  }
+
+  private inferFallbackPosition(statCatName?: string): string | undefined {
+    const c = (statCatName || '').toLowerCase();
+    if (!c) return undefined;
+    if (c.includes('passing')) return 'QB';
+    if (c.includes('kicking')) return 'K';
+    if (c.includes('punting')) return 'P';
+    if (c.includes('goalie')) return 'G';
+    return undefined;
+  }
+
+  private inferUnitFromPosition(pos?: string, sportPath = ''): string | undefined {
+    const p = (pos || '').toUpperCase().trim();
+    if (!p) return undefined;
+    if (sportPath.includes('football') || ['QB', 'RB', 'FB', 'WR', 'TE', 'OT', 'OG', 'OC', 'OL', 'DE', 'DT', 'NT', 'DL', 'LB', 'OLB', 'ILB', 'MLB', 'EDGE', 'CB', 'FS', 'SS', 'DB', 'PK', 'LS'].includes(p)) {
+      if (['QB', 'RB', 'FB', 'WR', 'TE', 'OT', 'OG', 'OC', 'C', 'G', 'T', 'OL'].includes(p)) return 'Offense';
+      if (['DE', 'DT', 'NT', 'DL', 'LB', 'OLB', 'ILB', 'MLB', 'EDGE', 'CB', 'S', 'FS', 'SS', 'DB'].includes(p)) return 'Defense';
+      if (['K', 'PK', 'P', 'LS', 'KR', 'PR'].includes(p)) return 'Special Teams';
+    }
+    if (sportPath.includes('basketball') || ['PG', 'SG', 'SF', 'PF'].includes(p)) {
+      if (['PG', 'SG', 'G'].includes(p)) return 'Backcourt';
+      if (['SF', 'PF', 'F', 'C'].includes(p)) return 'Frontcourt';
+    }
+    if (sportPath.includes('hockey')) {
+      if (['C', 'LW', 'RW', 'W', 'F'].includes(p)) return 'Forwards';
+      if (['D', 'LD', 'RD'].includes(p)) return 'Defense';
+      if (['G'].includes(p)) return 'Goalies';
+    }
+    if (sportPath.includes('soccer') || ['GK', 'CAM', 'CDM', 'ST', 'CF', 'CB', 'LB', 'RB'].includes(p)) {
+      if (['G', 'GK'].includes(p)) return 'Goalkeepers';
+      if (['D', 'CD', 'CB', 'LB', 'RB', 'WB', 'LWB', 'RWB', 'FB'].includes(p)) return 'Defenders';
+      if (['M', 'CM', 'CDM', 'CAM', 'LM', 'RM', 'AM', 'DM'].includes(p)) return 'Midfielders';
+      if (['F', 'FW', 'ST', 'CF', 'LW', 'RW', 'W'].includes(p)) return 'Forwards';
+    }
+    return undefined;
+  }
+
+  private sortRosterAthletes(list: AthleteInfo[]): AthleteInfo[] {
+    const unitRank = (unit?: string): number => {
+      const u = (unit || '').toLowerCase();
+      if (u === 'offense' || u === 'backcourt' || u === 'forwards') return 1;
+      if (u === 'defense' || u === 'frontcourt' || u === 'midfielders') return 2;
+      if (u === 'defenders') return 3;
+      if (u === 'special teams' || u === 'goalies' || u === 'goalkeepers') return 4;
+      return 5;
+    };
+    const posRank = (pos?: string): number => {
+      const order: Record<string, number> = {
+        QB: 1, RB: 2, FB: 3, WR: 4, TE: 5, OT: 6, T: 6, OG: 7, G: 7, C: 8, OL: 9,
+        EDGE: 10, DE: 11, DT: 12, NT: 13, DL: 14, LB: 15, MLB: 15, ILB: 15, OLB: 16, CB: 17, S: 18, FS: 18, SS: 18, DB: 19,
+        K: 20, PK: 20, P: 21, LS: 22,
+        PG: 1, SG: 2, SF: 4, PF: 5, F: 6,
+        GK: 1, ST: 2, CF: 2, LW: 3, RW: 3, CAM: 4, CM: 5, CDM: 6, D: 8,
+      };
+      return order[(pos || '').toUpperCase()] ?? 50;
+    };
+
+    return [...list].sort((a, b) => {
+      // Starters or active boxscore performers surface first within each unit
+      const uDiff = unitRank(a.unit) - unitRank(b.unit);
+      if (uDiff !== 0) return uDiff;
+
+      const aStarter = a.starter ? 0 : 1;
+      const bStarter = b.starter ? 0 : 1;
+      if (aStarter !== bStarter) return aStarter - bStarter;
+
+      const pDiff = posRank(a.position) - posRank(b.position);
+      if (pDiff !== 0) return pDiff;
+
+      const aHasStats = a.stats && a.stats.length > 0 ? 0 : 1;
+      const bHasStats = b.stats && b.stats.length > 0 ? 0 : 1;
+      if (aHasStats !== bHasStats) return aHasStats - bHasStats;
+
+      return Number(a.jersey || 999) - Number(b.jersey || 999);
+    });
   }
 
   private resolveSportPath(category: string, league?: string): string | null {
