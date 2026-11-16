@@ -735,6 +735,29 @@ test('StreamFree API Streamer Suite', async (t) => {
     assert.ok(!orlPre.onCourtLineup.team2Five.some((p) => p.name.includes('Gilgeous-Alexander')), 'ORL pre-game must never show OKC players');
   });
 
+  await t.test('Research queries fuzzy-match typos (buddy heild -> Buddy Hield), fetch live leaders, and never dump generic PER on unknown text', async () => {
+    const hieldRes = await server.inject({ method: 'GET', url: '/api/v1/basketball/query?q=' + encodeURIComponent('buddy heild') });
+    assert.equal(hieldRes.statusCode, 200);
+    const hield = hieldRes.json();
+    assert.equal(hield.type, 'player_spotlight');
+    assert.ok(hield.headline.includes('Buddy Hield'), `Expected Buddy Hield spotlight, got: ${hield.headline}`);
+    assert.ok(hield.correctedNote && hield.correctedNote.includes('Buddy Hield'), 'Expected typo correction badge');
+    assert.ok(Array.isArray(hield.tableRows) && hield.tableRows.length > 0);
+
+    const bullsRes = await server.inject({ method: 'GET', url: '/api/v1/basketball/query?q=' + encodeURIComponent('Chicago Bulls roster') });
+    assert.equal(bullsRes.statusCode, 200);
+    const bulls = bullsRes.json();
+    assert.equal(bulls.type, 'team_scouting');
+    assert.ok(bulls.headline.includes('Bulls'), `Expected Bulls team scouting, got: ${bulls.headline}`);
+
+    const bogusRes = await server.inject({ method: 'GET', url: '/api/v1/basketball/query?q=' + encodeURIComponent('xyzqwertynotaplayer') });
+    assert.equal(bogusRes.statusCode, 200);
+    const bogus = bogusRes.json();
+    assert.equal(bogus.type, 'no_exact_match');
+    assert.ok(!bogus.headline.includes('Player Efficiency Rating'), 'Unknown query must not silently dump PER table');
+    assert.ok(Array.isArray(bogus.suggestions) && bogus.suggestions.length > 0);
+  });
+
   await server.close();
 });
 

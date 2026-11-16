@@ -949,9 +949,28 @@ const CURATED_NBA_PLAYERS: NBAPlayerSeasonProfile[] = [
   },
 ];
 
+interface DirectoryPlayerEntry {
+  id: string;
+  name: string;
+  team: string;
+  teamAbbr: string;
+  teamId?: string;
+  position: string;
+  jersey: string;
+  age?: number;
+  height?: string;
+  weight?: string;
+  college?: string;
+  headshot: string;
+  curated?: NBAPlayerSeasonProfile;
+}
+
 class BasketballResearchService {
   private hubCache: LRUCache<string, any>;
   private gameAnalyticsCache: LRUCache<string, BasketballGameDeepAnalytics>;
+  private playerDirCache: LRUCache<string, DirectoryPlayerEntry[]>;
+  private livePlayerCache: LRUCache<string, any>;
+  private leadersCache: LRUCache<string, any[]>;
 
   constructor() {
     this.hubCache = new LRUCache<string, any>({
@@ -961,6 +980,18 @@ class BasketballResearchService {
     this.gameAnalyticsCache = new LRUCache<string, BasketballGameDeepAnalytics>({
       max: 100,
       ttl: 20000, // 20s
+    });
+    this.playerDirCache = new LRUCache<string, DirectoryPlayerEntry[]>({
+      max: 5,
+      ttl: 21600000, // 6 hours for full 30-team NBA roster index
+    });
+    this.livePlayerCache = new LRUCache<string, any>({
+      max: 250,
+      ttl: 300000, // 5 min per live athlete overview
+    });
+    this.leadersCache = new LRUCache<string, any[]>({
+      max: 5,
+      ttl: 300000, // 5 min for ESPN statistical leaders
     });
   }
 
@@ -2823,64 +2854,575 @@ class BasketballResearchService {
     };
   }
 
-  /**
-   * StatMuse-style Natural Language Research Query Engine
-   * Handles MVP Race modeling, Live Team Standings/Records, Nicknames/Aliases, Position/Threshold filters,
-   * Player Comparisons, and Custom Statistical Leaderboards.
-   */
-  public async queryResearch(rawQuery: string) {
-    const q = (rawQuery || '').toLowerCase().trim();
+  private normalizeResearchText(s: string): string {
+    return String(s || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/['’.-]/g, ' ')
+      .replace(/[^a-z0-9\s+]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
 
-    // Alias matching helper supporting nicknames & multi-word last names
-    const matchesPlayerQuery = (p: (typeof CURATED_NBA_PLAYERS)[number], text: string): boolean => {
-      const full = p.name.toLowerCase();
-      const tokens = full.split(/\s+/);
-      const last = (tokens[tokens.length - 1] === 'jr.' || tokens[tokens.length - 1] === 'iii' ? tokens[tokens.length - 2] : tokens[tokens.length - 1]) || '';
-      if (text.includes(full) || (last.length >= 4 && text.includes(last))) return true;
-      const aliases: Record<string, string[]> = {
-        'shai gilgeous-alexander': ['sga', 'shai'],
-        'victor wembanyama': ['wemby'],
-        'nikola jokic': ['joker', 'jokic'],
-        'luka doncic': ['luka', 'doncic'],
-        'lebron james': ['lebron', 'bron'],
-        'stephen curry': ['steph', 'curry'],
-        'giannis antetokounmpo': ['giannis', 'greek freak'],
-        'kevin durant': ['durant', 'kd'],
-        'jayson tatum': ['tatum'],
-        'anthony edwards': ['ant man', 'edwards'],
-        'anthony davis': ['davis'],
-        'tyrese haliburton': ['hali', 'haliburton'],
-      };
-      return (aliases[full] || []).some((a) => new RegExp(`\\b${a}\\b`, 'i').test(text));
+  private damerauDistance(a: string, b: string): number {
+    const la = a.length;
+    const lb = b.length;
+    if (la === 0) return lb;
+    if (lb === 0) return la;
+    const dp: number[][] = Array.from({ length: la + 1 }, () => new Array(lb + 1).fill(0));
+    for (let i = 0; i <= la; i++) dp[i][0] = i;
+    for (let j = 0; j <= lb; j++) dp[0][j] = j;
+    for (let i = 1; i <= la; i++) {
+      for (let j = 1; j <= lb; j++) {
+        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+        let val = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+        if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+          val = Math.min(val, dp[i - 2][j - 2] + 1);
+        }
+        dp[i][j] = val;
+      }
+    }
+    return dp[la][lb];
+  }
+
+  private similarityScore(a: string, b: string): number {
+    if (!a || !b) return 0;
+    if (a === b) return 1;
+    const maxLen = Math.max(a.length, b.length);
+    return Math.max(0, 1 - this.damerauDistance(a, b) / maxLen);
+  }
+
+  /**
+   * Build & cache an indexed directory of all active NBA players (~450-540 athletes across 30 rosters)
+   * merged with our curated advanced analytics stars.
+   */
+  public async getNbaPlayerDirectory(): Promise<DirectoryPlayerEntry[]> {
+    const cached = this.playerDirCache.get('nba_all');
+    if (cached && cached.length > CURATED_NBA_PLAYERS.length) return cached;
+
+    const byId = new Map<string, DirectoryPlayerEntry>();
+    for (const cp of CURATED_NBA_PLAYERS) {
+      byId.set(cp.id, {
+        id: cp.id,
+        name: cp.name,
+        team: cp.team,
+        teamAbbr: cp.teamAbbr,
+        position: cp.position,
+        jersey: cp.jersey,
+        age: cp.age,
+        height: cp.height,
+        weight: cp.weight,
+        college: cp.college,
+        headshot: cp.headshot,
+        curated: cp,
+      });
+    }
+
+    try {
+      const teamsRes = await fetch('https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams?limit=35', {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: AbortSignal.timeout(3500),
+      });
+      if (teamsRes.ok) {
+        const teamsJson: any = await teamsRes.json();
+        const teamList: any[] = teamsJson?.sports?.[0]?.leagues?.[0]?.teams || [];
+        const rosterResults = await Promise.allSettled(
+          teamList.map(async (item: any) => {
+            const tm = item.team;
+            if (!tm?.id) return null;
+            const rRes = await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/${tm.id}/roster`, {
+              headers: { 'User-Agent': 'Mozilla/5.0' },
+              signal: AbortSignal.timeout(3500),
+            });
+            if (!rRes.ok) return null;
+            const rJson: any = await rRes.json();
+            return { tm, athletes: rJson?.athletes || [] };
+          })
+        );
+
+        for (const res of rosterResults) {
+          if (res.status !== 'fulfilled' || !res.value) continue;
+          const { tm, athletes } = res.value;
+          for (const a of athletes) {
+            const id = String(a.id || '');
+            const name = a.fullName || a.displayName;
+            if (!id || !name) continue;
+            const existing = byId.get(id);
+            byId.set(id, {
+              id,
+              name,
+              team: tm.displayName || existing?.team || 'NBA',
+              teamAbbr: tm.abbreviation || existing?.teamAbbr || 'NBA',
+              teamId: String(tm.id),
+              position: a.position?.abbreviation || existing?.position || 'G/F',
+              jersey: a.jersey ? String(a.jersey) : (existing?.jersey || '-'),
+              age: a.age ?? existing?.age,
+              height: a.displayHeight || existing?.height,
+              weight: a.displayWeight || existing?.weight,
+              college: a.college?.name || existing?.college,
+              headshot: a.headshot?.href || existing?.headshot || `https://a.espncdn.com/i/headshots/nba/players/full/${id}.png`,
+              curated: existing?.curated,
+            });
+          }
+        }
+      }
+    } catch {}
+
+    const list = Array.from(byId.values());
+    if (list.length > CURATED_NBA_PLAYERS.length) {
+      this.playerDirCache.set('nba_all', list);
+    }
+    return list;
+  }
+
+  /**
+   * Fetch live ESPN athlete profile + Regular Season/Career splits + Recent 5-game log + Rotowire scouting report
+   */
+  public async fetchLivePlayerDetail(entry: DirectoryPlayerEntry): Promise<{
+    bio: DirectoryPlayerEntry;
+    seasonStats: Record<string, string>;
+    careerStats: Record<string, string>;
+    gameLogRows: Array<{ date: string; matchup: string; result: string; min: string; pts: string; reb: string; ast: string; stl: string; blk: string; fgPct: string; threePtPct: string }>;
+    rotowire?: { headline?: string; story?: string; description?: string; published?: string };
+    awards: string[];
+  }> {
+    const cacheKey = `athlete_${entry.id}`;
+    const cached = this.livePlayerCache.get(cacheKey);
+    if (cached) return cached;
+
+    let bio = { ...entry };
+    const seasonStats: Record<string, string> = {};
+    const careerStats: Record<string, string> = {};
+    const gameLogRows: Array<{ date: string; matchup: string; result: string; min: string; pts: string; reb: string; ast: string; stl: string; blk: string; fgPct: string; threePtPct: string }> = [];
+    let rotowire: { headline?: string; story?: string; description?: string; published?: string } | undefined;
+    const awards: string[] = [];
+
+    try {
+      const [infoRes, ovRes] = await Promise.allSettled([
+        fetch(`https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/${entry.id}`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          signal: AbortSignal.timeout(3500),
+        }),
+        fetch(`https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/${entry.id}/overview`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          signal: AbortSignal.timeout(3500),
+        }),
+      ]);
+
+      if (infoRes.status === 'fulfilled' && infoRes.value.ok) {
+        const infoJson: any = await infoRes.value.json();
+        const a = infoJson?.athlete;
+        if (a) {
+          bio = {
+            ...bio,
+            name: a.fullName || a.displayName || bio.name,
+            team: a.team?.displayName || bio.team,
+            teamAbbr: a.team?.abbreviation || bio.teamAbbr,
+            teamId: a.team?.id ? String(a.team.id) : bio.teamId,
+            position: a.position?.abbreviation || bio.position,
+            jersey: a.jersey ? String(a.jersey) : bio.jersey,
+            age: a.age ?? bio.age,
+            height: a.displayHeight || bio.height,
+            weight: a.displayWeight || bio.weight,
+            college: a.college?.name || bio.college,
+            headshot: a.headshot?.href || bio.headshot,
+          };
+        }
+      }
+
+      if (ovRes.status === 'fulfilled' && ovRes.value.ok) {
+        const ov: any = await ovRes.value.json();
+        const labels: string[] = ov?.statistics?.labels || [];
+        const splits: any[] = ov?.statistics?.splits || [];
+        const regSplit = splits.find((s) => /regular/i.test(s.displayName || '')) || splits[0];
+        const carSplit = splits.find((s) => /career/i.test(s.displayName || ''));
+        if (regSplit?.stats) {
+          labels.forEach((lbl, idx) => { seasonStats[lbl] = String(regSplit.stats[idx] ?? '-'); });
+        }
+        if (carSplit?.stats) {
+          labels.forEach((lbl, idx) => { careerStats[lbl] = String(carSplit.stats[idx] ?? '-'); });
+        }
+
+        const glEventsMap: Record<string, any> = ov?.gameLog?.events || {};
+        const glStat = ov?.gameLog?.statistics?.[0];
+        const glLabels: string[] = glStat?.labels || [];
+        const glIdx = (lbl: string) => glLabels.indexOf(lbl);
+        for (const ev of (glStat?.events || []).slice(0, 6)) {
+          const meta = glEventsMap[String(ev.eventId)] || {};
+          const s: string[] = ev.stats || [];
+          const val = (lbl: string) => {
+            const idx = glIdx(lbl);
+            return idx >= 0 && s[idx] !== undefined ? String(s[idx]) : '-';
+          };
+          const dStr = meta.gameDate ? new Date(meta.gameDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Recent';
+          const oppAbbr = meta.opponent?.abbreviation || 'OPP';
+          const matchup = `${meta.atVs || 'vs'} ${oppAbbr}`;
+          const result = `${meta.gameResult || ''} ${meta.score || ''}`.trim() || '-';
+          gameLogRows.push({
+            date: dStr,
+            matchup,
+            result,
+            min: val('MIN'),
+            pts: val('PTS'),
+            reb: val('REB'),
+            ast: val('AST'),
+            stl: val('STL'),
+            blk: val('BLK'),
+            fgPct: val('FG%'),
+            threePtPct: val('3P%'),
+          });
+        }
+
+        if (ov?.rotowire) {
+          rotowire = {
+            headline: ov.rotowire.headline,
+            story: ov.rotowire.story,
+            description: ov.rotowire.description,
+            published: ov.rotowire.published,
+          };
+        }
+        if (Array.isArray(ov?.awards)) {
+          for (const aw of ov.awards.slice(0, 4)) {
+            if (aw?.name) awards.push(`${aw.displayCount ? `${aw.displayCount} ` : ''}${aw.name}`);
+          }
+        }
+      }
+    } catch {}
+
+    const result = { bio, seasonStats, careerStats, gameLogRows, rotowire, awards };
+    this.livePlayerCache.set(cacheKey, result);
+    return result;
+  }
+
+  /**
+   * Fetch live ESPN NBA statistical leaders across scoring, assists, rebounds, 3PT%, 3PM, steals, blocks & PER
+   */
+  public async fetchLiveNbaLeaders(): Promise<any[]> {
+    const cached = this.leadersCache.get('nba_leaders');
+    if (cached && cached.length > 0) return cached;
+
+    try {
+      const res = await fetch('https://site.api.espn.com/apis/site/v3/sports/basketball/nba/leaders', {
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: AbortSignal.timeout(3500),
+      });
+      if (res.ok) {
+        const json: any = await res.json();
+        const cats: any[] = json?.leaders?.categories || [];
+        if (cats.length > 0) {
+          this.leadersCache.set('nba_leaders', cats);
+          return cats;
+        }
+      }
+    } catch {}
+
+    return [];
+  }
+
+  /**
+   * Resolve 1+ player candidates with typo-tolerant Damerau-Levenshtein fuzzy matching,
+   * NBA nickname aliases, and fallback ESPN global athlete search.
+   */
+  private async resolvePlayerCandidates(
+    segment: string,
+    directory: DirectoryPlayerEntry[],
+    allowGlobalEspnSearch = true
+  ): Promise<{ best?: DirectoryPlayerEntry; score: number; correctedFrom?: string; suggestions: DirectoryPlayerEntry[] }> {
+    const clean = this.normalizeResearchText(segment)
+      .replace(/\b(stats|stat|line|average|averages|avg|gamelog|game log|last games|recent|career|profile|how is|how are|doing|playing|season|numbers|show me|tell me about|who is|what are|for|the|nba)\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!clean || clean.length < 2) return { score: 0, suggestions: [] };
+
+    const aliases: Record<string, string> = {
+      sga: 'shai gilgeous-alexander',
+      shai: 'shai gilgeous-alexander',
+      wemby: 'victor wembanyama',
+      joker: 'nikola jokic',
+      luka: 'luka doncic',
+      bron: 'lebron james',
+      lebron: 'lebron james',
+      steph: 'stephen curry',
+      chef: 'stephen curry',
+      giannis: 'giannis antetokounmpo',
+      'greek freak': 'giannis antetokounmpo',
+      kd: 'kevin durant',
+      tatum: 'jayson tatum',
+      'ant man': 'anthony edwards',
+      ant: 'anthony edwards',
+      hali: 'tyrese haliburton',
+      haliburton: 'tyrese haliburton',
+      cp3: 'chris paul',
+      kat: 'karl-anthony towns',
+      dame: 'damian lillard',
+      spida: 'donovan mitchell',
+      book: 'devin booker',
+      ja: 'ja morant',
+      lamelo: 'lamelo ball',
+      melo: 'lamelo ball',
+      paolo: 'paolo banchero',
+      chet: 'chet holmgren',
+      sengun: 'alperen sengun',
+      maxey: 'tyrese maxey',
+      cade: 'cade cunningham',
+      jdub: 'jalen williams',
+      bam: 'bam adebayo',
+      herro: 'tyler herro',
+      embiid: 'joel embiid',
+      kawhi: 'kawhi leonard',
+      pg13: 'paul george',
+      lauri: 'lauri markkanen',
+      buddy: 'buddy hield',
+      hield: 'buddy hield',
+      zion: 'zion williamson',
+      trae: 'trae young',
+      sabonis: 'domantas sabonis',
+      fox: 'deaaron fox',
     };
 
-    // 1. Two-player Head-to-Head comparison ("Jokic vs SGA")
-    const matchedPlayers = CURATED_NBA_PLAYERS.filter((p) => matchesPlayerQuery(p, q));
-    if (matchedPlayers.length >= 2) {
-      const p1 = matchedPlayers[0];
-      const p2 = matchedPlayers[1];
-      const comp = this.comparePlayers(p1.id, p2.id);
+    const aliasTarget = aliases[clean];
+    const queryWords = clean.split(' ').filter((w) => w.length >= 2);
+    const ranked: Array<{ entry: DirectoryPlayerEntry; score: number; exact: boolean }> = [];
+
+    for (const entry of directory) {
+      const fullNorm = this.normalizeResearchText(entry.name);
+      const tokens = fullNorm.split(' ');
+      const suffixSet = new Set(['jr', 'sr', 'ii', 'iii', 'iv']);
+      const nonSuffixTokens = tokens.filter((t) => !suffixSet.has(t));
+      const last = nonSuffixTokens[nonSuffixTokens.length - 1] || fullNorm;
+      const first = nonSuffixTokens[0] || fullNorm;
+
+      let score = 0;
+      let exact = false;
+
+      if (aliasTarget && fullNorm === this.normalizeResearchText(aliasTarget)) {
+        score = 0.99;
+        exact = true;
+      } else if (clean === fullNorm || fullNorm === clean) {
+        score = 1.0;
+        exact = true;
+      } else if (clean.includes(fullNorm)) {
+        score = 0.98;
+        exact = true;
+      } else if (queryWords.length === 1 && clean.length >= 4 && last === clean) {
+        score = entry.curated ? 0.95 : 0.91;
+        exact = true;
+      } else if (
+        queryWords.length >= 2 &&
+        ['sga', 'wemby', 'joker', 'greek freak', 'ant man', 'kd', 'cp3', 'kat', 'pg13', 'jdub', 'hali', 'spida'].some(
+          (ak) => new RegExp(`\\b${ak}\\b`, 'i').test(clean) && fullNorm === this.normalizeResearchText(aliases[ak])
+        )
+      ) {
+        score = 0.96;
+        exact = true;
+      } else {
+        // Check multi-word fuzzy similarity (handles typos like "buddy heild" -> "buddy hield")
+        const fullSim = this.similarityScore(clean, fullNorm);
+        let pairSim = fullSim;
+        if (queryWords.length >= 2 && nonSuffixTokens.length >= 2) {
+          const sFirst = this.similarityScore(queryWords[0], first);
+          const sLast = this.similarityScore(queryWords[queryWords.length - 1], last);
+          pairSim = Math.max(fullSim, sFirst * 0.42 + sLast * 0.58);
+        } else if (queryWords.length === 1 && queryWords[0].length >= 4) {
+          pairSim = Math.max(fullSim, this.similarityScore(queryWords[0], last), this.similarityScore(queryWords[0], first) * 0.88);
+        }
+        // Check consecutive word pairs inside longer sentences
+        for (let i = 0; i < queryWords.length - 1; i++) {
+          const two = `${queryWords[i]} ${queryWords[i + 1]}`;
+          pairSim = Math.max(pairSim, this.similarityScore(two, fullNorm));
+        }
+        score = pairSim + (entry.curated ? 0.015 : 0);
+      }
+
+      if (score >= 0.58) {
+        ranked.push({ entry, score: Math.min(1, score), exact });
+      }
+    }
+
+    ranked.sort((a, b) => b.score - a.score);
+    let best = ranked[0];
+
+    // Secondary live ESPN athlete search when local directory has no strong match (e.g. retired stars or brand-new call-ups)
+    if (allowGlobalEspnSearch && (!best || best.score < 0.74) && clean.length >= 3) {
+      try {
+        const sRes = await fetch(`https://site.web.api.espn.com/apis/common/v3/search?query=${encodeURIComponent(clean)}&limit=5&type=player`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          signal: AbortSignal.timeout(2500),
+        });
+        if (sRes.ok) {
+          const sJson: any = await sRes.json();
+          const nbaItem = (sJson?.items || []).find((it: any) => it.league === 'nba' || it.sport === 'basketball');
+          if (nbaItem?.id && nbaItem?.displayName) {
+            const tm = nbaItem.teamRelationships?.[0]?.core;
+            const liveEntry: DirectoryPlayerEntry = {
+              id: String(nbaItem.id),
+              name: nbaItem.displayName,
+              team: tm?.displayName || 'NBA',
+              teamAbbr: tm?.abbreviation || 'NBA',
+              teamId: tm?.id ? String(tm.id) : undefined,
+              position: nbaItem.position?.abbreviation || 'G/F',
+              jersey: nbaItem.jersey ? String(nbaItem.jersey) : '-',
+              headshot: `https://a.espncdn.com/i/headshots/nba/players/full/${nbaItem.id}.png`,
+            };
+            return { best: liveEntry, score: 0.9, correctedFrom: undefined, suggestions: ranked.slice(0, 4).map((r) => r.entry) };
+          }
+        }
+      } catch {}
+    }
+
+    if (best && best.score >= 0.74) {
       return {
-        query: rawQuery,
-        type: 'comparison',
-        headline: `${p1.name} vs. ${p2.name} — Advanced Analytics Showdown`,
-        narrative: comp.summaryVerdict,
-        heroPlayer: p1,
-        secondaryPlayer: p2,
-        keyStats: [
-          { label: `${p1.name.split(' ').pop()} PPG / TS%`, value: `${p1.ppg} / ${p1.tsPct}%` },
-          { label: `${p2.name.split(' ').pop()} PPG / TS%`, value: `${p2.ppg} / ${p2.tsPct}%` },
-          { label: 'PER Edge', value: `${p1.per >= p2.per ? p1.name : p2.name} (${Math.max(p1.per, p2.per)})` },
-          { label: 'BPM Edge', value: `${p1.bpm >= p2.bpm ? p1.name : p2.name} (+${Math.max(p1.bpm, p2.bpm)})` },
-        ],
-        tableHeaders: ['PLAYER', 'TEAM', 'PPG', 'RPG', 'APG', 'TS%', 'eFG%', 'PER', 'BPM', 'VORP'],
-        tableRows: [p1, p2].map((p) => [
-          p.name, p.teamAbbr, p.ppg, p.rpg, p.apg, `${p.tsPct}%`, `${p.efgPct}%`, p.per, `+${p.bpm}`, p.vorp,
-        ]),
+        best: best.entry,
+        score: best.score,
+        correctedFrom: best.exact || best.score >= 0.96 ? undefined : segment.trim(),
+        suggestions: ranked.slice(1, 5).map((r) => r.entry),
       };
     }
 
-    // Load live conference standings once for team & MVP questions
+    return {
+      score: best ? best.score : 0,
+      suggestions: ranked.slice(0, 5).map((r) => r.entry),
+    };
+  }
+
+  /**
+   * StatMuse-style Natural Language Research Query Engine
+   * Handles ANY active NBA player (with live ESPN stats/gamelogs & typo fuzzy matching),
+   * Live League Leaders, Today's Scoreboard/Schedule, MVP Race modeling, Live Team Standings & Rosters,
+   * Player Comparisons, and Custom Statistical Leaderboards.
+   */
+  public async queryResearch(rawQuery: string) {
+    const rawTrimmed = (rawQuery || '').trim();
+    const q = rawTrimmed.toLowerCase();
+    const directory = await this.getNbaPlayerDirectory();
+
+    const looksLikeLeagueLeaderboard =
+      /\b(mvp|leaders?|top\s*\d*|best|most|highest|lowest|who leads|standings|conference|east|west|roster|schedule|today|tonight|live|center|centers|guard|guards|forward|forwards|double)\b/i.test(q);
+    const hasTopicStatWords =
+      /\b(average|ppg|apg|rpg|ts%|efg%|per|bpm|vorp|dpoy|stock|steal|block|three|3pt|3p%|3pm|fg%|ft%|score|scores|record)\b/i.test(q);
+
+    // 1. Explicit Two-Player Comparison ("Jokic vs SGA", "Buddy Heild vs Steph Curry", "compare X and Y")
+    const vsSplitMatch = rawTrimmed.split(/\s+(?:vs\.?|versus|compared\s+to)\s+/i);
+    if (vsSplitMatch.length === 2 && vsSplitMatch[0].trim() && vsSplitMatch[1].trim()) {
+      const [r1, r2] = await Promise.all([
+        this.resolvePlayerCandidates(vsSplitMatch[0], directory),
+        this.resolvePlayerCandidates(vsSplitMatch[1], directory),
+      ]);
+      if (r1.best && r2.best && r1.best.id !== r2.best.id) {
+        if (r1.best.curated && r2.best.curated) {
+          const p1 = r1.best.curated;
+          const p2 = r2.best.curated;
+          const comp = this.comparePlayers(p1.id, p2.id);
+          const corrNotes = [
+            r1.correctedFrom ? `"${r1.correctedFrom}" → ${p1.name}` : '',
+            r2.correctedFrom ? `"${r2.correctedFrom}" → ${p2.name}` : '',
+          ].filter(Boolean);
+          return {
+            query: rawQuery,
+            type: 'comparison',
+            correctedNote: corrNotes.length ? `Matched ${corrNotes.join(' & ')}` : undefined,
+            headline: `${p1.name} vs. ${p2.name} — Advanced Analytics Showdown`,
+            narrative: comp.summaryVerdict,
+            heroPlayer: p1,
+            secondaryPlayer: p2,
+            keyStats: [
+              { label: `${p1.name.split(' ').pop()} PPG / TS%`, value: `${p1.ppg} / ${p1.tsPct}%` },
+              { label: `${p2.name.split(' ').pop()} PPG / TS%`, value: `${p2.ppg} / ${p2.tsPct}%` },
+              { label: 'PER Edge', value: `${p1.per >= p2.per ? p1.name : p2.name} (${Math.max(p1.per, p2.per)})` },
+              { label: 'BPM Edge', value: `${p1.bpm >= p2.bpm ? p1.name : p2.name} (+${Math.max(p1.bpm, p2.bpm)})` },
+            ],
+            tableHeaders: ['PLAYER', 'TEAM', 'PPG', 'RPG', 'APG', 'TS%', 'eFG%', 'PER', 'BPM', 'VORP'],
+            tableRows: [p1, p2].map((p) => [
+              p.name, p.teamAbbr, p.ppg, p.rpg, p.apg, `${p.tsPct}%`, `${p.efgPct}%`, p.per, `+${p.bpm}`, p.vorp,
+            ]),
+          };
+        }
+
+        // Live ESPN head-to-head comparison for ANY two active NBA players
+        const [d1, d2] = await Promise.all([
+          this.fetchLivePlayerDetail(r1.best),
+          this.fetchLivePlayerDetail(r2.best),
+        ]);
+        const s1 = d1.seasonStats;
+        const s2 = d2.seasonStats;
+        const corrNotes = [
+          r1.correctedFrom ? `"${r1.correctedFrom}" → ${d1.bio.name}` : '',
+          r2.correctedFrom ? `"${r2.correctedFrom}" → ${d2.bio.name}` : '',
+        ].filter(Boolean);
+        return {
+          query: rawQuery,
+          type: 'comparison',
+          correctedNote: corrNotes.length ? `Matched ${corrNotes.join(' & ')}` : undefined,
+          headline: `${d1.bio.name} (${d1.bio.teamAbbr}) vs. ${d2.bio.name} (${d2.bio.teamAbbr}) — Live 2026-27 Season Comparison`,
+          narrative: `${d1.bio.name} (${s1.PTS || d1.bio.curated?.ppg || '-'} PPG, ${s1.REB || d1.bio.curated?.rpg || '-'} RPG, ${s1.AST || d1.bio.curated?.apg || '-'} APG) vs. ${d2.bio.name} (${s2.PTS || d2.bio.curated?.ppg || '-'} PPG, ${s2.REB || d2.bio.curated?.rpg || '-'} RPG, ${s2.AST || d2.bio.curated?.apg || '-'} APG).`,
+          heroPlayer: d1.bio,
+          secondaryPlayer: d2.bio,
+          keyStats: [
+            { label: `${d1.bio.name} PPG / 3P%`, value: `${s1.PTS || d1.bio.curated?.ppg || '-'} PPG • ${s1['3P%'] || d1.bio.curated?.threePtPct || '-'}%` },
+            { label: `${d2.bio.name} PPG / 3P%`, value: `${s2.PTS || d2.bio.curated?.ppg || '-'} PPG • ${s2['3P%'] || d2.bio.curated?.threePtPct || '-'}%` },
+            { label: `${d1.bio.teamAbbr} Shooting (FG/FT)`, value: `${s1['FG%'] || '-'}% FG • ${s1['FT%'] || '-'}% FT` },
+            { label: `${d2.bio.teamAbbr} Shooting (FG/FT)`, value: `${s2['FG%'] || '-'}% FG • ${s2['FT%'] || '-'}% FT` },
+          ],
+          tableHeaders: ['PLAYER', 'TEAM', 'GP', 'MIN', 'PPG', 'RPG', 'APG', 'FG%', '3P%', 'FT%', 'STL', 'BLK'],
+          tableRows: [
+            [d1.bio.name, d1.bio.teamAbbr, s1.GP || d1.bio.curated?.gp || '-', s1.MIN || d1.bio.curated?.mpg || '-', s1.PTS || d1.bio.curated?.ppg || '-', s1.REB || d1.bio.curated?.rpg || '-', s1.AST || d1.bio.curated?.apg || '-', `${s1['FG%'] || d1.bio.curated?.fgPct || '-'}%`, `${s1['3P%'] || d1.bio.curated?.threePtPct || '-'}%`, `${s1['FT%'] || d1.bio.curated?.ftPct || '-'}%`, s1.STL || d1.bio.curated?.spg || '-', s1.BLK || d1.bio.curated?.bpg || '-'],
+            [d2.bio.name, d2.bio.teamAbbr, s2.GP || d2.bio.curated?.gp || '-', s2.MIN || d2.bio.curated?.mpg || '-', s2.PTS || d2.bio.curated?.ppg || '-', s2.REB || d2.bio.curated?.rpg || '-', s2.AST || d2.bio.curated?.apg || '-', `${s2['FG%'] || d2.bio.curated?.fgPct || '-'}%`, `${s2['3P%'] || d2.bio.curated?.threePtPct || '-'}%`, `${s2['FT%'] || d2.bio.curated?.ftPct || '-'}%`, s2.STL || d2.bio.curated?.spg || '-', s2.BLK || d2.bio.curated?.bpg || '-'],
+          ],
+        };
+      }
+    }
+
+    // 2. Live NBA Today's Schedule / Scores Query
+    if (/\b(today|tonight|schedule|slate|live games|who plays|nba scores|scores)\b/i.test(q) && !/\b(box score|game score|gmsc|scoring leader)\b/i.test(q)) {
+      try {
+        const sbRes = await fetch('https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard', {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          signal: AbortSignal.timeout(3500),
+        });
+        if (sbRes.ok) {
+          const sbJson: any = await sbRes.json();
+          const events: any[] = sbJson?.events || [];
+          if (events.length > 0) {
+            const rows = events.slice(0, 12).map((ev: any) => {
+              const comp = ev.competitions?.[0] || {};
+              const cs: any[] = comp.competitors || [];
+              const away = cs.find((c: any) => c.homeAway === 'away') || cs[1] || {};
+              const home = cs.find((c: any) => c.homeAway === 'home') || cs[0] || {};
+              const state = comp.status?.type?.state || 'pre';
+              const detail = comp.status?.type?.shortDetail || 'Scheduled';
+              const scoreStr = state === 'pre' ? 'Pre-Game' : `${away.team?.abbreviation || 'AWY'} ${away.score ?? 0} - ${home.score ?? 0} ${home.team?.abbreviation || 'HME'}`;
+              const bcast = comp.broadcasts?.[0]?.names?.[0] || 'NBA League Pass';
+              return [
+                `${away.team?.displayName || 'Away'} @ ${home.team?.displayName || 'Home'}`,
+                detail,
+                scoreStr,
+                `${away.records?.[0]?.summary || '-'} vs ${home.records?.[0]?.summary || '-'}`,
+                comp.venue?.fullName || 'NBA Arena',
+                bcast,
+              ];
+            });
+            return {
+              query: rawQuery,
+              type: 'schedule_slate',
+              headline: `Today's Live NBA Slate — ${events.length} Matchups Scheduled`,
+              narrative: `Live ESPN scoreboard status across ${events.length} NBA games today (${events.filter((e: any) => e.status?.type?.state === 'in').length} currently live in-progress).`,
+              heroPlayer: CURATED_NBA_PLAYERS[0],
+              keyStats: [
+                { label: 'Total Games Today', value: `${events.length} NBA Games` },
+                { label: 'In Progress', value: `${events.filter((e: any) => e.status?.type?.state === 'in').length} Live` },
+                { label: 'Featured Matchup', value: rows[0]?.[0] || 'NBA Slate' },
+                { label: 'Data Feed', value: 'Live ESPN Scoreboard' },
+              ],
+              tableHeaders: ['MATCHUP', 'STATUS / TIP', 'SCORE', 'RECORDS (A vs H)', 'VENUE', 'BROADCAST'],
+              tableRows: rows,
+            };
+          }
+        }
+      } catch {}
+    }
+
+    // Load standings for MVP & Team Scouting questions
     let allStandings: ConferenceStandingRow[] = [];
     try {
       const st = await this.getStandings();
@@ -2892,7 +3434,7 @@ class BasketballResearchService {
       standingByAbbr.set(row.abbreviation.toUpperCase(), row);
     }
 
-    // 2. MVP Race / Award Ladder query
+    // 3. MVP Race / Award Ladder query
     if (/\bmvp\b|most valuable|mvp race|mvp ladder|award/i.test(q)) {
       const scored = CURATED_NBA_PLAYERS.map((p) => {
         const teamRow = standingByAbbr.get(p.teamAbbr.toUpperCase());
@@ -2934,75 +3476,253 @@ class BasketballResearchService {
       };
     }
 
-    // 3. Team Standing / Team Scouting Query ("how are the celtics doing", "rockets record", etc.)
-    const matchedTeam = allStandings.find((t) => {
-      const full = t.teamName.toLowerCase();
-      const abbr = t.abbreviation.toLowerCase();
-      const mascot = full.split(' ').slice(-1)[0] || '';
-      return q.includes(full) || (mascot.length >= 4 && q.includes(mascot)) || new RegExp(`\\b${abbr}\\b`, 'i').test(q);
-    });
+    // 4. Team Standing & Live Team Roster Scouting Query ("celtics", "bulls roster", "how are the warriors doing")
+    const dirTeamsMap = new Map<string, { id?: string; name: string; abbr: string }>();
+    for (const d of directory) {
+      if (d.teamAbbr && !dirTeamsMap.has(d.teamAbbr)) {
+        dirTeamsMap.set(d.teamAbbr, { id: d.teamId, name: d.team, abbr: d.teamAbbr });
+      }
+    }
+    for (const s of allStandings) {
+      if (!dirTeamsMap.has(s.abbreviation)) {
+        dirTeamsMap.set(s.abbreviation, { id: s.teamId, name: s.teamName, abbr: s.abbreviation });
+      }
+    }
 
-    if (matchedTeam && matchedPlayers.length === 0) {
-      const teamPlayers = CURATED_NBA_PLAYERS.filter((p) => p.teamAbbr.toUpperCase() === matchedTeam.abbreviation.toUpperCase());
-      const star = teamPlayers[0] || CURATED_NBA_PLAYERS[0];
+    const qNorm = this.normalizeResearchText(rawTrimmed);
+    let matchedTeamMeta: { id?: string; name: string; abbr: string } | undefined;
+    for (const tm of dirTeamsMap.values()) {
+      const fullNorm = this.normalizeResearchText(tm.name);
+      const abbrLower = tm.abbr.toLowerCase();
+      const words = fullNorm.split(' ');
+      const mascot = words[words.length - 1] || '';
+      if (
+        qNorm.includes(fullNorm) ||
+        (mascot.length >= 4 && (qNorm.includes(mascot) || this.similarityScore(qNorm.replace(/\b(roster|record|team|stats|how are|doing|the)\b/g, '').trim(), mascot) >= 0.78)) ||
+        new RegExp(`\\b${abbrLower}\\b`, 'i').test(qNorm)
+      ) {
+        matchedTeamMeta = tm;
+        break;
+      }
+    }
+
+    if (matchedTeamMeta && (/\b(roster|record|standings|how are|doing|team)\b/i.test(q) || qNorm.split(' ').length <= 3)) {
+      const matchedStanding = standingByAbbr.get(matchedTeamMeta.abbr.toUpperCase());
+      const liveRosterPlayers = directory.filter((p) => p.teamAbbr.toUpperCase() === matchedTeamMeta!.abbr.toUpperCase());
+      const curatedTeamPlayers = CURATED_NBA_PLAYERS.filter((p) => p.teamAbbr.toUpperCase() === matchedTeamMeta!.abbr.toUpperCase());
+      const starEntry = curatedTeamPlayers[0] || liveRosterPlayers[0] || CURATED_NBA_PLAYERS[0];
+
+      const recordStr = matchedStanding ? `${matchedStanding.wins}-${matchedStanding.losses}` : 'Active NBA Roster';
+      const headline = matchedStanding
+        ? `${matchedStanding.teamName} (${matchedStanding.wins}-${matchedStanding.losses}) — #${matchedStanding.rank} in ${matchedStanding.conference} Conference`
+        : `${matchedTeamMeta.name} (${matchedTeamMeta.abbr}) — Active 2026-27 Roster & Team Scouting`;
+      const narrative = matchedStanding
+        ? `The ${matchedStanding.teamName} sit #${matchedStanding.rank} in the ${matchedStanding.conference}ern Conference at ${matchedStanding.wins}-${matchedStanding.losses} (${matchedStanding.winPct} WIN%, ${matchedStanding.gamesBehind} GB). They average ${matchedStanding.ppg} PPG while allowing ${matchedStanding.oppPpg} Opp PPG (${matchedStanding.netDiff} Point Diff), with a ${matchedStanding.last10} Last-10 stretch and ${matchedStanding.streak} current streak.`
+        : `Live active NBA roster profile for the ${matchedTeamMeta.name} (${liveRosterPlayers.length} active roster athletes loaded from ESPN).`;
+
+      const rows = curatedTeamPlayers.length > 0 && !/\broster\b/i.test(q)
+        ? curatedTeamPlayers.map((p) => [p.name, p.position, p.ppg, p.rpg, p.apg, `${p.tsPct}%`, p.per, `+${p.bpm}`])
+        : liveRosterPlayers.slice(0, 15).map((p) => [p.name, p.position, `#${p.jersey}`, p.age ?? '-', p.height || '-', p.weight || '-', p.college || '-']);
+      const headers = curatedTeamPlayers.length > 0 && !/\broster\b/i.test(q)
+        ? ['PLAYER', 'POS', 'PPG', 'RPG', 'APG', 'TS%', 'PER', 'BPM']
+        : ['PLAYER', 'POS', 'JERSEY', 'AGE', 'HEIGHT', 'WEIGHT', 'COLLEGE / ORIGIN'];
+
       return {
         query: rawQuery,
         type: 'team_scouting',
-        headline: `${matchedTeam.teamName} (${matchedTeam.wins}-${matchedTeam.losses}) — #${matchedTeam.rank} in ${matchedTeam.conference} Conference`,
-        narrative: `The ${matchedTeam.teamName} sit #${matchedTeam.rank} in the ${matchedTeam.conference}ern Conference at ${matchedTeam.wins}-${matchedTeam.losses} (${matchedTeam.winPct} WIN%, ${matchedTeam.gamesBehind} GB). They average ${matchedTeam.ppg} PPG while allowing ${matchedTeam.oppPpg} Opp PPG (${matchedTeam.netDiff} Point Diff), with a ${matchedTeam.last10} Last-10 stretch and ${matchedTeam.streak} current streak.`,
-        heroPlayer: star,
-        keyStats: [
-          { label: 'Record & Conf Seed', value: `${matchedTeam.wins}-${matchedTeam.losses} (#${matchedTeam.rank} ${matchedTeam.conference})` },
-          { label: 'PPG / Opp PPG (Diff)', value: `${matchedTeam.ppg} / ${matchedTeam.oppPpg} (${matchedTeam.netDiff})` },
-          { label: 'Home / Road Splits', value: `${matchedTeam.homeRecord} H • ${matchedTeam.awayRecord} A` },
-          { label: 'Last 10 & Streak', value: `${matchedTeam.last10} • ${matchedTeam.streak}` },
-        ],
-        tableHeaders: teamPlayers.length > 0
-          ? ['PLAYER', 'POS', 'PPG', 'RPG', 'APG', 'TS%', 'PER', 'BPM']
-          : ['TEAM', 'CONF', 'SEED', 'W-L', 'PPG', 'OPP PPG', 'DIFF', 'STREAK'],
-        tableRows: teamPlayers.length > 0
-          ? teamPlayers.map((p) => [p.name, p.position, p.ppg, p.rpg, p.apg, `${p.tsPct}%`, p.per, `+${p.bpm}`])
-          : [[matchedTeam.teamName, matchedTeam.conference, `#${matchedTeam.rank}`, `${matchedTeam.wins}-${matchedTeam.losses}`, matchedTeam.ppg, matchedTeam.oppPpg, matchedTeam.netDiff, matchedTeam.streak]],
+        headline,
+        narrative,
+        heroPlayer: starEntry,
+        keyStats: matchedStanding
+          ? [
+              { label: 'Record & Conf Seed', value: `${matchedStanding.wins}-${matchedStanding.losses} (#${matchedStanding.rank} ${matchedStanding.conference})` },
+              { label: 'PPG / Opp PPG (Diff)', value: `${matchedStanding.ppg} / ${matchedStanding.oppPpg} (${matchedStanding.netDiff})` },
+              { label: 'Home / Road Splits', value: `${matchedStanding.homeRecord} H • ${matchedStanding.awayRecord} A` },
+              { label: 'Roster Size & Streak', value: `${liveRosterPlayers.length || curatedTeamPlayers.length} Active • ${matchedStanding.streak}` },
+            ]
+          : [
+              { label: 'Franchise', value: `${matchedTeamMeta.name} (${matchedTeamMeta.abbr})` },
+              { label: 'Active Roster', value: `${liveRosterPlayers.length} Players` },
+              { label: 'Featured Player', value: starEntry.name },
+              { label: 'Status', value: recordStr },
+            ],
+        tableHeaders: headers,
+        tableRows: rows,
       };
     }
 
-    // 4. Single Player Spotlight
-    if (matchedPlayers.length === 1) {
-      const matchedPlayer = matchedPlayers[0];
-      return {
-        query: rawQuery,
-        type: 'player_spotlight',
-        headline: `${matchedPlayer.name} (${matchedPlayer.team}) — ${matchedPlayer.ppg} PPG, ${matchedPlayer.rpg} RPG, ${matchedPlayer.apg} APG on ${matchedPlayer.tsPct}% TS`,
-        narrative: `${matchedPlayer.name} operates as a ${matchedPlayer.archetype} for the ${matchedPlayer.team}. ${matchedPlayer.signatureStat}. Over ${matchedPlayer.gp} games, he posts a ${matchedPlayer.per} PER, +${matchedPlayer.bpm} BPM, ${matchedPlayer.vorp} VORP, and a +${matchedPlayer.netRtg} Net Rating (${matchedPlayer.ortg} ORTG / ${matchedPlayer.drtg} DRTG).`,
-        heroPlayer: matchedPlayer,
-        keyStats: [
-          { label: 'PPG / RPG / APG', value: `${matchedPlayer.ppg} / ${matchedPlayer.rpg} / ${matchedPlayer.apg}` },
-          { label: 'True Shooting (TS%)', value: `${matchedPlayer.tsPct}%` },
-          { label: 'Effective FG (eFG%)', value: `${matchedPlayer.efgPct}%` },
-          { label: 'PER / BPM / VORP', value: `${matchedPlayer.per} / +${matchedPlayer.bpm} / ${matchedPlayer.vorp}` },
-          { label: 'Hollinger GmSc Avg', value: `${matchedPlayer.gameScoreAvg}` },
-          { label: 'Net Rating', value: `+${matchedPlayer.netRtg}` },
-        ],
-        tableHeaders: ['PLAYER', 'POS', 'MPG', 'PPG', 'RPG', 'APG', 'TS%', 'eFG%', 'USG%', 'PER', 'BPM'],
-        tableRows: [
-          [
-            matchedPlayer.name,
-            matchedPlayer.position,
-            matchedPlayer.mpg,
-            matchedPlayer.ppg,
-            matchedPlayer.rpg,
-            matchedPlayer.apg,
-            `${matchedPlayer.tsPct}%`,
-            `${matchedPlayer.efgPct}%`,
-            `${matchedPlayer.usgPct}%`,
-            matchedPlayer.per,
-            `+${matchedPlayer.bpm}`,
+    // 5. Single Player Spotlight Across ALL ~500 Active NBA Players + Typo Fuzzy Correction + Live Game Logs
+    if (!looksLikeLeagueLeaderboard && rawTrimmed.length > 0) {
+      const candidateQuery = hasTopicStatWords
+        ? rawTrimmed.replace(/\b(ppg|apg|rpg|ts%|efg%|per|bpm|vorp|dpoy|stocks?|steals?|blocks?|three|3pt|3p%|3pm|fg%|ft%|stats?|points?|assists?|rebounds?|shooting|defense|defensive)\b/gi, ' ').replace(/\s+/g, ' ').trim()
+        : rawTrimmed;
+      const candidate = await this.resolvePlayerCandidates(candidateQuery || rawTrimmed, directory, !hasTopicStatWords);
+      if (candidate.best && candidate.score >= (hasTopicStatWords ? 0.84 : 0.74)) {
+        const detail = await this.fetchLivePlayerDetail(candidate.best);
+        const bio = detail.bio;
+        const ss = detail.seasonStats;
+        const cs = detail.careerStats;
+        const cur = bio.curated;
+
+        const ppg = ss.PTS ?? (cur ? String(cur.ppg) : '-');
+        const rpg = ss.REB ?? (cur ? String(cur.rpg) : '-');
+        const apg = ss.AST ?? (cur ? String(cur.apg) : '-');
+        const fgPct = ss['FG%'] ?? (cur ? String(cur.fgPct) : '-');
+        const threePct = ss['3P%'] ?? (cur ? String(cur.threePtPct) : '-');
+        const ftPct = ss['FT%'] ?? (cur ? String(cur.ftPct) : '-');
+        const min = ss.MIN ?? (cur ? String(cur.mpg) : '-');
+        const gp = ss.GP ?? (cur ? String(cur.gp) : '-');
+        const stl = ss.STL ?? (cur ? String(cur.spg) : '-');
+        const blk = ss.BLK ?? (cur ? String(cur.bpg) : '-');
+
+        const correctedNote = candidate.correctedFrom
+          ? `Matched typo "${candidate.correctedFrom}" → ${bio.name} (${bio.teamAbbr})`
+          : undefined;
+
+        const hasLog = detail.gameLogRows.length > 0;
+        const rotoText = detail.rotowire?.headline ? ` Latest scouting note: ${detail.rotowire.headline}` : '';
+        const careerSummary = cs.PTS ? ` Career averages: ${cs.PTS} PPG, ${cs.REB} RPG, ${cs.AST} APG (${cs['3P%']}% 3P%).` : '';
+
+        return {
+          query: rawQuery,
+          type: 'player_spotlight',
+          correctedNote,
+          headline: `${bio.name} (${bio.team}${bio.jersey && bio.jersey !== '-' ? ` • #${bio.jersey}` : ''}) — ${ppg} PPG, ${rpg} RPG, ${apg} APG (${threePct}% 3P%)`,
+          narrative: `${bio.name} (${bio.position}, ${bio.team}) is averaging ${ppg} PPG, ${rpg} RPG, ${apg} APG over ${min} MPG across ${gp} GP (${fgPct}% FG / ${threePct}% 3P / ${ftPct}% FT).${careerSummary}${rotoText}`,
+          heroPlayer: bio,
+          suggestions: candidate.suggestions.map((s) => s.name),
+          keyStats: [
+            { label: '2026-27 PPG / RPG / APG', value: `${ppg} / ${rpg} / ${apg}` },
+            { label: 'Shooting Splits (FG/3P/FT)', value: `${fgPct}% / ${threePct}% / ${ftPct}%` },
+            { label: 'Minutes & Games Played', value: `${min} MPG • ${gp} GP` },
+            { label: 'Defense (STL / BLK)', value: `${stl} STL • ${blk} BLK` },
+            ...(cur
+              ? [{ label: 'PER / BPM / TS%', value: `${cur.per} / +${cur.bpm} / ${cur.tsPct}%` }]
+              : cs.PTS
+              ? [{ label: 'Career Averages', value: `${cs.PTS} PPG / ${cs['3P%']}% 3P` }]
+              : []),
+            ...(bio.height || bio.age
+              ? [{ label: 'Bio Profile', value: `${bio.height || ''} • Age ${bio.age || '-'}` }]
+              : []),
           ],
+          tableHeaders: hasLog
+            ? ['DATE', 'MATCHUP', 'RESULT', 'MIN', 'PTS', 'REB', 'AST', 'FG%', '3P%', 'STL', 'BLK']
+            : ['SPLIT', 'TEAM', 'GP', 'MIN', 'PPG', 'RPG', 'APG', 'FG%', '3P%', 'FT%', 'STL', 'BLK'],
+          tableRows: hasLog
+            ? detail.gameLogRows.map((g) => [g.date, g.matchup, g.result, g.min, g.pts, g.reb, g.ast, `${g.fgPct}%`, `${g.threePtPct}%`, g.stl, g.blk])
+            : [
+                ['Regular Season', bio.teamAbbr, gp, min, ppg, rpg, apg, `${fgPct}%`, `${threePct}%`, `${ftPct}%`, stl, blk],
+                ...(cs.PTS ? [['Career Total', 'NBA', cs.GP || '-', cs.MIN || '-', cs.PTS, cs.REB || '-', cs.AST || '-', `${cs['FG%'] || '-'}%`, `${cs['3P%'] || '-'}%`, `${cs['FT%'] || '-'}%`, cs.STL || '-', cs.BLK || '-']] : []),
+              ],
+        };
+      }
+
+      // If query has no leaderboard/stat intent AND no player matched cleanly, give honest guidance instead of random PER table
+      if (!hasTopicStatWords) {
+        const closestNames = candidate.suggestions.map((s) => s.name);
+        return {
+          query: rawQuery,
+          type: 'no_exact_match',
+          headline: `No exact NBA player or team match found for "${rawTrimmed}"`,
+          narrative: closestNames.length > 0
+            ? `Could not find an exact match for "${rawTrimmed}". Closest active NBA matches: ${closestNames.join(', ')}. Click any suggestion below or try a player comparison ("Jokic vs SGA") or stat query ("3P% leaders").`
+            : `Try searching any active NBA player by name (e.g. "Buddy Hield", "Tyrese Maxey", "Alperen Sengun"), a head-to-head matchup ("Jokic vs SGA"), a team ("Celtics record"), or live league leaders ("Scoring leaders").`,
+          heroPlayer: candidate.suggestions[0] || CURATED_NBA_PLAYERS[0],
+          suggestions: closestNames.length > 0 ? closestNames : ['Buddy Hield', 'NBA MVP Race', 'Scoring Leaders PPG', 'Today NBA Games'],
+        keyStats: [
+          { label: 'Indexed NBA Players', value: `${directory.length} Active Players` },
+          { label: 'Typo Matching', value: 'Fuzzy Search Enabled' },
+          { label: 'Live Telemetry', value: 'ESPN Stats & Leaders' },
+          { label: 'Tip', value: 'Check spelling or pick a suggestion' },
         ],
-      };
+        tableHeaders: ['SUGGESTED QUERIES', 'CATEGORY', 'EXAMPLE'],
+          tableRows: [
+            ['Any Active NBA Player', 'Live Stats + 5-Game Log', 'Buddy Hield'],
+            ['Any 2-Player Comparison', 'Head-to-Head Splits', 'Cade Cunningham vs Tyrese Maxey'],
+            ['Live Stat Leaders', '2026-27 ESPN Leaders', '3PT% leaders or PPG leaders'],
+            ['Live Team & Roster', 'Record + Full Roster', 'Chicago Bulls roster'],
+            ['Today’s NBA Slate', 'Live Scores & Tip Times', 'Today NBA games'],
+          ],
+        };
+      }
     }
 
-    // 5. Dynamic Position, Threshold & Topic Queries (e.g. "best shooting centers", "3pt leaders", "25+ ppg")
+    // 6. Live ESPN Category Leaderboards when user queries scoring, assists, rebounds, 3PT%, 3PM, steals, blocks, FG%, FT%, PER, DBLDBL
+    const liveCategories = await this.fetchLiveNbaLeaders();
+    const pickEspnLeaderCategory = (): { catName: string; title: string; reason: string } | null => {
+      if (/\b(three|3pt|3-point|3p%|3 point pct|sniper)\b/i.test(q) && /\b(made|3pm|per game|most)\b/i.test(q)) {
+        return { catName: '3PointsMadePerGame', title: 'Live NBA 3-Pointers Made Per Game (3PM) Leaders', reason: '3-Pointers Made per game from live ESPN NBA leaders' };
+      }
+      if (/\b(3p%|three point pct|three-point percentage|3pt%|3pt percentage)\b/i.test(q)) {
+        return { catName: '3PointPct', title: 'Live NBA 3-Point Percentage (3P%) Leaders', reason: '3-Point Field Goal Percentage from live ESPN NBA leaders' };
+      }
+      if (/\b(steal|steals|spg)\b/i.test(q) && !/\bstock|dpoy\b/i.test(q)) {
+        return { catName: 'stealsPerGame', title: 'Live NBA Steals Per Game (SPG) Leaders', reason: 'Steals Per Game from live ESPN NBA leaders' };
+      }
+      if (/\b(block|blocks|bpg|rim protector)\b/i.test(q) && !/\bstock|dpoy\b/i.test(q)) {
+        return { catName: 'blocksPerGame', title: 'Live NBA Blocks Per Game (BPG) Leaders', reason: 'Blocks Per Game from live ESPN NBA leaders' };
+      }
+      if (/\b(fg%|field goal)\b/i.test(q)) {
+        return { catName: 'fieldGoalPercentage', title: 'Live NBA Field Goal Percentage (FG%) Leaders', reason: 'Field Goal Percentage from live ESPN NBA leaders' };
+      }
+      if (/\b(ft%|free throw)\b/i.test(q)) {
+        return { catName: 'FreeThrowPct', title: 'Live NBA Free Throw Percentage (FT%) Leaders', reason: 'Free Throw Percentage from live ESPN NBA leaders' };
+      }
+      if (/\b(double double|double-double|dd)\b/i.test(q)) {
+        return { catName: 'doubleDouble', title: 'Live NBA Double-Double Leaders', reason: 'total Double-Doubles this season from live ESPN NBA leaders' };
+      }
+      if (/\b(assist|assists|playmak|apg)\b/i.test(q) && !/\bcenter|guard|forward\b/i.test(q)) {
+        return { catName: 'assistsPerGame', title: 'Live NBA Assists Per Game (APG) Leaders', reason: 'Assists Per Game from live ESPN NBA leaders' };
+      }
+      if (/\b(rebound|rebounds|glass|rpg)\b/i.test(q) && !/\bcenter|guard|forward\b/i.test(q)) {
+        return { catName: 'reboundsPerGame', title: 'Live NBA Rebounds Per Game (RPG) Leaders', reason: 'Rebounds Per Game from live ESPN NBA leaders' };
+      }
+      if (/\b(scor|ppg|points leader|scoring leader)\b/i.test(q) && !/\bcenter|guard|forward\b/i.test(q)) {
+        return { catName: 'pointsPerGame', title: 'Live NBA Scoring (PPG) Leaders', reason: 'Points Per Game from live ESPN NBA leaders' };
+      }
+      return null;
+    };
+
+    const targetEspnCat = pickEspnLeaderCategory();
+    if (targetEspnCat && liveCategories.length > 0) {
+      const cat = liveCategories.find((c: any) => c.name === targetEspnCat.catName);
+      const leadersList: any[] = cat?.leaders || [];
+      if (leadersList.length > 0) {
+        const top = leadersList[0];
+        const aTop = top.athlete || {};
+        const heroObj = {
+          id: String(aTop.id || '0'),
+          name: aTop.displayName || 'NBA Leader',
+          team: aTop.team?.displayName || 'NBA',
+          teamAbbr: aTop.team?.abbreviation || 'NBA',
+          position: aTop.position?.abbreviation || 'NBA',
+          headshot: aTop.headshot?.href || `https://a.espncdn.com/i/headshots/nba/players/full/${aTop.id}.png`,
+        };
+        return {
+          query: rawQuery,
+          type: 'live_leaders',
+          headline: `${targetEspnCat.title} — Led by ${heroObj.name} (${top.displayValue} ${cat.abbreviation})`,
+          narrative: `Live 2026-27 NBA leaderboard ranked by ${targetEspnCat.reason}: ${heroObj.name} (${heroObj.teamAbbr}) leads the league at ${top.displayValue} ${cat.abbreviation}.`,
+          heroPlayer: heroObj,
+          keyStats: [
+            { label: `#1 ${cat.abbreviation} Leader`, value: `${heroObj.name} (${top.displayValue})` },
+            { label: '#2 Runner-Up', value: leadersList[1] ? `${leadersList[1].athlete?.displayName} (${leadersList[1].displayValue})` : '-' },
+            { label: '#3 Contender', value: leadersList[2] ? `${leadersList[2].athlete?.displayName} (${leadersList[2].displayValue})` : '-' },
+            { label: 'Data Source', value: 'Live ESPN 2026-27 Feed' },
+          ],
+          tableHeaders: ['RANK', 'PLAYER', 'TEAM', 'POS', cat.abbreviation.toUpperCase()],
+          tableRows: leadersList.slice(0, 10).map((item: any, idx: number) => [
+            idx + 1,
+            item.athlete?.displayName || 'Player',
+            item.athlete?.team?.abbreviation || 'NBA',
+            item.athlete?.position?.abbreviation || '-',
+            item.displayValue,
+          ]),
+        };
+      }
+    }
+
+    // 7. Curated Position, Threshold & Advanced Impact Queries (TS%, eFG%, PER, BPM, VORP, Shooting Centers, DPOY Stocks)
     let pool = [...CURATED_NBA_PLAYERS];
     let posLabel = '';
     if (/\bcenter|\bcenters|\bbig\b|\bbigs\b|\bc\b/i.test(q)) {

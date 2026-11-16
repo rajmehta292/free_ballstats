@@ -93,14 +93,28 @@
         )
         .join('');
 
+      const correctionHtml = data.correctedNote
+        ? `<div class="nl-correction-badge" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:6px;padding:3px 10px;border-radius:999px;background:rgba(0,242,254,0.12);border:1px solid rgba(0,242,254,0.35);color:#67e8f9;font-size:0.76rem;font-weight:700;">✨ ${escapeHtml(data.correctedNote)}</div>`
+        : '';
+
+      const suggestionsList = Array.isArray(data.suggestions) ? data.suggestions.filter(Boolean) : [];
+      const suggestionsHtml = suggestionsList.length
+        ? `<div class="nl-suggestions-row" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:0.75rem;">
+             <span style="font-size:0.76rem;color:var(--text-muted);font-weight:600;">${data.type === 'no_exact_match' ? 'Did you mean:' : 'Related Searches:'}</span>
+             ${suggestionsList.map(s => `<button type="button" class="preset-pill nl-suggest-btn" data-suggest="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join('')}
+           </div>`
+        : '';
+
       container.innerHTML = `
         <div class="nl-answer-main">
           <div class="nl-answer-top">
             ${avatarsHtml}
             <div class="nl-answer-copy">
-              <div class="nl-query-tag">STATMUSE / REFERENCE INSTANT ANSWER • QUERY: "${escapeHtml(data.query)}"</div>
+              <div class="nl-query-tag">STATMUSE / LIVE NBA INTELLIGENCE • QUERY: "${escapeHtml(data.query)}"</div>
+              ${correctionHtml}
               <h3 class="nl-headline">${escapeHtml(data.headline)}</h3>
               <p class="nl-narrative">${escapeHtml(data.narrative)}</p>
+              ${suggestionsHtml}
             </div>
           </div>
           <div class="nl-stats-strip">${statsHtml}</div>
@@ -112,6 +126,22 @@
           </div>
         </div>
       `;
+
+      container.querySelectorAll('.nl-suggest-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const nextQ = btn.getAttribute('data-suggest') || '';
+          const input = document.getElementById('nl-query-input');
+          if (input) input.value = nextQ;
+          if (nextQ) executeNaturalLanguageQuery(nextQ);
+        });
+      });
+
+      const avatarEl = container.querySelector('.nl-single-avatar');
+      if (avatarEl && hero.id) {
+        avatarEl.style.cursor = 'pointer';
+        avatarEl.title = `Open full athlete card for ${hero.name || 'Player'}`;
+        avatarEl.addEventListener('click', () => openPlayerModal(hero.id));
+      }
     } catch (err) {
       container.innerHTML = `<div style="padding:1rem;color:var(--danger);">Unable to process query.</div>`;
     }
