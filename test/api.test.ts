@@ -688,6 +688,16 @@ test('StreamFree API Streamer Suite', async (t) => {
     }
   });
 
+  await t.test('GET /api/v1/streams/live-context returns live catalog card tickers, UFC bouts/results, and F1 driver standings', async () => {
+    const res = await server.inject({ method: 'GET', url: '/api/v1/streams/live-context' });
+    assert.equal(res.statusCode, 200);
+    const data = res.json();
+    assert.ok(data.tickers && typeof data.tickers === 'object');
+    assert.ok(data.sportHighlights?.f1?.eventName && data.sportHighlights.f1.topDrivers.length >= 3, 'F1 highlights must include top-3 driver standings');
+    assert.ok(data.sportHighlights?.ufc?.eventName && data.sportHighlights.ufc.currentOrMainFight, 'UFC highlights must include current/main bout');
+    assert.ok(Object.keys(data.tickers).length > 0, 'At least some active catalog streams must have live tickers hydrated');
+  });
+
   await server.close();
 });
 

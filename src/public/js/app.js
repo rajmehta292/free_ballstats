@@ -3,6 +3,7 @@
 let state = {
   categories: [],
   streams: [],
+  liveTickers: {},
   selectedCategory: '',
   searchQuery: '',
   liveOnly: false,
@@ -18,6 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadStreams();
   setupSSE();
   fetchMirrorStatus();
+  setInterval(loadLiveTickers, 30000);
 });
 
 // Setup DOM Event Listeners
@@ -291,8 +293,56 @@ async function loadStreams() {
       const data = await res.json();
       state.streams = data.streams || [];
       renderStreams();
+      loadLiveTickers();
     }
   } catch (err) {
+    console.error('Failed to load streams:', err);
+  }
+}
+
+// Fetch Cached Live Scores, F1 Standings, UFC Bouts & RedZone Radar for Catalog Cards
+async function loadLiveTickers() {
+  try {
+    const res = await fetch('/api/v1/streams/live-context');
+    if (!res.ok) return;
+    const data = await res.json();
+    state.liveTickers = data.tickers || {};
+    applyLiveTickersToDom();
+  } catch (err) {}
+}
+
+function buildTickerInnerHtml(t) {
+  if (!t) return '';
+  const accentColors = {
+    red: '#ef4444',
+    green: '#10b981',
+    gold: '#fbbf24',
+    cyan: '#00f2fe',
+    purple: '#a855f7',
+  };
+  const col = accentColors[t.accent] || '#00f2fe';
+  return `
+    <div class="card-ticker-inner" style="border-left: 3px solid ${col};">
+      <div class="card-ticker-top">
+        <span class="card-ticker-headline" style="color:${col};">${escapeHtml(t.headline)}</span>
+        <span class="card-ticker-badge" style="border-color:${col}55;color:${col};">${escapeHtml(t.statusBadge)}</span>
+      </div>
+      <div class="card-ticker-sub">${escapeHtml(t.subline)}</div>
+      ${t.secondaryLine ? `<div class="card-ticker-sec">${escapeHtml(t.secondaryLine)}</div>` : ''}
+    </div>
+  `;
+}
+
+function applyLiveTickersToDom() {
+  document.querySelectorAll('[data-ticker-key]').forEach((el) => {
+    const key = el.getAttribute('data-ticker-key');
+    const t = key ? state.liveTickers[key] : null;
+    if (t) {
+      el.innerHTML = buildTickerInnerHtml(t);
+      el.style.display = 'block';
+    }
+  });
+}
     console.error('Failed to load streams:', err);
   }
 }
@@ -380,10 +430,18 @@ function renderStreams() {
             </span>
             <span class="quality-tag">${highestQuality}</span>
           </div>
+          <div class="viewer-badge-overlay" title="Current live viewers on this broadcast">
+            <span>👥</span>
+            <strong>${(stream.viewers || 0).toLocaleString()}</strong>
+            <span>watching</span>
+          </div>
         </div>
 
         <div class="card-content">
           <div class="card-title">${escapeHtml(stream.name)}</div>
+          <div class="card-live-ticker" data-ticker-key="${escapeHtml(stream.stream_key)}" style="${state.liveTickers[stream.stream_key] ? 'display:block;' : 'display:none;'}">
+            ${state.liveTickers[stream.stream_key] ? buildTickerInnerHtml(state.liveTickers[stream.stream_key]) : ''}
+          </div>
           <div class="card-meta">
             <span class="league-info">
               <span>🏆</span>
@@ -394,7 +452,7 @@ function renderStreams() {
 
           <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-dim); margin-top: 4px;">
             <span>Category: <strong style="color: #cbd5e1; text-transform: capitalize;">${escapeHtml(stream.category)}</strong></span>
-            <span>👥 ${(stream.viewers || 0).toLocaleString()} watching</span>
+            <span style="color:#e2e8f0;font-weight:700;">👥 ${(stream.viewers || 0).toLocaleString()} watching</span>
           </div>
 
           <div class="card-footer" style="display: flex; gap: 6px; flex-wrap: wrap;">

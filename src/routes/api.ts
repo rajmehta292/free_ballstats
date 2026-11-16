@@ -5,6 +5,7 @@ import { sseService } from '../services/sse-service.js';
 import { sportsIntelService } from '../services/sports-intel-service.js';
 import { basketballResearchService } from '../services/basketball-research-service.js';
 import { multiSportAnalyticsService } from '../services/multi-sport-analytics-service.js';
+import { catalogTickerService } from '../services/catalog-ticker-service.js';
 import type { FeedbackInput, StreamItem } from '../types/stream.js';
 
 export const apiRoutes: FastifyPluginAsync = async (fastify) => {
@@ -91,6 +92,21 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
       count: streams.length,
       streams,
     });
+  });
+
+  /**
+   * GET /api/v1/streams/live-context
+   * Cached live scorebug, UFC fight card, F1 GP + standings, Tennis tournament, and RedZone tickers for catalog cards
+   */
+  fastify.get('/streams/live-context', {
+    schema: {
+      description: 'Get live scores, UFC current/last fight results, F1 GP standings, and RedZone radar tickers for catalog stream cards',
+      tags: ['Streams', 'Sports Intelligence'],
+    },
+  }, async (_request, reply) => {
+    const { streams } = await streamFreeClient.getStreams();
+    const payload = await catalogTickerService.getLiveContext(streams);
+    return reply.send(payload);
   });
 
   /**
