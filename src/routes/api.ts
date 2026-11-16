@@ -372,8 +372,49 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
       const isSoccerKey = /england|spain|france|germany|italy|brazil|argentina|portugal|netherlands|real madrid|barcelona|liverpool|arsenal|manchester|chelsea|bayern|psg|inter|milan|juventus|uefa|nations|champions|premier|soccer|futbol/i.test(cleanKey);
       const isHockeyKey = /oilers|panthers|leafs|rangers|bruins|avalanche|lightning|stars|knights|canucks|devils|penguins|capitals|nhl|hockey/i.test(cleanKey);
       const isNcaafKey = /oregon|ohio state|texas|georgia|alabama|notre dame|cfb|ncaaf/i.test(cleanKey);
-      const cat = isSoccerKey ? 'soccer' : isHockeyKey ? 'hockey' : (isBasketballKey || isNcaabKey) ? 'basketball' : 'football';
-      const lg = isSoccerKey ? 'UEFA / Premier' : isHockeyKey ? 'NHL' : isNcaabKey ? 'NCAAB' : isBasketballKey ? 'NBA' : isNcaafKey ? 'NCAAF' : 'NFL';
+      const isBaseballKey = /mlb|baseball|yankees|dodgers|astros|phillies|braves|padres|mets/i.test(cleanKey);
+      const isCombatKey = /ufc|mma|boxing|fight night|bellator|pfl/i.test(cleanKey);
+      const isRacingKey = /skyf1|formula|grand prix|f1|nascar|motogp|indy/i.test(cleanKey);
+      const isTennisKey = /tennis|atp|wta|wimbledon|us open|roland garros/i.test(cleanKey);
+      const isCricketKey = /willow|cricket|ipl|icc|ashes|t20|odi/i.test(cleanKey);
+      const cat = isSoccerKey
+        ? 'soccer'
+        : isHockeyKey
+        ? 'hockey'
+        : isBasketballKey || isNcaabKey
+        ? 'basketball'
+        : isBaseballKey
+        ? 'baseball'
+        : isCombatKey
+        ? 'combat'
+        : isRacingKey
+        ? 'racing'
+        : isTennisKey
+        ? 'tennis'
+        : isCricketKey
+        ? 'cricket'
+        : 'football';
+      const lg = isSoccerKey
+        ? 'UEFA / Premier'
+        : isHockeyKey
+        ? 'NHL'
+        : isNcaabKey
+        ? 'NCAAB'
+        : isBasketballKey
+        ? 'NBA'
+        : isNcaafKey
+        ? 'NCAAF'
+        : isBaseballKey
+        ? 'MLB'
+        : isCombatKey
+        ? 'UFC / MMA'
+        : isRacingKey
+        ? 'Formula 1'
+        : isTennisKey
+        ? 'ATP / WTA'
+        : isCricketKey
+        ? 'Cricket / ICC'
+        : 'NFL';
       stream = {
         id: stream_key,
         name: cleanKey.replace(/\b\w/g, l => l.toUpperCase()),

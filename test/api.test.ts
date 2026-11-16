@@ -659,6 +659,33 @@ test('StreamFree API Streamer Suite', async (t) => {
     assert.equal(data.sportAnalytics?.surfaceType, 'basketball_halfcourt', 'surfaceType must be basketball_halfcourt');
     const banner = String(data.sportAnalytics?.situationBanner || '');
     assert.ok(!/Yard Line|Red Zone|EPA|Drive:/i.test(banner), `NBA situationBanner must not contain NFL football terms: ${banner}`);
+    assert.ok(Array.isArray(data.news) && data.news.length >= 6, `Expected rich multi-source news (>=6 stories) for Rockets vs Wizards, got ${data.news?.length}`);
+    assert.ok(data.news.every((n: any) => Boolean(n.categoryTag) && Boolean(n.categoryLabel) && Boolean(n.source)), 'News stories must carry categoryTag, categoryLabel, and source');
+  });
+
+  await t.test('All remaining global categories (Baseball, Combat, Racing, Tennis, Cricket) return authentic sport surfaces, smart cards, and event news', async () => {
+    const sportChecks = [
+      { key: 'mlb-yankees-vs-dodgers', expectedSport: 'baseball', expectedSurface: 'baseball_diamond' },
+      { key: 'ufc-309-jones-vs-miocic', expectedSport: 'combat', expectedSurface: 'combat_octagon' },
+      { key: 'skyf1', expectedSport: 'racing', expectedSurface: 'racing_circuit' },
+      { key: 'skysportstennis', expectedSport: 'tennis', expectedSurface: 'tennis_court' },
+      { key: 'willow', expectedSport: 'cricket', expectedSurface: 'cricket_wagon' },
+    ];
+
+    for (const sc of sportChecks) {
+      const hudRes = await server.inject({ method: 'GET', url: `/api/v1/basketball/smart-hud/${sc.key}` });
+      assert.equal(hudRes.statusCode, 200);
+      const hud = hudRes.json();
+      assert.equal(hud.sportType, sc.expectedSport, `Expected ${sc.expectedSport} for ${sc.key}`);
+      assert.equal(hud.surfaceType, sc.expectedSurface, `Expected ${sc.expectedSurface} for ${sc.key}`);
+      assert.ok(hud.sportAnalytics && Array.isArray(hud.sportAnalytics.fourPillars) && hud.sportAnalytics.fourPillars.length === 4);
+      assert.ok(Array.isArray(hud.smartCards) && hud.smartCards.length > 0);
+
+      const intelRes = await server.inject({ method: 'GET', url: `/api/v1/intel/${sc.key}` });
+      assert.equal(intelRes.statusCode, 200);
+      const intel = intelRes.json();
+      assert.ok(Array.isArray(intel.news) && intel.news.length >= 5, `Expected multi-source news for ${sc.key}, got ${intel.news?.length}`);
+    }
   });
 
   await server.close();

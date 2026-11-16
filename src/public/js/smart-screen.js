@@ -104,6 +104,138 @@
       </div>
     `;
 
+    // 1. GLOBAL SPORT-SPECIFIC SURFACES (BASEBALL, COMBAT, RACING, TENNIS, CRICKET)
+    if (
+      surfaceType === 'baseball_diamond' ||
+      surfaceType === 'combat_octagon' ||
+      surfaceType === 'racing_circuit' ||
+      surfaceType === 'tennis_court' ||
+      surfaceType === 'cricket_wagon'
+    ) {
+      const sp = sa?.spatialMap || {};
+      const markersSvg =
+        filterSide === 'zones'
+          ? ''
+          : filteredEvents
+              .map((ev) => {
+                const side = ev.teamSide || ev.team;
+                const isT1 = side === 'team1';
+                const evAbbr = ev.teamAbbr || (isT1 ? t1Abbr : t2Abbr);
+                const isBig = ev.isHighValue === true;
+                const isOk = ev.isSuccess === true;
+                const color = isBig ? '#fbbf24' : isT1 ? '#00f2fe' : '#f97316';
+                const cx = ev.x <= 100 ? 30 + (ev.x / 100) * 440 : ev.x;
+                const cy = ev.y <= 100 ? 20 + (ev.y / 100) * 260 : ev.y;
+                const lbl = ev.outcomeLabel || ev.metricLabel || '';
+                if (isBig) {
+                  return `<g transform="translate(${cx.toFixed(1)}, ${cy.toFixed(1)})">
+                    <circle cx="0" cy="0" r="8" fill="rgba(251,191,36,0.28)" stroke="#fbbf24" stroke-width="1.8"/>
+                    <circle cx="0" cy="0" r="4.2" fill="#fbbf24"/>
+                    <title>${esc(ev.playerName)} (${esc(evAbbr)}) • ${esc(ev.period)} ${esc(ev.clock)} • ${esc(lbl)}</title>
+                  </g>`;
+                }
+                if (isOk) {
+                  return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="5.5" fill="${color}" stroke="#06070a" stroke-width="1.5">
+                    <title>${esc(ev.playerName)} (${esc(evAbbr)}) • ${esc(ev.period)} ${esc(ev.clock)} • ${esc(lbl)}</title>
+                  </circle>`;
+                }
+                return `<g opacity="0.82">
+                  <line x1="${(cx - 4).toFixed(1)}" y1="${(cy - 4).toFixed(1)}" x2="${(cx + 4).toFixed(1)}" y2="${(cy + 4).toFixed(1)}" stroke="#ef4444" stroke-width="2"/>
+                  <line x1="${(cx + 4).toFixed(1)}" y1="${(cy - 4).toFixed(1)}" x2="${(cx - 4).toFixed(1)}" y2="${(cy + 4).toFixed(1)}" stroke="#ef4444" stroke-width="2"/>
+                  <title>${esc(ev.playerName)} (${esc(evAbbr)}) • ${esc(lbl)}</title>
+                </g>`;
+              })
+              .join('');
+
+      let geometrySvg = '';
+      let surfaceIcon = '⚾';
+      let svgBg = 'linear-gradient(180deg, #072116 0%, #05160e 100%)';
+
+      if (surfaceType === 'baseball_diamond') {
+        surfaceIcon = '⚾';
+        geometrySvg = `
+          <path d="M 250 265 L 65 95 A 255 255 0 0 1 435 95 Z" fill="rgba(16,185,129,0.12)" stroke="rgba(255,255,255,0.45)" stroke-width="2"/>
+          <polygon points="250,255 315,190 250,125 185,190" fill="rgba(180,115,65,0.22)" stroke="rgba(255,255,255,0.5)" stroke-width="1.8"/>
+          <circle cx="250" cy="192" r="11" fill="rgba(180,115,65,0.45)" stroke="rgba(255,255,255,0.5)"/>
+          <rect x="245" y="250" width="10" height="10" fill="#fff"/>
+          <rect x="311" y="186" width="8" height="8" fill="#fff" transform="rotate(45 315 190)"/>
+          <rect x="246" y="121" width="8" height="8" fill="#fff" transform="rotate(45 250 125)"/>
+          <rect x="181" y="186" width="8" height="8" fill="#fff" transform="rotate(45 185 190)"/>
+        `;
+      } else if (surfaceType === 'combat_octagon') {
+        surfaceIcon = '🥊';
+        svgBg = 'linear-gradient(180deg, #16111c 0%, #0c0a12 100%)';
+        geometrySvg = `
+          <polygon points="165,30 335,30 430,95 430,205 335,270 165,270 70,205 70,95" fill="rgba(255,255,255,0.03)" stroke="rgba(239,68,68,0.55)" stroke-width="2.5"/>
+          <polygon points="190,65 310,65 375,112 375,188 310,235 190,235 125,188 125,112" fill="none" stroke="rgba(255,255,255,0.16)" stroke-dasharray="4 4"/>
+          <circle cx="250" cy="150" r="38" fill="rgba(239,68,68,0.08)" stroke="rgba(255,255,255,0.22)"/>
+          <text x="108" y="154" fill="#fca5a5" font-size="9" font-weight="800">${esc(t1Abbr)} RED</text>
+          <text x="392" y="154" text-anchor="end" fill="#93c5fd" font-size="9" font-weight="800">${esc(t2Abbr)} BLUE</text>
+        `;
+      } else if (surfaceType === 'racing_circuit') {
+        surfaceIcon = '🏎️';
+        svgBg = 'linear-gradient(180deg, #0b101b 0%, #06090f 100%)';
+        geometrySvg = `
+          <path d="M 95 235 L 365 235 C 425 235 445 195 415 155 L 345 115 C 315 95 365 55 405 60 C 435 65 425 35 370 35 L 155 42 C 95 44 65 88 95 130 L 145 162 C 175 182 55 185 65 215 C 68 228 78 235 95 235 Z" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="16" stroke-linejoin="round"/>
+          <path d="M 95 235 L 365 235" fill="none" stroke="#00f2fe" stroke-width="5" stroke-linecap="round"/>
+          <path d="M 365 235 C 425 235 445 195 415 155 L 345 115" fill="none" stroke="#a855f7" stroke-width="4" stroke-linecap="round"/>
+          <path d="M 345 115 C 315 95 365 55 405 60 C 435 65 425 35 370 35 L 155 42" fill="none" stroke="#f97316" stroke-width="4" stroke-linecap="round"/>
+          <text x="230" y="258" text-anchor="middle" fill="#00f2fe" font-size="9.5" font-weight="800">DRS MAIN STRAIGHT • SPEED TRAP</text>
+          <text x="255" y="26" text-anchor="middle" fill="#fb923c" font-size="9" font-weight="800">SECTOR 1 / HIGH-SPEED ESSES</text>
+        `;
+      } else if (surfaceType === 'tennis_court') {
+        surfaceIcon = '🎾';
+        svgBg = 'linear-gradient(180deg, #0d2b4e 0%, #091d36 100%)';
+        geometrySvg = `
+          <rect x="70" y="30" width="360" height="240" fill="rgba(56,189,248,0.12)" stroke="#fff" stroke-width="2"/>
+          <rect x="70" y="56" width="360" height="188" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="1.5"/>
+          <line x1="250" y1="22" x2="250" y2="278" stroke="#fbbf24" stroke-width="2.5" stroke-dasharray="5 3"/>
+          <line x1="150" y1="56" x2="150" y2="244" stroke="rgba(255,255,255,0.65)" stroke-width="1.5"/>
+          <line x1="350" y1="56" x2="350" y2="244" stroke="rgba(255,255,255,0.65)" stroke-width="1.5"/>
+          <line x1="150" y1="150" x2="350" y2="150" stroke="rgba(255,255,255,0.65)" stroke-width="1.5"/>
+          <text x="110" y="47" fill="#00f2fe" font-size="8.5" font-weight="800">${esc(t1Abbr)} END</text>
+          <text x="390" y="47" text-anchor="end" fill="#fb923c" font-size="8.5" font-weight="800">${esc(t2Abbr)} END</text>
+        `;
+      } else {
+        surfaceIcon = '🏏';
+        geometrySvg = `
+          <ellipse cx="250" cy="150" rx="205" ry="126" fill="rgba(16,185,129,0.14)" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
+          <ellipse cx="250" cy="150" rx="125" ry="76" fill="none" stroke="rgba(255,255,255,0.28)" stroke-dasharray="4 4" stroke-width="1.4"/>
+          <rect x="234" y="114" width="32" height="72" rx="3" fill="rgba(217,179,130,0.32)" stroke="rgba(255,255,255,0.55)"/>
+          ${filteredEvents.map((ev) => {
+            const cx = ev.x <= 100 ? 30 + (ev.x / 100) * 440 : ev.x;
+            const cy = ev.y <= 100 ? 20 + (ev.y / 100) * 260 : ev.y;
+            const col = ev.isHighValue ? '#fbbf24' : '#00f2fe';
+            return `<line x1="250" y1="150" x2="${cx.toFixed(1)}" y2="${cy.toFixed(1)}" stroke="${col}" stroke-width="1.8" opacity="0.72"/>`;
+          }).join('')}
+        `;
+      }
+
+      const zonesHtml = (sp.zones || []).map(formatZoneCard).join('');
+      return `
+        <div class="fbs-shotchart-wrap">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
+            <div style="font-size:11px;font-weight:800;color:#e2e8f0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+              <span>${surfaceIcon} ${esc(sp.title || 'SPATIAL TELEMETRY MAP')}</span>
+              <span style="font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(0,242,254,0.12);color:#00f2fe;">${esc(sp.team1PrimaryMetric || t1Abbr)}</span>
+              <span style="font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(249,115,22,0.14);color:#fb923c;">${esc(sp.team2PrimaryMetric || t2Abbr)}</span>
+            </div>
+            ${filterButtonsHtml}
+          </div>
+
+          <svg viewBox="0 0 500 300" style="width:100%;height:auto;max-height:${compact ? '205px' : '275px'};background:${svgBg};border:1px solid rgba(255,255,255,0.18);border-radius:10px;display:block;">
+            ${geometrySvg}
+            ${markersSvg}
+          </svg>
+
+          <div style="font-size:10px;color:#94a3b8;margin-top:6px;">
+            ${esc(sp.subtitle || 'Hover telemetry markers for play breakdown and efficiency.')}
+          </div>
+          ${!compact && zonesHtml ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:6px;margin-top:8px;">${zonesHtml}</div>` : ''}
+        </div>
+      `;
+    }
+
     // 1. SOCCER PITCH (105x68m Opta / StatsBomb xG Map)
     if (surfaceType === 'soccer_pitch') {
       const sp = sa?.spatialMap || {};
@@ -1440,6 +1572,16 @@
           ? '🏈 Field Map'
           : surfaceType === 'hockey_rink'
           ? '🏒 Ice Slot'
+          : surfaceType === 'baseball_diamond'
+          ? '⚾ Diamond'
+          : surfaceType === 'combat_octagon'
+          ? '🥊 Octagon'
+          : surfaceType === 'racing_circuit'
+          ? '🏎️ Circuit'
+          : surfaceType === 'tennis_court'
+          ? '🎾 Court'
+          : surfaceType === 'cricket_wagon'
+          ? '🏏 Wagon'
           : '🎯 Shot Map';
       const unitTabLabel =
         surfaceType === 'soccer_pitch'
@@ -1448,6 +1590,16 @@
           ? '👥 Personnel'
           : surfaceType === 'hockey_rink'
           ? '👥 Ice Shift'
+          : surfaceType === 'baseball_diamond'
+          ? '⚾ Lineup/Pen'
+          : surfaceType === 'combat_octagon'
+          ? '🥊 Rounds'
+          : surfaceType === 'racing_circuit'
+          ? '🏎️ Grid'
+          : surfaceType === 'tennis_court'
+          ? '🎾 Sets'
+          : surfaceType === 'cricket_wagon'
+          ? '🏏 Crease'
           : '👥 5v5 Floor';
       const pillarsTabLabel =
         surfaceType === 'soccer_pitch'
@@ -1456,6 +1608,16 @@
           ? '📐 EPA & D&D'
           : surfaceType === 'hockey_rink'
           ? '📐 Corsi/xG'
+          : surfaceType === 'baseball_diamond'
+          ? '📐 Statcast'
+          : surfaceType === 'combat_octagon'
+          ? '📐 Strikes'
+          : surfaceType === 'racing_circuit'
+          ? '📐 Sectors'
+          : surfaceType === 'tennis_court'
+          ? '📐 Serve/Ret'
+          : surfaceType === 'cricket_wagon'
+          ? '📐 CricViz'
           : '📐 4 Factors';
 
       let railBodyHtml = '';

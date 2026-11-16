@@ -20,13 +20,21 @@ export type SupportedSportType =
   | 'hockey'
   | 'baseball'
   | 'combat'
-  | 'motorsport';
+  | 'racing'
+  | 'motorsport'
+  | 'tennis'
+  | 'cricket';
 
 export type SpatialSurfaceType =
   | 'basketball_halfcourt'
   | 'soccer_pitch'
   | 'football_field'
-  | 'hockey_rink';
+  | 'hockey_rink'
+  | 'baseball_diamond'
+  | 'combat_octagon'
+  | 'racing_circuit'
+  | 'tennis_court'
+  | 'cricket_wagon';
 
 export interface SportPillarMetric {
   code: string;
@@ -809,9 +817,11 @@ class MultiSportAnalyticsService {
       return 'basketball';
     }
 
-    if (cat === 'baseball' || lg.includes('mlb')) return 'baseball';
-    if (cat === 'combat' || cat === 'mma' || cat === 'boxing' || lg.includes('ufc')) return 'combat';
-    if (cat === 'motorsport' || lg.includes('f1') || lg.includes('nascar')) return 'motorsport';
+    if (cat === 'baseball' || lg.includes('mlb') || lg.includes('baseball') || /yankees|dodgers|astros|phillies|braves|padres|mets/.test(name)) return 'baseball';
+    if (cat === 'combat' || cat === 'mma' || cat === 'boxing' || lg.includes('ufc') || lg.includes('mma') || lg.includes('boxing') || /\bufc\b|fight night|main event/.test(name)) return 'combat';
+    if (cat === 'racing' || cat === 'motorsport' || lg.includes('f1') || lg.includes('nascar') || lg.includes('motogp') || lg.includes('indy') || /sky sports f1|formula|grand prix|qualifying/.test(name)) return 'racing';
+    if (cat === 'tennis' || lg.includes('atp') || lg.includes('wta') || /tennis|wimbledon|us open|roland garros|australian open/.test(name)) return 'tennis';
+    if (cat === 'cricket' || lg.includes('ipl') || lg.includes('icc') || lg.includes('willow') || lg.includes('cricket') || /willow|cricket|ashes|t20|odi|super kings|indians/.test(name)) return 'cricket';
 
     return 'soccer';
   }
@@ -854,6 +864,15 @@ class MultiSportAnalyticsService {
       base = this.buildCollegeBasketballAnalytics(stream, rawT1, rawT2, 'ncaab');
     } else if (sportType === 'basketball') {
       base = this.buildCollegeBasketballAnalytics(stream, rawT1, rawT2, 'basketball');
+    } else if (
+      sportType === 'baseball' ||
+      sportType === 'combat' ||
+      sportType === 'racing' ||
+      sportType === 'motorsport' ||
+      sportType === 'tennis' ||
+      sportType === 'cricket'
+    ) {
+      base = this.buildSpecializedSportAnalytics(sportType === 'motorsport' ? 'racing' : sportType, stream, rawT1, rawT2);
     } else {
       base = this.buildFootballAnalytics(stream, rawT1, rawT2, false);
     }
@@ -2470,6 +2489,508 @@ class MultiSportAnalyticsService {
           description: `${star1.name} caps a 10-0 Kill Shot run with an transition and-one dunk.`,
         },
       ],
+    };
+  }
+
+  // ==========================================================================
+  // 5. SPECIALIZED GLOBAL SPORTS ENGINE (BASEBALL, COMBAT, RACING, TENNIS, CRICKET)
+  // ==========================================================================
+  private buildSpecializedSportAnalytics(
+    sportType: 'baseball' | 'combat' | 'racing' | 'tennis' | 'cricket',
+    stream: StreamItem,
+    rawT1: string,
+    rawT2: string
+  ): UniversalSportDeepAnalytics {
+    const isChannelOnly = !/\b(vs|at|@)\b/i.test(stream.name || '') && (!stream.team1?.name || !stream.team2?.name);
+
+    const resolveSides = (def1: { name: string; abbr: string }, def2: { name: string; abbr: string }) => {
+      const n1 = isChannelOnly ? def1.name : (rawT1 || def1.name);
+      const n2 = isChannelOnly ? def2.name : (rawT2 !== rawT1 && rawT2 ? rawT2 : def2.name);
+      const abbr = (s: string, fallback: string) => {
+        const w = s.trim().split(/\s+/);
+        return w.length >= 2 ? (w[0][0] + w[1][0] + (w[2]?.[0] || '')).toUpperCase() : s.slice(0, 3).toUpperCase() || fallback;
+      };
+      return {
+        n1,
+        n2,
+        a1: isChannelOnly ? def1.abbr : abbr(n1, def1.abbr),
+        a2: isChannelOnly ? def2.abbr : abbr(n2, def2.abbr),
+      };
+    };
+
+    if (sportType === 'baseball') {
+      const { n1, n2, a1, a2 } = resolveSides(
+        { name: 'New York Yankees', abbr: 'NYY' },
+        { name: 'Los Angeles Dodgers', abbr: 'LAD' }
+      );
+      const t1Logo = stream.team1?.logo || buildSvgTeamCrestDataUri(n1, '#0c2340', '#ffffff');
+      const t2Logo = stream.team2?.logo || buildSvgTeamCrestDataUri(n2, '#005a9c', '#ef3e42');
+      const p1: AthleteInfo[] = [
+        { id: `${a1.toLowerCase()}_b1`, name: `${a1} Cleanup DH`, jersey: '99', position: 'RF', unit: 'Batting Order', starter: true, headshot: buildSvgAvatarDataUri(`${a1} DH`, '99', '#0c2340', '#fff'), teamName: n1, stats: ['4', '2', '2', '1', '1', '114.2 mph', '.512'] },
+        { id: `${a1.toLowerCase()}_b2`, name: `${a1} Ace RHP`, jersey: '45', position: 'SP', unit: 'Pitching Staff', starter: true, headshot: buildSvgAvatarDataUri(`${a1} SP`, '45', '#0c2340', '#fff'), teamName: n1, stats: ['6.2 IP', '3 H', '1 ER', '9 K', '1 BB', '97.4 mph', '34% Whiff'] },
+        { id: `${a1.toLowerCase()}_b3`, name: `${a1} Shortstop`, jersey: '11', position: 'SS', unit: 'Batting Order', starter: true, headshot: buildSvgAvatarDataUri(`${a1} SS`, '11', '#0c2340', '#fff'), teamName: n1, stats: ['4', '1', '1', '0', '1', '104.8 mph', '.384'] },
+      ];
+      const p2: AthleteInfo[] = [
+        { id: `${a2.toLowerCase()}_b1`, name: `${a2} Two-Way Star`, jersey: '17', position: 'DH', unit: 'Batting Order', starter: true, headshot: buildSvgAvatarDataUri(`${a2} DH`, '17', '#005a9c', '#fff'), teamName: n2, stats: ['4', '1', '2', '1', '0', '113.6 mph', '.498'] },
+        { id: `${a2.toLowerCase()}_b2`, name: `${a2} Left-Hander`, jersey: '7', position: 'SP', unit: 'Pitching Staff', starter: true, headshot: buildSvgAvatarDataUri(`${a2} SP`, '7', '#005a9c', '#fff'), teamName: n2, stats: ['6.0 IP', '5 H', '3 ER', '7 K', '2 BB', '95.1 mph', '29% CSW'] },
+      ];
+      return {
+        eventId: stream.stream_key,
+        sportType: 'baseball',
+        sportBadge: 'MLB STATCAST • xwOBA, BARREL% & PITCH TUNNELING',
+        analyticsMethodology: 'Statcast Exit Velocity • Launch Angle Barrel% • Pitcher Stuff+ / CSW% • Leverage Index',
+        surfaceType: 'baseball_diamond',
+        status: 'Bot 7th • 1 Out',
+        detail: 'Bot 7th • 1 Out',
+        isLive: true,
+        venue: stream.league ? `${stream.league} Ballpark` : 'MLB Championship Park',
+        broadcast: 'Live Baseball Broadcast',
+        leverageIndex: 2.35,
+        leverageTier: 'HIGH',
+        isClutchTime: true,
+        situationBanner: `⚾ Bot 7th • 1 Out • Runner on 2nd (2-1 Count) • Pitch #89 (96.8 mph 4-Seam)`,
+        linescore: { periodHeaders: ['1', '2', '3', '4', '5', '6', '7', '8', '9'], team1Quarters: [0, 2, 0, 1, 0, 0, 1, 0, 0], team2Quarters: [1, 0, 0, 1, 1, 0, 0, 0, 0], team1Total: 4, team2Total: 3 },
+        paceAndProjection: { tempoLabel: 'AVG EXIT VELOCITY', tempoValue: '92.4 mph • 11.8% Barrel%', projectedFinal: `Statcast xRuns: ${a1} 4.6 — 3.4 ${a2}`, primaryRateLabel: 'TEAM xwOBA', team1RateValue: '.356 xwOBA', team2RateValue: '.321 xwOBA' },
+        team1Meta: { name: n1, abbreviation: a1, logo: t1Logo, score: 4, record: 'Active', formationOrScheme: 'High-Leverage Bullpen Bridge' },
+        team2Meta: { name: n2, abbreviation: a2, logo: t2Logo, score: 3, record: 'Active', formationOrScheme: 'Fastball-Slider Tunneling' },
+        fourPillars: [
+          { code: 'xwOBA', label: 'Expected Weighted On-Base (xwOBA)', weightLabel: '35% WEIGHT', team1Value: '.356', team2Value: '.321', team1Numeric: 62, team2Numeric: 51, leagueAverage: '.315', edgeTeam: 'team1', description: 'Quality of contact & plate discipline weighted by exit velocity and launch angle.' },
+          { code: 'Barrel%', label: 'Hard-Hit & Barrel Rate', weightLabel: '25% WEIGHT', team1Value: '13.2% (48% HH)', team2Value: '9.4% (41% HH)', team1Numeric: 65, team2Numeric: 49, leagueAverage: '8.1%', edgeTeam: 'team1', description: 'Share of batted balls exceeding 98+ mph at optimal launch angles.' },
+          { code: 'CSW%', label: 'Pitcher Called + Whiff %', weightLabel: '25% WEIGHT', team1Value: '32.4%', team2Value: '28.9%', team1Numeric: 60, team2Numeric: 50, leagueAverage: '28.2%', edgeTeam: 'team1', description: 'Called strikes plus swinging misses per total pitches thrown.' },
+          { code: 'OAA', label: 'Bullpen Stuff+ & Defense', weightLabel: '15% WEIGHT', team1Value: '112 Stuff+ (+2 OAA)', team2Value: '104 Stuff+ (+0 OAA)', team1Numeric: 58, team2Numeric: 48, leagueAverage: '100', edgeTeam: 'team1', description: 'Pitch movement quality and Outs Above Average defensive positioning.' },
+        ],
+        unitSplits: {
+          unit1Label: 'Top of Order (1-5)',
+          unit2Label: 'Bottom Order + Bullpen',
+          team1Unit1Stat: '.374 xwOBA • 2 HR • 110.4 Max EV',
+          team1Unit2Stat: '3.0 IP • 0 ER • 5 K Relief',
+          team1Unit1Pct: 68,
+          team2Unit1Stat: '.338 xwOBA • 1 HR • 108.1 Max EV',
+          team2Unit2Stat: '2.1 IP • 1 ER • 2 K Relief',
+          team2Unit1Pct: 60,
+          summaryEdge: `${a1} middle of the order creating 48% Hard-Hit contact rate against high-spin breaking balls`,
+        },
+        spatialMap: {
+          title: 'MLB Statcast Diamond Spray Chart & Strike Zone Tunneling',
+          subtitle: 'Batted-ball spray vectors + Exit Velocity • ★ = Home Run / Extra-Base Hit, ● = Hit, ✕ = Out',
+          surfaceType: 'baseball_diamond',
+          team1PrimaryMetric: `${a1}: .356 xwOBA • 4 Barrels (114.2 mph Max EV)`,
+          team2PrimaryMetric: `${a2}: .321 xwOBA • 2 Barrels (110.8 mph Max EV)`,
+          events: [
+            { id: 'bb1', team: 'team1', playerName: p1[0].name, jersey: '99', x: 72, y: 18, isSuccess: true, isHighValue: true, outcomeLabel: 'HR! 418 ft Center-Right (114.2 mph, 27°)', period: '4th', clock: '1 Out', metricValue: 114.2, zoneLabel: 'Right-Center Wall' },
+            { id: 'bb2', team: 'team1', playerName: p1[2].name, jersey: '11', x: 34, y: 42, isSuccess: true, isHighValue: false, outcomeLabel: 'Line-Drive 2B Left Gap (104.8 mph)', period: '2nd', clock: '2 Out', metricValue: 104.8, zoneLabel: 'Left Field Gap' },
+            { id: 'bb3', team: 'team1', playerName: p1[0].name, jersey: '99', x: 52, y: 55, isSuccess: true, outcomeLabel: 'RBI Single Up Middle (102.1 mph)', period: '7th', clock: '0 Out', metricValue: 102.1, zoneLabel: 'Up the Middle' },
+            { id: 'bb4', team: 'team2', playerName: p2[0].name, jersey: '17', x: 26, y: 22, isSuccess: true, isHighValue: true, outcomeLabel: 'HR! 406 ft Pull Side (113.6 mph, 29°)', period: '1st', clock: '2 Out', metricValue: 113.6, zoneLabel: 'Left-Field Porch' },
+            { id: 'bb5', team: 'team2', playerName: p2[0].name, jersey: '17', x: 64, y: 62, isSuccess: false, outcomeLabel: 'Sharp Groundout (99.4 mph • xBA .420)', period: '5th', clock: '1 Out', metricValue: 99.4, zoneLabel: 'Infield Shift' },
+          ],
+          zones: [
+            { zoneKey: 'pull', label: 'Pull Side Air & Gap Power', team1Volume: '6 Hard-Hit', team1Efficiency: '.480 xwOBA • 1 HR', team2Volume: '5 Hard-Hit', team2Efficiency: '.445 xwOBA • 1 HR', benchmarkEfficiency: '.390 xwOBA', edge: 'team1' },
+            { zoneKey: 'zone_heart', label: 'Heart of Strike Zone (Fastballs)', team1Volume: '14 Swings', team1Efficiency: '71% Contact (95.4 EV)', team2Volume: '11 Swings', team2Efficiency: '64% Contact (92.1 EV)', benchmarkEfficiency: '66% Contact', edge: 'team1' },
+            { zoneKey: 'chase', label: 'Chase & Shadow Zone (Offspeed)', team1Volume: '22% Chase%', team1Efficiency: '18% Whiff Rate', team2Volume: '29% Chase%', team2Efficiency: '31% Whiff Rate', benchmarkEfficiency: '27% Chase%', edge: 'team1' },
+          ],
+        },
+        tacticalMatrix: [
+          { playType: 'four_seam', label: 'High 4-Seam Fastball vs Top of Zone', team1FreqPct: 48, team1Efficiency: '97.4 mph (2,480 RPM)', team1Percentile: 92, team2FreqPct: 44, team2Efficiency: '95.1 mph (2,310 RPM)', team2Percentile: 79, edge: a1 },
+          { playType: 'breaking', label: 'Sweeper / Slider Whiff Generation', team1FreqPct: 32, team1Efficiency: '39% Whiff%', team1Percentile: 90, team2FreqPct: 36, team2Efficiency: '34% Whiff%', team2Percentile: 82, edge: a1 },
+          { playType: 'risp', label: 'Runners in Scoring Position (RISP)', team1FreqPct: 20, team1Efficiency: '3-8 (.375 BA)', team1Percentile: 88, team2FreqPct: 20, team2Efficiency: '2-7 (.286 BA)', team2Percentile: 72, edge: a1 },
+        ],
+        activeUnit: {
+          unitTitle: 'Active Pitcher-Batter Duel & Bullpen Leverage Bridge',
+          team1Scheme: 'Power Contact + High-Velo Relief',
+          team2Scheme: 'Pitch Tunneling + Late Matchups',
+          team1NetMetric: '+0.42 WPA Relief Edge',
+          team2NetMetric: '95.1 mph Staff Avg',
+          team1Players: p1.map((p, idx) => ({ id: p.id, name: p.name, jersey: p.jersey || '99', position: p.position || 'DH', headshot: p.headshot, primaryStat: p.stats?.slice(0, 4).join(' • ') || '', efficiencyBadge: p.stats?.[5] || '110 EV', impactVal: p.stats?.[6] || '.450', isHot: idx === 0 })),
+          team2Players: p2.map((p, idx) => ({ id: p.id, name: p.name, jersey: p.jersey || '17', position: p.position || 'DH', headshot: p.headshot, primaryStat: p.stats?.slice(0, 4).join(' • ') || '', efficiencyBadge: p.stats?.[5] || '108 EV', impactVal: p.stats?.[6] || '.410', isHot: idx === 0 })),
+          stintTimeline: [
+            { periodLabel: 'Early (1-3)', timeRange: 'Innings 1-3', team1Score: 2, team2Score: 1, netDiff: 1, headline: `${a1} capitalizes on two-out RBI double` },
+            { periodLabel: 'Mid (4-6)', timeRange: 'Innings 4-6', team1Score: 3, team2Score: 3, netDiff: 0, headline: `Solo HRs traded in middle frames` },
+            { periodLabel: 'Late (7+)', timeRange: 'Innings 7-9', team1Score: 4, team2Score: 3, netDiff: 1, headline: `${a1} Go-ahead RBI single in 7th` },
+          ],
+        },
+        winProbTimeline: [
+          { label: 'Inn 1', minuteMark: 1, team1WinPct: 44, leverageIndex: 1.0, scoreDiff: -1, keyPlay: `${a2} Solo HR (0-1)` },
+          { label: 'Inn 4', minuteMark: 4, team1WinPct: 61, leverageIndex: 1.4, scoreDiff: 1, keyPlay: `${a1} Go-Ahead HR (3-2)` },
+          { label: 'Inn 5', minuteMark: 5, team1WinPct: 50, leverageIndex: 1.8, scoreDiff: 0, keyPlay: `${a2} Ties Game (3-3)` },
+          { label: 'Inn 7', minuteMark: 7, team1WinPct: 68, leverageIndex: 2.35, scoreDiff: 1, keyPlay: `${a1} RBI Single (4-3)` },
+        ],
+        smartCards: [
+          { id: 'bb_sc_1', category: 'STATCAST BARREL ALERT', badge: '114.2 MPH EV', headline: `${a1} Cleanup launches 418-ft No-Doubt Home Run`, detail: `27° launch angle • 1.000 xBA • 114.2 mph exit velocity off high 4-seam fastball.`, metricHighlight: '+24% WP Swing', accentColor: 'gold', playerHeadshot: p1[0].headshot },
+          { id: 'bb_sc_2', category: 'BULLPEN LEVERAGE', badge: '2.35x LI', headline: `High-leverage late-inning matchup in Bot 7th`, detail: `${a1} pitching generating 34% whiff rate on breaking pitches inside the shadow zone.`, metricHighlight: '32.4% CSW%', accentColor: 'cyan' },
+        ],
+        inGameInsights: [
+          { category: 'Statcast Contact Quality', metricBadge: '+.035 xwOBA', title: `${n1} winning the hard-hit battle (48% vs 41%)`, detail: `Superior barrel rate against fastballs at the top of the strike zone.` },
+          { category: 'Pitch Tunneling & Whiff', metricBadge: '34% Whiff', title: 'Slider/Sweeper separation late in counts', detail: `Breaking ball release tunnels identically with 97 mph 4-seamer through first 40 feet.` },
+        ],
+        mvpPerformer: { id: p1[0].id, name: p1[0].name, teamAbbr: a1, position: 'RF', jersey: '99', headshot: p1[0].headshot, primaryLine: '2-4 • HR • 2 RBI • 114.2 mph Max EV', efficiencyLine: '.512 xwOBA • +24.8% WPA', impactBadge: 'BARREL LEADER' },
+        boxscoreCategories: { team1: [{ name: 'batting', displayName: 'Batting & Statcast EV', labels: ['AB', 'R', 'H', 'HR', 'RBI', 'Max EV', 'xwOBA'], athletes: p1 }], team2: [{ name: 'batting', displayName: 'Batting & Statcast EV', labels: ['AB', 'R', 'H', 'HR', 'RBI', 'Max EV', 'xwOBA'], athletes: p2 }] },
+        rosters: { team1: p1, team2: p2 },
+        teamStatsComparison: [{ label: 'Team xwOBA', team1Value: '.356', team2Value: '.321' }, { label: 'Hard-Hit Rate (95+ mph)', team1Value: '48%', team2Value: '41%' }, { label: 'Barrel Rate', team1Value: '13.2%', team2Value: '9.4%' }, { label: 'Pitcher CSW%', team1Value: '32.4%', team2Value: '28.9%' }],
+        scoringTimeline: [{ period: '1st', clock: '2 Out', teamName: n2, teamLogo: t2Logo, score: `${a1} 0 - 1 ${a2}`, description: 'Solo Home Run into left-field seats (113.6 mph EV).' }, { period: '7th', clock: '1 Out', teamName: n1, teamLogo: t1Logo, score: `${a1} 4 - 3 ${a2}`, description: 'Clutch RBI single up the middle puts visitors back in front.' }],
+      };
+    }
+
+    if (sportType === 'combat') {
+      const { n1, n2, a1, a2 } = resolveSides({ name: 'Red Corner Main Event', abbr: 'RED' }, { name: 'Blue Corner Challenger', abbr: 'BLU' });
+      const t1Logo = stream.team1?.logo || buildSvgTeamCrestDataUri(n1, '#dc2626', '#ffffff');
+      const t2Logo = stream.team2?.logo || buildSvgTeamCrestDataUri(n2, '#2563eb', '#ffffff');
+      const f1: AthleteInfo = { id: 'combat_f1', name: n1, jersey: 'RED', position: 'ST', unit: 'Red Corner', starter: true, headshot: buildSvgAvatarDataUri(n1, 'RED', '#dc2626', '#fff'), teamName: n1, stats: ['64/112 (57%)', '1 KD', '3/4 TD', '4:18 Ctrl', '5.8 SLpM', '84% Stamina'] };
+      const f2: AthleteInfo = { id: 'combat_f2', name: n2, jersey: 'BLU', position: 'GR', unit: 'Blue Corner', starter: true, headshot: buildSvgAvatarDataUri(n2, 'BLU', '#2563eb', '#fff'), teamName: n2, stats: ['49/108 (45%)', '0 KD', '1/5 TD', '1:42 Ctrl', '4.4 SLpM', '72% Stamina'] };
+      return {
+        eventId: stream.stream_key,
+        sportType: 'combat',
+        sportBadge: 'UFC / COMBAT • STRIKE TELEMETRY & 10-POINT MUST SCORECARD',
+        analyticsMethodology: 'Significant Strikes Landed/Min • Target Split (Head/Body/Legs) • Takedown Accuracy & Control Time',
+        surfaceType: 'combat_octagon',
+        status: 'Round 3 • 2:14 Remaining',
+        detail: 'R3 • 2:14',
+        isLive: true,
+        venue: stream.league ? `${stream.league} Fight Arena` : 'Championship Octagon',
+        broadcast: 'Main Event PPV Feed',
+        leverageIndex: 2.6,
+        leverageTier: 'CRUNCH TIME',
+        isClutchTime: true,
+        situationBanner: `🥊 Round 3 of 5 • Sig. Strikes: ${a1} 64 vs ${a2} 49 • Control Time: 4:18 vs 1:42`,
+        linescore: { periodHeaders: ['R1', 'R2', 'R3'], team1Quarters: [10, 10, 10], team2Quarters: [9, 9, 9], team1Total: 30, team2Total: 27 },
+        paceAndProjection: { tempoLabel: 'COMBINED STRIKE PACE', tempoValue: '10.2 Sig. Strikes / Min', projectedFinal: `Projected Scorecard: ${a1} 30-27 (Live Edge)`, primaryRateLabel: 'SIG. STRIKE ACC%', team1RateValue: '57% (64/112)', team2RateValue: '45% (49/108)' },
+        team1Meta: { name: n1, abbreviation: a1, logo: t1Logo, score: 30, record: 'Red Corner', formationOrScheme: 'Pressure Boxing + Takedown Defense' },
+        team2Meta: { name: n2, abbreviation: a2, logo: t2Logo, score: 27, record: 'Blue Corner', formationOrScheme: 'Southpaw Kickboxing + Chain Wrestling' },
+        fourPillars: [
+          { code: 'SIG%', label: 'Significant Strike Volume & Accuracy', weightLabel: '35% WEIGHT', team1Value: '64 (57%)', team2Value: '49 (45%)', team1Numeric: 62, team2Numeric: 46, leagueAverage: '48%', edgeTeam: 'team1', description: 'Clean distance & clinch power strikes landed per attempt.' },
+          { code: 'KD/DMG', label: 'Damage Impact & Knockdowns', weightLabel: '30% WEIGHT', team1Value: '1 KD • 58% Head', team2Value: '0 KD • 46% Head', team1Numeric: 68, team2Numeric: 42, leagueAverage: '44% Head', edgeTeam: 'team1', description: 'High-impact head/body shots visibly altering fighter stance and pace.' },
+          { code: 'CTRL', label: 'Takedowns & Octagon Control', weightLabel: '20% WEIGHT', team1Value: '3/4 TD • 4:18', team2Value: '1/5 TD • 1:42', team1Numeric: 66, team2Numeric: 38, leagueAverage: '39% TD%', edgeTeam: 'team1', description: 'Mat control time, fence pressure, and takedown completion rate.' },
+          { code: 'STAM', label: 'Cardio Pace Retention (SLpM)', weightLabel: '15% WEIGHT', team1Value: '5.8 SLpM (84%)', team2Value: '4.4 SLpM (72%)', team1Numeric: 60, team2Numeric: 48, leagueAverage: '4.5 SLpM', edgeTeam: 'team1', description: 'Output sustainability across championship rounds.' },
+        ],
+        unitSplits: {
+          unit1Label: 'Distance Striking vs Clinch',
+          unit2Label: 'Target Zone Distribution',
+          team1Unit1Stat: '48 Distance • 10 Clinch • 6 Ground',
+          team1Unit2Stat: '37 Head • 16 Body • 11 Legs',
+          team1Unit1Pct: 61,
+          team2Unit1Stat: '38 Distance • 7 Clinch • 4 Ground',
+          team2Unit2Stat: '24 Head • 13 Body • 12 Legs',
+          team2Unit1Pct: 48,
+          summaryEdge: `${n1} controlling octagon center and out-landing 37-24 to the head`,
+        },
+        spatialMap: {
+          title: 'Octagon Center Control & Target Strike Heat Map',
+          subtitle: 'Distance / Center Octagon vs Fence Clinch • ★ = Knockdown / High-Damage Strike, ● = Sig. Strike',
+          surfaceType: 'combat_octagon',
+          team1PrimaryMetric: `${n1}: 57% Strike Acc • 1 KD • 4:18 Control`,
+          team2PrimaryMetric: `${n2}: 45% Strike Acc • 12 Leg Kicks`,
+          events: [
+            { id: 'cbt1', team: 'team1', playerName: n1, jersey: 'R', x: 52, y: 44, isSuccess: true, isHighValue: true, outcomeLabel: 'Clean Right Cross Knockdown (R2)', period: 'R2', clock: '1:48', metricValue: 1, zoneLabel: 'Octagon Center' },
+            { id: 'cbt2', team: 'team1', playerName: n1, jersey: 'R', x: 35, y: 30, isSuccess: true, outcomeLabel: 'Fence Control & Ground Strikes', period: 'R1', clock: '0:52', metricValue: 6, zoneLabel: 'Fence Clinch' },
+            { id: 'cbt3', team: 'team2', playerName: n2, jersey: 'B', x: 66, y: 58, isSuccess: true, outcomeLabel: 'Heavy Inside Calf Kick Trio', period: 'R1', clock: '3:10', metricValue: 3, zoneLabel: 'Outer Range' },
+          ],
+          zones: [
+            { zoneKey: 'head', label: 'Head Strikes (Power & Jabs)', team1Volume: '37 Landed', team1Efficiency: '52% Accuracy (1 KD)', team2Volume: '24 Landed', team2Efficiency: '38% Accuracy', benchmarkEfficiency: '42% Acc', edge: 'team1' },
+            { zoneKey: 'body_legs', label: 'Body Shots & Calf Kicks', team1Volume: '27 Landed', team1Efficiency: '65% Body/Leg', team2Volume: '25 Landed', team2Efficiency: '61% Body/Leg', benchmarkEfficiency: '58%', edge: 'team1' },
+            { zoneKey: 'grappling', label: 'Grappling & Mat Control', team1Volume: '3 Takedowns', team1Efficiency: '4:18 Control Time', team2Volume: '1 Takedown', team2Efficiency: '1:42 Control Time', benchmarkEfficiency: '39% TD', edge: 'team1' },
+          ],
+        },
+        tacticalMatrix: [
+          { playType: 'head_hunting', label: 'Distance Boxing & Counter Combinations', team1FreqPct: 54, team1Efficiency: '57% Landed (1 KD)', team1Percentile: 91, team2FreqPct: 48, team2Efficiency: '42% Landed', team2Percentile: 74, edge: a1 },
+          { playType: 'takedown_chain', label: 'Chain Wrestling & Fence Control', team1FreqPct: 26, team1Efficiency: '3/4 TD (4:18)', team1Percentile: 89, team2FreqPct: 22, team2Efficiency: '1/5 TD (1:42)', team2Percentile: 62, edge: a1 },
+          { playType: 'leg_kicks', label: 'Calf & Inside Leg Attrition', team1FreqPct: 20, team1Efficiency: '11/14 (78%)', team1Percentile: 78, team2FreqPct: 30, team2Efficiency: '12/16 (75%)', team2Percentile: 83, edge: a2 },
+        ],
+        activeUnit: {
+          unitTitle: 'Main Event Fighter Telemetry & Round-by-Round Scorecard',
+          team1Scheme: 'Center Pressure + Counter Right',
+          team2Scheme: 'Outside Kickboxing',
+          team1NetMetric: '30-27 Card Edge',
+          team2NetMetric: '12 Calf Kicks',
+          team1Players: [{ id: f1.id, name: f1.name, jersey: 'RED', position: 'R', headshot: f1.headshot, primaryStat: '64 Sig • 1 KD • 4:18 Ctrl', efficiencyBadge: '57% Acc', impactVal: '30 Pts', isHot: true }],
+          team2Players: [{ id: f2.id, name: f2.name, jersey: 'BLU', position: 'B', headshot: f2.headshot, primaryStat: '49 Sig • 0 KD • 1:42 Ctrl', efficiencyBadge: '45% Acc', impactVal: '27 Pts', isHot: false }],
+          stintTimeline: [
+            { periodLabel: 'Round 1', timeRange: '5:00', team1Score: 10, team2Score: 9, netDiff: 1, headline: `${n1} lands early takedown & 2:10 top control` },
+            { periodLabel: 'Round 2', timeRange: '5:00', team1Score: 20, team2Score: 18, netDiff: 1, headline: `${n1} scores knockdown with counter right cross` },
+            { periodLabel: 'Round 3', timeRange: 'Live', team1Score: 30, team2Score: 27, netDiff: 1, headline: `High pace distance exchanges favor Red Corner` },
+          ],
+        },
+        winProbTimeline: [{ label: 'Pre', minuteMark: 0, team1WinPct: 52, leverageIndex: 1.0, scoreDiff: 0, keyPlay: 'Opening Bell' }, { label: 'R1', minuteMark: 5, team1WinPct: 64, leverageIndex: 1.4, scoreDiff: 1, keyPlay: 'Takedown Control' }, { label: 'R2', minuteMark: 10, team1WinPct: 79, leverageIndex: 2.2, scoreDiff: 2, keyPlay: 'Right Cross Knockdown' }, { label: 'R3', minuteMark: 13, team1WinPct: 83, leverageIndex: 2.6, scoreDiff: 3, keyPlay: 'Controlling Center' }],
+        smartCards: [
+          { id: 'cbt_sc_1', category: 'STRIKE VOLUME & DAMAGE', badge: '+15 SIG STR EDGE', headline: `${n1} up 64-49 in Significant Strikes with 1 Knockdown`, detail: `Landing 57% of attempts to the head while controlling 4:18 of cage/mat position.`, metricHighlight: '30-27 Live', accentColor: 'red', playerHeadshot: f1.headshot },
+        ],
+        inGameInsights: [{ category: 'Significant Strike Differential', metricBadge: '+15 Strikes', title: `${n1} dominating distance boxing exchanges`, detail: `Superior pocket defense forcing 55% miss rate from opponent.` }],
+        mvpPerformer: { id: f1.id, name: f1.name, teamAbbr: a1, position: 'F', jersey: '1', headshot: f1.headshot, primaryLine: '64 Sig. Strikes (57%) • 1 KD • 3/4 TD', efficiencyLine: '4:18 Control Time • 5.8 SLpM', impactBadge: 'OCTAGON CONTROL' },
+        boxscoreCategories: { team1: [{ name: 'fight', displayName: 'Strike & Grappling Telemetry', labels: ['Sig Str', 'KD', 'TD', 'Ctrl', 'SLpM', 'Stamina'], athletes: [f1] }], team2: [{ name: 'fight', displayName: 'Strike & Grappling Telemetry', labels: ['Sig Str', 'KD', 'TD', 'Ctrl', 'SLpM', 'Stamina'], athletes: [f2] }] },
+        rosters: { team1: [f1], team2: [f2] },
+        teamStatsComparison: [{ label: 'Significant Strikes', team1Value: '64/112 (57%)', team2Value: '49/108 (45%)' }, { label: 'Knockdowns', team1Value: '1', team2Value: '0' }, { label: 'Takedowns Landed', team1Value: '3/4', team2Value: '1/5' }, { label: 'Control Time', team1Value: '4:18', team2Value: '1:42' }],
+        scoringTimeline: [{ period: 'R2', clock: '1:48', teamName: n1, teamLogo: t1Logo, score: `${a1} 20 - 18 ${a2}`, description: 'Flash knockdown scored off clean right counter in center octagon.' }],
+      };
+    }
+
+    if (sportType === 'racing') {
+      const { n1, n2, a1, a2 } = resolveSides({ name: 'McLaren / Norris', abbr: 'MCL' }, { name: 'Red Bull / Verstappen', abbr: 'RBR' });
+      const t1Logo = stream.team1?.logo || buildSvgTeamCrestDataUri(n1, '#ff8000', '#111111');
+      const t2Logo = stream.team2?.logo || buildSvgTeamCrestDataUri(n2, '#0600ef', '#dc0000');
+      const d1: AthleteInfo = { id: 'f1_d1', name: 'Lando Norris', jersey: '4', position: 'P1', unit: 'Front Row', starter: true, headshot: buildSvgAvatarDataUri('Lando Norris', '4', '#ff8000', '#111'), teamName: 'McLaren Formula 1', stats: ['P1', '1:32.418', '+0.000s', 'Medium (14L)', '1 Pit', '209 mph'] };
+      const d2: AthleteInfo = { id: 'f1_d2', name: 'Oscar Piastri', jersey: '81', position: 'P3', unit: 'Points Pos', starter: true, headshot: buildSvgAvatarDataUri('Oscar Piastri', '81', '#ff8000', '#111'), teamName: 'McLaren Formula 1', stats: ['P3', '1:32.684', '+2.840s', 'Medium (16L)', '1 Pit', '207 mph'] };
+      const d3: AthleteInfo = { id: 'f1_d3', name: 'Max Verstappen', jersey: '1', position: 'P2', unit: 'Front Row', starter: true, headshot: buildSvgAvatarDataUri('Max Verstappen', '1', '#0600ef', '#fff'), teamName: 'Oracle Red Bull Racing', stats: ['P2', '1:32.512', '+1.184s', 'Hard (11L)', '1 Pit', '211 mph'] };
+      const d4: AthleteInfo = { id: 'f1_d4', name: 'Charles Leclerc', jersey: '16', position: 'P4', unit: 'Points Pos', starter: true, headshot: buildSvgAvatarDataUri('Charles Leclerc', '16', '#dc0000', '#fff'), teamName: 'Scuderia Ferrari', stats: ['P4', '1:32.890', '+4.920s', 'Hard (13L)', '1 Pit', '208 mph'] };
+      return {
+        eventId: stream.stream_key,
+        sportType: 'racing',
+        sportBadge: 'FORMULA 1 / MOTORSPORT • SECTOR PACE, DRS & TIRE STINT TELEMETRY',
+        analyticsMethodology: 'Live Sector 1/2/3 Deltas • Pirelli Tire Degradation Curve • Pit-Stop Undercut Window • Speed Trap & DRS Gaps',
+        surfaceType: 'racing_circuit',
+        status: 'Lap 38 / 50 • Track Green',
+        detail: 'Lap 38/50',
+        isLive: true,
+        venue: stream.name || 'Grand Prix Circuit',
+        broadcast: 'Sky Sports F1 / Telemetry Pit Wall',
+        leverageIndex: 2.15,
+        leverageTier: 'HIGH',
+        isClutchTime: true,
+        situationBanner: `🏎️ Lap 38/50 • P1 Norris (+1.18s over P2 Verstappen) • Pit Window Open (Soft/Medium Undercut Active)`,
+        linescore: { periodHeaders: ['Q1/S1', 'S2 (TECH)', 'S3 (DRS)', 'BEST LAP'], team1Quarters: [26.4, 31.8, 34.2, 92.4], team2Quarters: [26.5, 32.0, 34.0, 92.5], team1Total: 1, team2Total: 2 },
+        paceAndProjection: { tempoLabel: 'RACE PACE DELTA (S1-S3)', tempoValue: '1:32.418 (-0.094s/lap)', projectedFinal: `Pit Window Projection: ${a1} P1 (+2.4s Gap)`, primaryRateLabel: 'SPEED TRAP MAX', team1RateValue: '209.4 mph', team2RateValue: '211.2 mph' },
+        team1Meta: { name: n1, abbreviation: a1, logo: t1Logo, score: 1, record: 'P1 • Medium (14L)', formationOrScheme: '1-Stop Medium -> Hard Strategy' },
+        team2Meta: { name: n2, abbreviation: a2, logo: t2Logo, score: 2, record: 'P2 • Hard (11L)', formationOrScheme: 'Undercut Offset • Low Downforce Wing' },
+        fourPillars: [
+          { code: 'PACE', label: 'Clean-Air Lap Pace Delta', weightLabel: '35% WEIGHT', team1Value: '1:32.418', team2Value: '1:32.512 (+0.09s)', team1Numeric: 64, team2Numeric: 58, leagueAverage: '1:33.100', edgeTeam: 'team1', description: 'Fuel-corrected lap pace delta across all three circuit sectors.' },
+          { code: 'TIRE', label: 'Tire Degradation & Thermal Life', weightLabel: '25% WEIGHT', team1Value: '76% Life (Med 14L)', team2Value: '82% Life (Hard 11L)', team1Numeric: 55, team2Numeric: 64, leagueAverage: '0.07s/lap deg', edgeTeam: 'team2', description: 'Remaining rubber grip and predicted cliff lap before undercut vulnerability.' },
+          { code: 'PIT', label: 'Pit Crew & Rejoin Traffic Window', weightLabel: '20% WEIGHT', team1Value: '2.18s Stop (Clean)', team2Value: '2.31s Stop (DRS Gap)', team1Numeric: 66, team2Numeric: 56, leagueAverage: '2.45s', edgeTeam: 'team1', description: 'Stationary pit time and clean-air rejoin projection.' },
+          { code: 'DRS', label: 'Straightline Trap & ERS Deploy', weightLabel: '20% WEIGHT', team1Value: '209.4 mph • 68% ERS', team2Value: '211.2 mph • 74% ERS', team1Numeric: 54, team2Numeric: 62, leagueAverage: '206 mph', edgeTeam: 'team2', description: 'DRS top speed edge and hybrid battery deployment efficiency.' },
+        ],
+        unitSplits: {
+          unit1Label: 'Sector Dominance Breakdown',
+          unit2Label: 'Tyre Stint Comparison',
+          team1Unit1Stat: 'Purple Sector 2 (Medium Grip Edge)',
+          team1Unit2Stat: 'Stint 2: L24-L38 Medium (-0.06s/lap deg)',
+          team1Unit1Pct: 62,
+          team2Unit1Stat: 'Purple Sector 3 (Low-Drag Straightline)',
+          team2Unit2Stat: 'Stint 2: L27-L38 Hard (+0.11s Late Pace)',
+          team2Unit1Pct: 58,
+          summaryEdge: 'Verstappen closing 0.14s/lap in DRS straightaway while Norris dominates technical Sector 2',
+        },
+        spatialMap: {
+          title: 'Grand Prix Circuit Sector Telemetry & DRS Trap Map',
+          subtitle: 'Sector 1 (High-Speed Esses) • Sector 2 (Technical Apex) • Sector 3 (DRS Zone)',
+          surfaceType: 'racing_circuit',
+          team1PrimaryMetric: 'P1 Norris: 1:32.418 (Purple S2 • 2.18s Pit)',
+          team2PrimaryMetric: 'P2 Verstappen: +1.18s (211.2 mph Trap • DRS Ready)',
+          events: [
+            { id: 'f1_s1', team: 'team1', playerName: 'Lando Norris', jersey: '4', x: 24, y: 28, isSuccess: true, isHighValue: true, outcomeLabel: 'Sector 1 Speed Apex (26.412s)', period: 'Lap 37', clock: 'S1', metricValue: 26.4, zoneLabel: 'Sector 1' },
+            { id: 'f1_s2', team: 'team1', playerName: 'Lando Norris', jersey: '4', x: 76, y: 40, isSuccess: true, isHighValue: true, outcomeLabel: 'Purple Sector 2 (31.802s • +0.19s)', period: 'Lap 37', clock: 'S2', metricValue: 31.8, zoneLabel: 'Sector 2' },
+            { id: 'f1_s3', team: 'team2', playerName: 'Max Verstappen', jersey: '1', x: 48, y: 80, isSuccess: true, isHighValue: true, outcomeLabel: 'Purple Sector 3 & Speed Trap (211.2 mph)', period: 'Lap 38', clock: 'S3', metricValue: 211.2, zoneLabel: 'DRS Straight' },
+          ],
+          zones: [
+            { zoneKey: 's1', label: 'Sector 1 (Fast Sweepers)', team1Volume: '26.412s', team1Efficiency: '176 mph Min Apex', team2Volume: '26.504s', team2Efficiency: '174 mph Min Apex', benchmarkEfficiency: '26.8s', edge: 'team1' },
+            { zoneKey: 's2', label: 'Sector 2 (Technical Chicanes)', team1Volume: '31.802s', team1Efficiency: 'Downforce +0.19s', team2Volume: '31.994s', team2Efficiency: 'Front-Limited', benchmarkEfficiency: '32.3s', edge: 'team1' },
+            { zoneKey: 's3', label: 'Sector 3 (Main DRS Straight)', team1Volume: '34.204s', team1Efficiency: '209.4 mph Trap', team2Volume: '34.014s', team2Efficiency: '211.2 mph Trap', benchmarkEfficiency: '34.5s', edge: 'team2' },
+          ],
+        },
+        tacticalMatrix: [
+          { playType: 'sector_pace', label: 'Clean-Air Technical Corners (S2)', team1FreqPct: 40, team1Efficiency: '31.80s Purple (-0.19s)', team1Percentile: 95, team2FreqPct: 35, team2Efficiency: '31.99s', team2Percentile: 87, edge: a1 },
+          { playType: 'straight_drs', label: 'Main Straight DRS + Battery Push', team1FreqPct: 35, team1Efficiency: '209.4 mph', team1Percentile: 86, team2FreqPct: 40, team2Efficiency: '211.2 mph Purple', team2Percentile: 96, edge: a2 },
+          { playType: 'pit_undercut', label: 'Pit Stop Execution & Out-Lap Pace', team1FreqPct: 25, team1Efficiency: '2.18s Stop', team1Percentile: 94, team2FreqPct: 25, team2Efficiency: '2.31s Stop', team2Percentile: 88, edge: a1 },
+        ],
+        activeUnit: {
+          unitTitle: 'Top-4 Live Running Order & Tire Compound Telemetry',
+          team1Scheme: 'McLaren Front-Running Stint',
+          team2Scheme: 'Red Bull / Ferrari Hard-Tyre Chase',
+          team1NetMetric: 'P1 (+1.18s Lead)',
+          team2NetMetric: 'Closing 0.14s/Lap',
+          team1Players: [d1, d2].map((p, idx) => ({ id: p.id, name: p.name, jersey: p.jersey || '4', position: p.position || 'P1', headshot: p.headshot, primaryStat: p.stats?.slice(1, 4).join(' • ') || '', efficiencyBadge: p.stats?.[3] || 'Med', impactVal: p.stats?.[0] || 'P1', isHot: idx === 0 })),
+          team2Players: [d3, d4].map((p, idx) => ({ id: p.id, name: p.name, jersey: p.jersey || '1', position: p.position || 'P2', headshot: p.headshot, primaryStat: p.stats?.slice(1, 4).join(' • ') || '', efficiencyBadge: p.stats?.[3] || 'Hard', impactVal: p.stats?.[0] || 'P2', isHot: idx === 0 })),
+          stintTimeline: [
+            { periodLabel: 'Lap 1-18', timeRange: 'Stint 1', team1Score: 1, team2Score: 2, netDiff: 1.8, headline: 'Clean start & early 1.8s DRS breakaway' },
+            { periodLabel: 'Lap 19-30', timeRange: 'Pit Cycle', team1Score: 1, team2Score: 2, netDiff: 2.4, headline: '2.18s pit stop retains track position' },
+            { periodLabel: 'Lap 31-38', timeRange: 'Closing Phase', team1Score: 1, team2Score: 2, netDiff: 1.18, headline: 'Hard tyres closing gap near DRS 1.0s threshold' },
+          ],
+        },
+        winProbTimeline: [{ label: 'Lap 1', minuteMark: 1, team1WinPct: 55, leverageIndex: 1.2, scoreDiff: 1, keyPlay: 'Retains P1 Turn 1' }, { label: 'Lap 24', minuteMark: 24, team1WinPct: 68, leverageIndex: 1.6, scoreDiff: 2, keyPlay: '2.18s Undercut Hold' }, { label: 'Lap 38', minuteMark: 38, team1WinPct: 61, leverageIndex: 2.15, scoreDiff: 1, keyPlay: 'Gap 1.18s Near DRS' }],
+        smartCards: [
+          { id: 'f1_sc_1', category: 'DRS HUNT & PIT WINDOW', badge: 'GAP +1.18s', headline: 'P2 Verstappen within 0.18s of DRS activation behind P1 Norris', detail: 'Hard tires have 6% fresher grip delta as final 12-lap sprint begins.', metricHighlight: '211.2 MPH Trap', accentColor: 'gold', playerHeadshot: d1.headshot },
+        ],
+        inGameInsights: [{ category: 'Tyre Stint Crossover', metricBadge: '+0.14s/lap', title: 'Hard compound thermal stability vs Medium wear', detail: 'Longer final stint favors late-race traction out of hairpins if gap stays under 1.5s.' }],
+        mvpPerformer: { id: d1.id, name: d1.name, teamAbbr: 'MCL', position: 'P1', jersey: '4', headshot: d1.headshot, primaryLine: 'P1 • Best Lap 1:32.418 • +1.184s Lead', efficiencyLine: 'Purple S2 • Medium (14L) • 2.18s Pit', impactBadge: 'RACE LEADER' },
+        boxscoreCategories: { team1: [{ name: 'telemetry', displayName: 'Pit Wall Timing Tower', labels: ['Pos', 'Last Lap', 'Gap', 'Tyre', 'Stops', 'Speed'], athletes: [d1, d2] }], team2: [{ name: 'telemetry', displayName: 'Chasing Telemetry', labels: ['Pos', 'Last Lap', 'Gap', 'Tyre', 'Stops', 'Speed'], athletes: [d3, d4] }] },
+        rosters: { team1: [d1, d2], team2: [d3, d4] },
+        teamStatsComparison: [{ label: 'Fastest Lap', team1Value: '1:32.418', team2Value: '1:32.512' }, { label: 'Top Speed Trap', team1Value: '209.4 mph', team2Value: '211.2 mph' }, { label: 'Fastest Pit Stop', team1Value: '2.18s', team2Value: '2.31s' }, { label: 'Tyre Compound', team1Value: 'Medium (14L)', team2Value: 'Hard (11L)' }],
+        scoringTimeline: [{ period: 'Lap 24', clock: 'Pit Stop', teamName: n1, teamLogo: t1Logo, score: 'P1 Track Lead', description: 'Lightning 2.18s stationary pit stop protects P1 undercut.' }],
+      };
+    }
+
+    if (sportType === 'tennis') {
+      const { n1, n2, a1, a2 } = resolveSides({ name: 'Jannik Sinner', abbr: 'SIN' }, { name: 'Carlos Alcaraz', abbr: 'ALC' });
+      const t1Logo = stream.team1?.logo || buildSvgTeamCrestDataUri(n1, '#ea580c', '#ffffff');
+      const t2Logo = stream.team2?.logo || buildSvgTeamCrestDataUri(n2, '#0284c7', '#ffffff');
+      const p1Ath: AthleteInfo = { id: 'ten_p1', name: n1, jersey: '1', position: 'ATP', unit: 'Server', starter: true, headshot: buildSvgAvatarDataUri(n1, '1', '#ea580c', '#fff'), teamName: n1, stats: ['9 Aces', '76% 1st Srv', '28 Winners', '16 UE', '3/5 BP', '128 mph'] };
+      const p2Ath: AthleteInfo = { id: 'ten_p2', name: n2, jersey: '2', position: 'ATP', unit: 'Returner', starter: true, headshot: buildSvgAvatarDataUri(n2, '2', '#0284c7', '#fff'), teamName: n2, stats: ['6 Aces', '69% 1st Srv', '25 Winners', '21 UE', '2/4 BP', '125 mph'] };
+      return {
+        eventId: stream.stream_key,
+        sportType: 'tennis',
+        sportBadge: 'ATP / WTA • HAWK-EYE SERVE PLACEMENT & RALLY EFFICIENCY',
+        analyticsMethodology: 'Hawk-Eye Ball Tracking • 1st Serve Win% • Break Point Clutch Conversion • Forehand/Backhand Winners-to-UE',
+        surfaceType: 'tennis_court',
+        status: '3rd Set • Serving 4-3 (40-30)',
+        detail: 'S3 • 4-3 (40-30)',
+        isLive: true,
+        venue: stream.name || 'Centre Court Stadium',
+        broadcast: 'Sky Sports Tennis / ATP World Feed',
+        leverageIndex: 2.4,
+        leverageTier: 'CRUNCH TIME',
+        isClutchTime: true,
+        situationBanner: `🎾 3rd Set • ${a1} Serving 4-3 (40-30) • 76% 1st Serve Won • 9 Aces`,
+        linescore: { periodHeaders: ['SET 1', 'SET 2', 'SET 3', 'PTS'], team1Quarters: [6, 4, 4], team2Quarters: [4, 6, 3], team1Total: 4, team2Total: 3 },
+        paceAndProjection: { tempoLabel: 'AVG RALLY SPEED & LENGTH', tempoValue: '4.8 Shots • 128 mph Max Serve', projectedFinal: `Win Probability: ${a1} 64% — 36% ${a2}`, primaryRateLabel: '1ST SERVE WON%', team1RateValue: '76%', team2RateValue: '69%' },
+        team1Meta: { name: n1, abbreviation: a1, logo: t1Logo, score: 4, record: 'Serving • 1-1 Sets', formationOrScheme: 'Aggressive Baseline + T-Serve' },
+        team2Meta: { name: n2, abbreviation: a2, logo: t2Logo, score: 3, record: 'Returning • 1-1 Sets', formationOrScheme: 'Deep Return + Drop Shot Counter' },
+        fourPillars: [
+          { code: '1stS%', label: '1st Serve Points Won %', weightLabel: '35% WEIGHT', team1Value: '76% (38/50)', team2Value: '69% (33/48)', team1Numeric: 66, team2Numeric: 52, leagueAverage: '71%', edgeTeam: 'team1', description: 'Dominance behind first-serve velocity and placement down the T and wide.' },
+          { code: 'BP%', label: 'Break Points Converted / Saved', weightLabel: '25% WEIGHT', team1Value: '3/5 Conv (60%)', team2Value: '2/4 Conv (50%)', team1Numeric: 62, team2Numeric: 50, leagueAverage: '41%', edgeTeam: 'team1', description: 'Clutch pressure-point conversion rate on return and serve.' },
+          { code: 'W/UE', label: 'Winners vs Unforced Errors', weightLabel: '25% WEIGHT', team1Value: '28 W / 16 UE (+12)', team2Value: '25 W / 21 UE (+4)', team1Numeric: 64, team2Numeric: 48, leagueAverage: '+3 Net', edgeTeam: 'team1', description: 'Clean aggressive shotmaking minus unforced baseline mistakes.' },
+          { code: 'RET%', label: '2nd Serve Return Points Won', weightLabel: '15% WEIGHT', team1Value: '54%', team2Value: '46%', team1Numeric: 58, team2Numeric: 46, leagueAverage: '49%', edgeTeam: 'team1', description: 'Attacking aggression on opponent second serves.' },
+        ],
+        unitSplits: {
+          unit1Label: 'Short Rallies (0-4 Shots)',
+          unit2Label: 'Extended Rallies (9+ Shots)',
+          team1Unit1Stat: '41-29 Lead (1st Strike Edge)',
+          team1Unit2Stat: '14-12 Balanced Baseline',
+          team1Unit1Pct: 59,
+          team2Unit1Stat: '29-41 Trailing Short Points',
+          team2Unit2Stat: '12-14 High Topsin Grinds',
+          team2Unit1Pct: 48,
+          summaryEdge: `${n1} dominating 0-4 shot first-strike rallies behind 76% 1st-serve efficiency`,
+        },
+        spatialMap: {
+          title: 'Hawk-Eye Court Placement, Serve Targets & Winner Map',
+          subtitle: 'Blue/Cyan = Player 1 Winners/Aces • Orange = Player 2 Winners • Dashed = Service Box',
+          surfaceType: 'tennis_court',
+          team1PrimaryMetric: `${a1}: 9 Aces • 76% 1st Serve • +12 W/UE`,
+          team2PrimaryMetric: `${a2}: 6 Aces • 25 Winners • High Net Approach`,
+          events: [
+            { id: 'tn1', team: 'team1', playerName: n1, jersey: '1', x: 50, y: 24, isSuccess: true, isHighValue: true, outcomeLabel: 'Ace Down the T (128 mph)', period: 'Set 3', clock: '4-3', metricValue: 128, zoneLabel: 'T Service Box' },
+            { id: 'tn2', team: 'team1', playerName: n1, jersey: '1', x: 84, y: 14, isSuccess: true, isHighValue: true, outcomeLabel: 'Inside-Out Forehand Winner (94 mph)', period: 'Set 3', clock: '3-2', metricValue: 94, zoneLabel: 'Deuce Corner' },
+            { id: 'tn3', team: 'team2', playerName: n2, jersey: '2', x: 18, y: 84, isSuccess: true, isHighValue: true, outcomeLabel: 'Disguised Forehand Drop Shot Winner', period: 'Set 2', clock: '5-4', metricValue: 1, zoneLabel: 'Net Forecourt' },
+          ],
+          zones: [
+            { zoneKey: 'deuce_serve', label: 'Deuce & Ad Wide/T Serves', team1Volume: '9 Aces', team1Efficiency: '76% 1st Won', team2Volume: '6 Aces', team2Efficiency: '69% 1st Won', benchmarkEfficiency: '71%', edge: 'team1' },
+            { zoneKey: 'baseline_fh', label: 'Cross-Court Forehand Depth', team1Volume: '16 Winners', team1Efficiency: '82% In-Play', team2Volume: '14 Winners', team2Efficiency: '77% In-Play', benchmarkEfficiency: '75%', edge: 'team1' },
+            { zoneKey: 'net', label: 'Net Approaches & Drop Shots', team1Volume: '11/14 (79%)', team1Efficiency: '+8 Net Margin', team2Volume: '15/21 (71%)', team2Efficiency: '+6 Net Margin', benchmarkEfficiency: '68%', edge: 'team1' },
+          ],
+        },
+        tacticalMatrix: [
+          { playType: 'first_strike', label: 'Serve + 1 Forehand Aggression', team1FreqPct: 52, team1Efficiency: '59% Points Won', team1Percentile: 92, team2FreqPct: 44, team2Efficiency: '51% Points Won', team2Percentile: 81, edge: a1 },
+          { playType: 'net_play', label: 'Serve-Volley & Drop Shot Variation', team1FreqPct: 20, team1Efficiency: '11/14 (79%)', team1Percentile: 85, team2FreqPct: 30, team2Efficiency: '15/21 (71%)', team2Percentile: 89, edge: a2 },
+          { playType: 'return_2nd', label: '2nd-Serve Return Depth & Break Pressure', team1FreqPct: 28, team1Efficiency: '54% Return Won', team1Percentile: 90, team2FreqPct: 26, team2Efficiency: '46% Return Won', team2Percentile: 76, edge: a1 },
+        ],
+        activeUnit: {
+          unitTitle: 'Match Scorecard & Key Pressure Games',
+          team1Scheme: '1st-Strike Baseline Tempo',
+          team2Scheme: 'All-Court Variety',
+          team1NetMetric: '76% 1st Srv • +12 Net',
+          team2NetMetric: '25 Winners • 71% Net',
+          team1Players: [p1Ath].map((p) => ({ id: p.id, name: p.name, jersey: '1', position: 'S1', headshot: p.headshot, primaryStat: '9 Aces • 28 W / 16 UE', efficiencyBadge: '76% 1stS', impactVal: '6-4, 4-6, 4-3', isHot: true })),
+          team2Players: [p2Ath].map((p) => ({ id: p.id, name: p.name, jersey: '2', position: 'R1', headshot: p.headshot, primaryStat: '6 Aces • 25 W / 21 UE', efficiencyBadge: '69% 1stS', impactVal: '4-6, 6-4, 3-4', isHot: false })),
+          stintTimeline: [
+            { periodLabel: 'Set 1', timeRange: '44 Min', team1Score: 6, team2Score: 4, netDiff: 1, headline: `${a1} converts decisive break at 4-4` },
+            { periodLabel: 'Set 2', timeRange: '49 Min', team1Score: 4, team2Score: 6, netDiff: -1, headline: `${a2} rallies from 0-30 to level match 1-1` },
+            { periodLabel: 'Set 3', timeRange: 'Live', team1Score: 4, team2Score: 3, netDiff: 1, headline: 'On-serve deciding set battle at 40-30' },
+          ],
+        },
+        winProbTimeline: [{ label: 'S1', minuteMark: 20, team1WinPct: 68, leverageIndex: 1.5, scoreDiff: 1, keyPlay: 'Takes Set 1 (6-4)' }, { label: 'S2', minuteMark: 65, team1WinPct: 50, leverageIndex: 1.9, scoreDiff: 0, keyPlay: 'Set 2 Leveled (4-6)' }, { label: 'S3', minuteMark: 92, team1WinPct: 64, leverageIndex: 2.4, scoreDiff: 1, keyPlay: 'Up 4-3 in Decider' }],
+        smartCards: [{ id: 'tn_sc_1', category: 'HAWK-EYE SERVE DOMINANCE', badge: '76% 1ST SRV', headline: `${n1} winning 76% of first-serve points in deciding 3rd set`, detail: '9 Aces and +12 Winners-to-UE differential powering clutch 4-3 hold chance.', metricHighlight: '128 MPH Max', accentColor: 'gold', playerHeadshot: p1Ath.headshot }],
+        inGameInsights: [{ category: 'Serve + 1 First Strike', metricBadge: '59% Win Rate', title: 'Dictating inside the first 4 shots', detail: 'High first-serve percentage prevents prolonged baseline rallies.' }],
+        mvpPerformer: { id: p1Ath.id, name: p1Ath.name, teamAbbr: a1, position: 'ATP', jersey: '1', headshot: p1Ath.headshot, primaryLine: '9 Aces • 28 Winners • 76% 1st Serve Won', efficiencyLine: '3/5 Break Points • +12 W/UE', impactBadge: 'SERVE LEADER' },
+        boxscoreCategories: { team1: [{ name: 'stats', displayName: 'Match Serving & Rally Metrics', labels: ['Aces', '1st Srv%', 'Winners', 'UE', 'BP Conv', 'Max MPH'], athletes: [p1Ath] }], team2: [{ name: 'stats', displayName: 'Match Serving & Rally Metrics', labels: ['Aces', '1st Srv%', 'Winners', 'UE', 'BP Conv', 'Max MPH'], athletes: [p2Ath] }] },
+        rosters: { team1: [p1Ath], team2: [p2Ath] },
+        teamStatsComparison: [{ label: 'Aces', team1Value: '9', team2Value: '6' }, { label: '1st Serve Points Won', team1Value: '76%', team2Value: '69%' }, { label: 'Winners / Unforced Errors', team1Value: '28 / 16', team2Value: '25 / 21' }, { label: 'Break Points Converted', team1Value: '3 / 5 (60%)', team2Value: '2 / 4 (50%)' }],
+        scoringTimeline: [{ period: 'Set 1', clock: '6-4', teamName: n1, teamLogo: t1Logo, score: '1 - 0 Sets', description: 'Breaks at 4-4 with backhand pass down the line.' }, { period: 'Set 2', clock: '4-6', teamName: n2, teamLogo: t2Logo, score: '1 - 1 Sets', description: 'Drop shot + lob combo evens match in 49-minute second set.' }],
+      };
+    }
+
+    // Cricket (IPL / ICC / Willow / Sky Sports Cricket)
+    const { n1, n2, a1, a2 } = resolveSides({ name: 'India XI', abbr: 'IND' }, { name: 'Australia XI', abbr: 'AUS' });
+    const t1Logo = stream.team1?.logo || buildSvgTeamCrestDataUri(n1, '#0284c7', '#f97316');
+    const t2Logo = stream.team2?.logo || buildSvgTeamCrestDataUri(n2, '#eab308', '#15803d');
+    const cBat1: AthleteInfo = { id: 'crk_b1', name: `${a1} Top-Order Batter`, jersey: '18', position: 'BAT', unit: 'Batting Pair', starter: true, headshot: buildSvgAvatarDataUri(`${a1} BAT`, '18', '#0284c7', '#fff'), teamName: n1, stats: ['68*', '41', '7x4', '3x6', '165.8 SR', '74% Ctrl'] };
+    const cBat2: AthleteInfo = { id: 'crk_b2', name: `${a1} Finisher All-Rounder`, jersey: '33', position: 'AR', unit: 'Batting Pair', starter: true, headshot: buildSvgAvatarDataUri(`${a1} AR`, '33', '#0284c7', '#fff'), teamName: n1, stats: ['31*', '16', '2x4', '2x6', '193.7 SR', '81% Ctrl'] };
+    const cBowl1: AthleteInfo = { id: 'crk_w1', name: `${a2} Express Pacer`, jersey: '30', position: 'BOWL', unit: 'Bowling Attack', starter: true, headshot: buildSvgAvatarDataUri(`${a2} P`, '30', '#eab308', '#111'), teamName: n2, stats: ['3.2-0-26-2', '7.80 Econ', '147 kph', '9 Dots'] };
+    const cBowl2: AthleteInfo = { id: 'crk_w2', name: `${a2} Wrist Spinner`, jersey: '88', position: 'SPIN', unit: 'Bowling Attack', starter: true, headshot: buildSvgAvatarDataUri(`${a2} SP`, '88', '#eab308', '#111'), teamName: n2, stats: ['4.0-0-31-1', '7.75 Econ', '92 kph', '8 Dots'] };
+    return {
+      eventId: stream.stream_key,
+      sportType: 'cricket',
+      sportBadge: 'CRICKET • CRICVIZ WAGON WHEEL, RUN RATE & PHASE SPLITS',
+      analyticsMethodology: 'CricViz Expected Wickets • Boundary Wagon Wheel • Powerplay / Middle / Death Phase Run Rates • WinViz',
+      surfaceType: 'cricket_wagon',
+      status: '16.2 / 20 Overs • Death Phase',
+      detail: '16.2 Ov • 158/3',
+      isLive: true,
+      venue: stream.name || 'International Cricket Ground',
+      broadcast: 'Willow / Sky Sports Cricket HD',
+      leverageIndex: 2.3,
+      leverageTier: 'HIGH',
+      isClutchTime: true,
+      situationBanner: `🏏 ${a1} 158/3 (16.2 Ov) • CRR 9.67 vs Target Par • Partnership 62* (31 Balls)`,
+      linescore: { periodHeaders: ['PP (1-6)', 'MID (7-15)', 'DEATH (16-20)', 'PROJ'], team1Quarters: [56, 78, 24, 198], team2Quarters: [48, 72, 29, 179], team1Total: 158, team2Total: 149 },
+      paceAndProjection: { tempoLabel: 'CURRENT / PROJECTED RUN RATE', tempoValue: '9.67 CRR • 24 Boundaries', projectedFinal: `CricViz 20-Over Projection: ${a1} 198/5`, primaryRateLabel: 'BOUNDARY / DOT%', team1RateValue: '24% Bnd / 26% Dot', team2RateValue: '19% Bnd / 33% Dot' },
+      team1Meta: { name: n1, abbreviation: a1, logo: t1Logo, score: 158, record: '158/3 (16.2 Ov)', formationOrScheme: 'Aggressive Middle-Over Spin Attack' },
+      team2Meta: { name: n2, abbreviation: a2, logo: t2Logo, score: 149, record: 'Par Chase / Attack', formationOrScheme: 'Hard-Length Pace & Wide Yorkers' },
+      fourPillars: [
+        { code: 'CRR', label: 'Run Rate & Projected Total', weightLabel: '35% WEIGHT', team1Value: '9.67 CRR (Proj 198)', team2Value: '8.95 Par (Proj 179)', team1Numeric: 66, team2Numeric: 52, leagueAverage: '8.45 CRR', edgeTeam: 'team1', description: 'Scoring acceleration rate heading into final 4 death overs.' },
+        { code: 'BND%', label: 'Boundary % (4s & 6s Impact)', weightLabel: '25% WEIGHT', team1Value: '16x4 • 8x6 (69% Runs)', team2Value: '13x4 • 5x6 (58% Runs)', team1Numeric: 64, team2Numeric: 50, leagueAverage: '56% Bnd Runs', edgeTeam: 'team1', description: 'Percentage of team runs scored via boundary fours and sixes.' },
+        { code: 'DOT%', label: 'Dot-Ball Pressure Index', weightLabel: '20% WEIGHT', team1Value: '26% Dots Faced', team2Value: '33% Dots Bowled Target', team1Numeric: 60, team2Numeric: 49, leagueAverage: '31% Dots', edgeTeam: 'team1', description: 'Strike rotation consistency preventing consecutive scoreless deliveries.' },
+        { code: 'PHASE', label: 'Middle & Death Phase Control', weightLabel: '20% WEIGHT', team1Value: '78/1 Middle Ov', team2Value: '3 Wkts Taken', team1Numeric: 61, team2Numeric: 48, leagueAverage: '7.9 Middle RR', edgeTeam: 'team1', description: 'Expected runs vs expected wickets across tactical match phases.' },
+      ],
+      unitSplits: {
+        unit1Label: 'Crease Partnership (Active)',
+        unit2Label: 'Pace vs Spin Attack Split',
+        team1Unit1Stat: '62* off 31 Balls (12.00 RR)',
+        team1Unit2Stat: '10.42 RR vs Spin • 9.10 RR vs Pace',
+        team1Unit1Pct: 72,
+        team2Unit1Stat: '147 kph Pace (2/26) • Spin (1/31)',
+        team2Unit2Stat: '86% Good Length / Yorker Mix',
+        team2Unit1Pct: 56,
+        summaryEdge: `${a1} batting pair scoring at 12.00 RPO in unbroken 62-run death-overs launch`,
+      },
+      spatialMap: {
+        title: '360° Boundary Wagon Wheel & Pitch Zone Heatmap',
+        subtitle: 'Gold ★ = 6 Sixes • Cyan ● = 4 Fours • Dotted Oval = 30-Yard Inner Ring',
+        surfaceType: 'cricket_wagon',
+        team1PrimaryMetric: `${a1}: 16 Fours • 8 Sixes • 69% Boundary Runs`,
+        team2PrimaryMetric: `${a2}: 147 kph Pace • 9 Dot Balls in Last 3 Ov`,
+        events: [
+          { id: 'ck1', team: 'team1', playerName: cBat1.name, jersey: '18', x: 78, y: 26, isSuccess: true, isHighValue: true, outcomeLabel: 'SIX! Lofts over Deep Extra Cover (92m)', period: '15.4', clock: '6 Runs', metricValue: 6, zoneLabel: 'Deep Extra Cover' },
+          { id: 'ck2', team: 'team1', playerName: cBat1.name, jersey: '18', x: 24, y: 74, isSuccess: true, isHighValue: false, outcomeLabel: 'FOUR! Crisp Pull Shot to Deep Square Leg', period: '14.2', clock: '4 Runs', metricValue: 4, zoneLabel: 'Deep Square Leg' },
+          { id: 'ck3', team: 'team1', playerName: cBat2.name, jersey: '33', x: 46, y: 12, isSuccess: true, isHighValue: true, outcomeLabel: 'SIX! Straight Down the Ground (98m)', period: '16.1', clock: '6 Runs', metricValue: 6, zoneLabel: 'Long-On / Straight' },
+        ],
+        zones: [
+          { zoneKey: 'offside', label: 'Covers & Point (Off-Side Arc)', team1Volume: '8 Boundaries', team1Efficiency: '172 SR on Length', team2Volume: '32% Dots Bowled', team2Efficiency: '4th Stump Channel', benchmarkEfficiency: '148 SR', edge: 'team1' },
+          { zoneKey: 'legside', label: 'Mid-Wicket & Cow Corner', team1Volume: '11 Boundaries', team1Efficiency: '5 Sixes (92m Avg)', team2Volume: '1 Wicket', team2Efficiency: 'Slow-Ball Cutter', benchmarkEfficiency: '155 SR', edge: 'team1' },
+          { zoneKey: 'straight', label: 'Straight V (Long-On / Long-Off)', team1Volume: '5 Boundaries', team1Efficiency: '194 SR Death', team2Volume: '75% Yorked', team2Efficiency: '6.8 Death Econ', benchmarkEfficiency: '162 SR', edge: 'team1' },
+        ],
+      },
+      tacticalMatrix: [
+        { playType: 'powerplay', label: 'Powerplay Overs (1-6) Field Restrictions', team1FreqPct: 30, team1Efficiency: '56/1 (9.33 RR)', team1Percentile: 89, team2FreqPct: 30, team2Efficiency: '8.00 Par RR', team2Percentile: 74, edge: a1 },
+        { playType: 'middle_spin', label: 'Middle Overs Spin Matchup (7-15)', team1FreqPct: 45, team1Efficiency: '78/2 (8.67 RR)', team1Percentile: 85, team2FreqPct: 45, team2Efficiency: '31/1 (7.75 Econ)', team2Percentile: 82, edge: a1 },
+        { playType: 'death', label: 'Death Overs Launch (16-20)', team1FreqPct: 25, team1Efficiency: '24/0 in 1.2 Ov', team1Percentile: 95, team2FreqPct: 25, team2Efficiency: 'Wide Yorker Mix', team2Percentile: 76, edge: a1 },
+      ],
+      activeUnit: {
+        unitTitle: 'Active Batting Crease Pair & Attacking Bowlers',
+        team1Scheme: 'Death-Overs Boundary Launch',
+        team2Scheme: 'Express Pace & Wide Yorkers',
+        team1NetMetric: '158/3 (9.67 CRR)',
+        team2NetMetric: '3 Wickets Taken',
+        team1Players: [cBat1, cBat2].map((p, idx) => ({ id: p.id, name: p.name, jersey: p.jersey || '18', position: p.position || 'BAT', headshot: p.headshot, primaryStat: p.stats?.slice(0, 4).join(' • ') || '', efficiencyBadge: p.stats?.[4] || '165 SR', impactVal: p.stats?.[0] || '68*', isHot: idx === 0 })),
+        team2Players: [cBowl1, cBowl2].map((p, idx) => ({ id: p.id, name: p.name, jersey: p.jersey || '30', position: p.position || 'BOWL', headshot: p.headshot, primaryStat: p.stats?.[0] || '', efficiencyBadge: p.stats?.[1] || '7.8 Econ', impactVal: p.stats?.[2] || '147kph', isHot: idx === 0 })),
+        stintTimeline: [
+          { periodLabel: 'PP (1-6)', timeRange: '6 Overs', team1Score: 56, team2Score: 1, netDiff: 12, headline: '56/1 blazing Powerplay platform (9.33 RR)' },
+          { periodLabel: 'Mid (7-15)', timeRange: '9 Overs', team1Score: 134, team2Score: 3, netDiff: 14, headline: 'Unbroken 62* partnership accelerates past 130' },
+          { periodLabel: 'Death (16+)', timeRange: 'Live', team1Score: 158, team2Score: 3, netDiff: 18, headline: 'On pace for 198+ imposing total' },
+        ],
+      },
+      winProbTimeline: [{ label: '6 Ov', minuteMark: 6, team1WinPct: 58, leverageIndex: 1.3, scoreDiff: 1, keyPlay: '56/1 Powerplay' }, { label: '12 Ov', minuteMark: 12, team1WinPct: 62, leverageIndex: 1.6, scoreDiff: 1, keyPlay: 'Middle-Over Boundaries' }, { label: '16.2 Ov', minuteMark: 16, team1WinPct: 71, leverageIndex: 2.3, scoreDiff: 2, keyPlay: '62* Partnership Blast' }],
+      smartCards: [{ id: 'crk_sc_1', category: 'CRICVIZ DEATH ACCELERATION', badge: '12.00 PARTNER RR', headline: `${a1} reaches 158/3 in 16.2 overs — projected 198 total`, detail: `Crease duo has struck 24 boundaries (69% of runs) with 74% shot-control rate.`, metricHighlight: '165.8 Strike Rate', accentColor: 'gold', playerHeadshot: cBat1.headshot }],
+      inGameInsights: [{ category: 'Death-Overs Boundary Rate', metricBadge: '69% Bnd Runs', title: 'Spin & pace equally punished down the ground', detail: '6.8 dot-to-boundary turnaround putting bowling attack under immense pressure.' }],
+      mvpPerformer: { id: cBat1.id, name: cBat1.name, teamAbbr: a1, position: 'BAT', jersey: '18', headshot: cBat1.headshot, primaryLine: '68* (41 Balls) • 7 Fours • 3 Sixes', efficiencyLine: '165.8 Strike Rate • 74% Shot Control', impactBadge: 'INNINGS ANCHOR' },
+      boxscoreCategories: { team1: [{ name: 'batting', displayName: 'Batting Innings Scorecard', labels: ['R', 'B', '4s', '6s', 'SR', 'Ctrl%'], athletes: [cBat1, cBat2] }], team2: [{ name: 'bowling', displayName: 'Bowling Spell Telemetry', labels: ['O-M-R-W', 'Econ', 'Avg Spd', 'Dots'], athletes: [cBowl1, cBowl2] }] },
+      rosters: { team1: [cBat1, cBat2], team2: [cBowl1, cBowl2] },
+      teamStatsComparison: [{ label: 'Current Run Rate', team1Value: '9.67 CRR', team2Value: '8.95 Par' }, { label: 'Boundaries (4s / 6s)', team1Value: '16 / 8', team2Value: '13 / 5' }, { label: 'Dot Ball %', team1Value: '26%', team2Value: '33%' }, { label: 'Projected 20-Over Total', team1Value: '198/5', team2Value: '179' }],
+      scoringTimeline: [{ period: '15.4 Ov', clock: '146/3', teamName: n1, teamLogo: t1Logo, score: '146/3', description: '92-meter six blasted cleanly over deep extra cover!' }, { period: '16.1 Ov', clock: '158/3', teamName: n1, teamLogo: t1Logo, score: '158/3', description: 'Straight six down the ground moves partnership past 60.' }],
     };
   }
 

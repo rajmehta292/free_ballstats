@@ -12,6 +12,7 @@ import {
   isRedZoneStream,
   type RedZoneSlatePayload,
 } from './redzone-intel-service.js';
+import { newsAggregatorService } from './news-aggregator-service.js';
 
 export interface AthleteInfo {
   id: string;
@@ -99,6 +100,10 @@ export interface SportsGamecastIntel {
     link: string;
     image?: string;
     published?: string;
+    source?: string;
+    categoryTag?: string;
+    categoryLabel?: string;
+    isEventSpecific?: boolean;
   }>;
   linescore?: {
     periodHeaders: string[];
@@ -213,6 +218,16 @@ class SportsIntelService {
     }
 
     const fallback = this.generateComprehensiveFallback(stream);
+    try {
+      const liveNews = await newsAggregatorService.getEventNews(
+        stream,
+        this.resolveSportPath(stream.category, stream.league),
+        []
+      );
+      if (liveNews.length > 0) {
+        fallback.news = liveNews;
+      }
+    } catch {}
     this.cache.set(stream.stream_key, fallback);
     return fallback;
   }
@@ -425,27 +440,19 @@ class SportsIntelService {
       }
     }
 
-    // Fetch News Articles
-    let newsArticles: any[] = [];
-    try {
-      const newsRes = await fetch(`https://site.api.espn.com/apis/site/v2/sports/${sportPath}/news`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-      if (newsRes.ok) {
-        const newsJson: any = await newsRes.json();
-        newsArticles = (newsJson.articles || []).slice(0, 4).map((a: any) => ({
-          title: a.headline,
-          description: a.description || '',
-          link: a.links?.web?.href || 'https://espn.com',
-          image: a.images?.[0]?.url,
-          published: a.published,
-        }));
-      }
-    } catch (e) {}
-
     if (!matchedEvent) {
       return null;
     }
 
-    return this.buildGamecastIntelFromEvent(stream, sportPath, matchedEvent, newsArticles);
+    // Multi-source event-specific news (ESPN Gamecast + League Wire + Google News Matchup / Injuries / Industry)
+    const enrichedNews = await newsAggregatorService.getEventNews(
+      stream,
+      sportPath,
+      [],
+      matchedEvent.name
+    );
+
+    return this.buildGamecastIntelFromEvent(stream, sportPath, matchedEvent, enrichedNews);
   }
 
   public async buildGamecastIntelFromEvent(
@@ -1284,8 +1291,11 @@ class SportsIntelService {
       }
       return 'basketball/nba';
     }
-    if (cat === 'baseball' || l.includes('mlb')) return 'baseball/mlb';
+    if (cat === 'baseball' || l.includes('mlb') || l.includes('baseball')) return 'baseball/mlb';
     if (cat === 'hockey' || l.includes('nhl')) return 'hockey/nhl';
+    if (cat === 'combat' || cat === 'mma' || cat === 'boxing' || l.includes('ufc') || l.includes('mma')) return 'mma/ufc';
+    if (cat === 'racing' || cat === 'motorsport' || l.includes('f1') || l.includes('formula')) return 'racing/f1';
+    if (cat === 'tennis' || l.includes('atp') || l.includes('wta')) return l.includes('wta') ? 'tennis/wta' : 'tennis/atp';
 
     if (cat === 'soccer') {
       if (l.includes('nations')) return 'soccer/uefa.nations';

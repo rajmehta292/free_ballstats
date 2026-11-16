@@ -693,21 +693,120 @@ function renderGamecastIntel(intel) {
     scoringContainer.innerHTML = `<div style="text-align: center; color: var(--text-dim); padding: 16px;">No scoring plays yet.</div>`;
   }
 
-  // 9. Tab 4: News & Analysis
+  // 9. Tab 4: Rich Event-Specific & Industry Newsroom
   const newsContainer = document.getElementById('gamecast-news-container');
-  if (intel.news && intel.news.length > 0) {
-    newsContainer.innerHTML = intel.news.map(n => `
-      <div class="news-card">
-        ${n.image ? `<img src="${escapeHtml(n.image)}" alt="News image" loading="lazy">` : ''}
-        <div class="news-body">
-          <div class="news-headline">${escapeHtml(n.title)}</div>
-          <div class="news-summary">${escapeHtml(n.description)}</div>
-          <a href="${escapeHtml(n.link)}" target="_blank" class="news-link">Read Full Coverage &rarr;</a>
-        </div>
+  renderNewsroomIntoContainer(newsContainer, intel.news || []);
+}
+
+let activeModalNewsFilter = 'all';
+let activeModalNewsQuery = '';
+
+function renderNewsroomIntoContainer(container, articles) {
+  if (!container) return;
+  if (!articles || articles.length === 0) {
+    container.innerHTML = `<div style="text-align: center; color: var(--text-dim); padding: 24px;">No recent editorial news found for this event.</div>`;
+    return;
+  }
+
+  const fmtAge = (iso) => {
+    if (!iso) return '';
+    const diffMs = Date.now() - Date.parse(iso);
+    if (Number.isNaN(diffMs) || diffMs < 0) return '';
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 60) return `${Math.max(1, mins)}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 48) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+  };
+
+  const tagCounts = {
+    all: articles.length,
+    matchup: articles.filter((a) => a.categoryTag === 'matchup' || a.isEventSpecific).length,
+    injuries: articles.filter((a) => a.categoryTag === 'injuries').length,
+    analytics: articles.filter((a) => a.categoryTag === 'analytics').length,
+    business: articles.filter((a) => a.categoryTag === 'business').length,
+    headlines: articles.filter((a) => a.categoryTag === 'headlines').length,
+  };
+
+  const tabs = [
+    { key: 'all', label: `All (${tagCounts.all})` },
+    { key: 'matchup', label: `🎯 Event Focus (${tagCounts.matchup})` },
+    { key: 'injuries', label: `🏥 Injuries & Lineups (${tagCounts.injuries})` },
+    { key: 'analytics', label: `📊 Analytics & Film (${tagCounts.analytics})` },
+    { key: 'business', label: `💼 Business & League (${tagCounts.business})` },
+  ].filter((t) => t.key === 'all' || tagCounts[t.key] > 0);
+
+  const q = activeModalNewsQuery.trim().toLowerCase();
+  const visible = articles.filter((a) => {
+    const tagOk =
+      activeModalNewsFilter === 'all'
+        ? true
+        : activeModalNewsFilter === 'matchup'
+        ? a.categoryTag === 'matchup' || a.isEventSpecific
+        : a.categoryTag === activeModalNewsFilter;
+    const textOk = !q || `${a.title} ${a.description} ${a.source || ''}`.toLowerCase().includes(q);
+    return tagOk && textOk;
+  });
+
+  container.style.display = 'block';
+  container.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;" id="modal-news-filter-pills">
+        ${tabs
+          .map(
+            (t) =>
+              `<button type="button" class="btn ${activeModalNewsFilter === t.key ? 'btn-primary' : 'btn-outline'}" data-news-cat="${t.key}" style="font-size:11px;padding:4px 10px;">${escapeHtml(t.label)}</button>`
+          )
+          .join('')}
       </div>
-    `).join('');
-  } else {
-    newsContainer.innerHTML = `<div style="text-align: center; color: var(--text-dim); padding: 16px;">No recent editorial news found for this match.</div>`;
+      <input type="text" id="modal-news-search-input" value="${escapeHtml(activeModalNewsQuery)}" placeholder="Filter news headlines, players, topics..." style="background:rgba(255,255,255,0.05);border:1px solid var(--border-color);color:#fff;padding:6px 10px;border-radius:8px;font-size:12px;min-width:210px;outline:none;">
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px;max-height:540px;overflow-y:auto;padding-right:4px;">
+      ${
+        visible.length === 0
+          ? `<div style="grid-column:1/-1;text-align:center;color:var(--text-dim);padding:24px;">No stories match this filter. Try switching categories or clearing the search box.</div>`
+          : visible
+              .map(
+                (n) => `
+          <div class="news-card" style="display:flex;flex-direction:column;justify-content:space-between;">
+            ${n.image ? `<img src="${escapeHtml(n.image)}" alt="News image" loading="lazy" style="max-height:145px;object-fit:cover;width:100%;">` : ''}
+            <div class="news-body" style="display:flex;flex-direction:column;flex:1;justify-content:space-between;gap:6px;">
+              <div>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap;">
+                  <span style="font-size:10px;font-weight:800;padding:2px 7px;border-radius:999px;background:rgba(145,70,255,0.18);color:#c4b5fd;border:1px solid rgba(145,70,255,0.35);">${escapeHtml(n.categoryLabel || '📰 Headline')}</span>
+                  <span style="font-size:10px;color:#94a3b8;">${escapeHtml(n.source || 'Wire')}${fmtAge(n.published) ? ' • ' + escapeHtml(fmtAge(n.published)) : ''}</span>
+                </div>
+                <div class="news-headline">${escapeHtml(n.title)}</div>
+                <div class="news-summary" style="margin-top:4px;">${escapeHtml(n.description)}</div>
+              </div>
+              <a href="${escapeHtml(n.link)}" target="_blank" rel="noopener" class="news-link">Read Full Coverage &rarr;</a>
+            </div>
+          </div>
+        `
+              )
+              .join('')
+      }
+    </div>
+  `;
+
+  container.querySelectorAll('[data-news-cat]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      activeModalNewsFilter = btn.getAttribute('data-news-cat') || 'all';
+      renderNewsroomIntoContainer(container, articles);
+    });
+  });
+
+  const searchInp = document.getElementById('modal-news-search-input');
+  if (searchInp) {
+    searchInp.addEventListener('input', (e) => {
+      activeModalNewsQuery = e.target.value || '';
+      renderNewsroomIntoContainer(container, articles);
+      const refocused = document.getElementById('modal-news-search-input');
+      if (refocused) {
+        refocused.focus();
+        refocused.setSelectionRange(activeModalNewsQuery.length, activeModalNewsQuery.length);
+      }
+    });
   }
 }
 
@@ -744,6 +843,11 @@ function renderInGameAnalytics(intel) {
     else if (sa && sa.sportType === 'soccer') tabBtn.innerHTML = '⚽ Pitch xG &amp; Opta';
     else if (sa && (sa.sportType === 'nfl' || sa.sportType === 'ncaaf')) tabBtn.innerHTML = '🏈 Field Map &amp; EPA';
     else if (sa && sa.sportType === 'hockey') tabBtn.innerHTML = '🏒 Ice Slot &amp; Corsi';
+    else if (sa && sa.sportType === 'baseball') tabBtn.innerHTML = '⚾ Statcast &amp; Diamond';
+    else if (sa && sa.sportType === 'combat') tabBtn.innerHTML = '🥊 Octagon &amp; Strikes';
+    else if (sa && (sa.sportType === 'racing' || sa.sportType === 'motorsport')) tabBtn.innerHTML = '🏎️ Circuit &amp; Sectors';
+    else if (sa && sa.sportType === 'tennis') tabBtn.innerHTML = '🎾 Hawk-Eye Court';
+    else if (sa && sa.sportType === 'cricket') tabBtn.innerHTML = '🏏 Wagon Wheel &amp; Phases';
     else if (sa && sa.sportType === 'ncaab') tabBtn.innerHTML = '🎓 KenPom &amp; Shot Map';
     else tabBtn.innerHTML = '🏀 CourtOptix &amp; 4 Factors';
   }
