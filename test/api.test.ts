@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
 import { buildServer } from '../src/server.js';
 import { basketballResearchService } from '../src/services/basketball-research-service.js';
 import { redZoneIntelService } from '../src/services/redzone-intel-service.js';
@@ -756,6 +759,16 @@ test('StreamFree API Streamer Suite', async (t) => {
     assert.equal(bogus.type, 'no_exact_match');
     assert.ok(!bogus.headline.includes('Player Efficiency Rating'), 'Unknown query must not silently dump PER table');
     assert.ok(Array.isArray(bogus.suggestions) && bogus.suggestions.length > 0);
+  });
+
+  await t.test('All frontend scripts in src/public/js parse cleanly without syntax errors', async () => {
+    const jsDir = path.join(process.cwd(), 'src', 'public', 'js');
+    const files = fs.readdirSync(jsDir).filter((f) => f.endsWith('.js'));
+    assert.ok(files.length >= 4, 'Expected frontend JS files');
+    for (const file of files) {
+      const code = fs.readFileSync(path.join(jsDir, file), 'utf8');
+      assert.doesNotThrow(() => new vm.Script(code, { filename: file }), `Syntax error in frontend script ${file}`);
+    }
   });
 
   await server.close();

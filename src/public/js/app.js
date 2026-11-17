@@ -343,9 +343,6 @@ function applyLiveTickersToDom() {
     }
   });
 }
-    console.error('Failed to load streams:', err);
-  }
-}
 
 // Filter and Render Streams Grid
 function renderStreams() {

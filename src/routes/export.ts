@@ -31,17 +31,19 @@ export const exportRoutes: FastifyPluginAsync = async (fastify) => {
     let m3u = `#EXTM3U url-tvg="${baseUrl}/api/v1/export/epg.xml"\n`;
 
     for (const stream of data.streams) {
+      const sources = Array.isArray(stream.sources) ? stream.sources : [];
+      const cat = stream.category || 'sports';
       const preferred = quality
-        ? (stream.sources.find(s => s.quality.toLowerCase() === quality.toLowerCase()) || stream.sources[0])
-        : ((stream.sources.find(s => s.live) || stream.sources[0]));
+        ? (sources.find(s => (s.quality || '').toLowerCase() === quality.toLowerCase()) || sources[0])
+        : (sources.find(s => s.live) || sources[0]);
 
-      const targetUrl = preferred ? preferred.url : `${baseUrl}/embed/${encodeURIComponent(stream.category)}/${encodeURIComponent(stream.stream_key)}`;
+      const targetUrl = preferred?.url || `${baseUrl}/embed/${encodeURIComponent(cat)}/${encodeURIComponent(stream.stream_key)}`;
       const streamUrl = targetUrl.includes('.m3u8')
         ? `${baseUrl}/api/v1/proxy/m3u8?url=${encodeURIComponent(targetUrl)}`
         : targetUrl;
 
       const logo = stream.thumbnail_url || (stream.team1 ? stream.team1.logo : '');
-      const group = stream.league || stream.category.toUpperCase();
+      const group = stream.league || cat.toUpperCase();
 
       m3u += `#EXTINF:-1 tvg-id="${stream.stream_key}" tvg-name="${stream.name}" tvg-logo="${logo}" group-title="${group}",${stream.name}\n`;
       m3u += `${streamUrl}\n`;
