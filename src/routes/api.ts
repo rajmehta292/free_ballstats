@@ -715,13 +715,14 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
 
   /**
    * GET /api/v1/athlete/:sport/:league/:athlete_id
-   * Deep player profile bio, physical measurements, college, draft, and statistics
+   * Live on-demand player profile, bio, career stats, game-by-game log, and splits from ESPN APIs (no stale cache)
    */
   fastify.get<{
     Params: { sport: string; league: string; athlete_id: string };
+    Querystring: { season?: string };
   }>('/athlete/:sport/:league/:athlete_id', {
     schema: {
-      description: 'Get deep StatMuse/Reference-style athlete bio, season stats, height, weight, and college',
+      description: 'Live on-demand athlete bio, career year-by-year stats, full game log, situational splits, and scouting notes',
       tags: ['Sports Intelligence'],
       params: {
         type: 'object',
@@ -732,10 +733,18 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
         },
         required: ['sport', 'league', 'athlete_id'],
       },
+      querystring: {
+        type: 'object',
+        properties: {
+          season: { type: 'string', description: 'Optional season year for game log filter (e.g. 2026, 2027)' },
+        },
+      },
     },
   }, async (request, reply) => {
     const { sport, league, athlete_id } = request.params;
-    const profile = await sportsIntelService.getAthleteProfile(sport, league, athlete_id);
+    const { season } = request.query;
+    const profile = await sportsIntelService.getAthleteProfile(sport, league, athlete_id, { season });
+    reply.header('Cache-Control', 'no-store');
     return reply.send(profile);
   });
 

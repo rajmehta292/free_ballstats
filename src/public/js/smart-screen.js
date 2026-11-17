@@ -2352,6 +2352,350 @@
     `;
   }
 
+  /**
+   * Shared Interactive Live Athlete Stats Explorer
+   * Pulls fresh on-demand ESPN career stats, game logs (with season switcher, opponent search & sortable columns),
+   * situational splits, and scouting notes into any modal container across index.html, player.html & basketball.html.
+   */
+  const explorerState = {
+    tab: 'gamelog',
+    statCatIdx: 0,
+    splitCatIdx: 0,
+    logFilter: '',
+    logOutcome: 'all',
+    sortCol: -1,
+    sortAsc: false,
+  };
+
+  function renderAthleteExplorerHtml(container, data, onFetchSeason) {
+    if (!container || !data) return;
+    const esc = (s) =>
+      String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+
+    const statCats = Array.isArray(data.statCategories) ? data.statCategories : [];
+    const splitCats = Array.isArray(data.splitCategories) ? data.splitCategories : [];
+    const gl = data.gameLog || { labels: [], availableSeasons: [], selectedSeason: 'Current', games: [] };
+    if (explorerState.statCatIdx >= statCats.length) explorerState.statCatIdx = 0;
+    if (explorerState.splitCatIdx >= splitCats.length) explorerState.splitCatIdx = 0;
+
+    // Default to game log if available, else career stats, else overview
+    if (explorerState.tab === 'gamelog' && (!gl.games || gl.games.length === 0) && statCats.length > 0) {
+      explorerState.tab = 'career';
+    }
+
+    const pulledTime = data.fetchedAt ? new Date(data.fetchedAt).toLocaleTimeString() : 'Live';
+    const metaBadges = [
+      data.height || data.weight ? `📏 ${[data.height, data.weight].filter(Boolean).join(', ')}` : '',
+      data.age ? `🎂 Age ${data.age}` : '',
+      data.college ? `🎓 ${data.college}` : '',
+      data.experience ? `🏆 Exp: ${data.experience}` : '',
+      data.draftInfo ? `🎯 ${data.draftInfo}` : '',
+      data.birthplace ? `📍 ${data.birthplace}` : '',
+    ].filter(Boolean);
+
+    const kpiHtml = (data.overviewStats || []).map(
+      (s) => `
+      <div class="profile-stat-box" style="background:rgba(255,255,255,0.035);border:1px solid rgba(255,255,255,0.09);border-radius:10px;padding:10px;text-align:center;">
+        <div class="profile-stat-val" style="font-size:1.05rem;font-weight:800;color:#00f2fe;">${esc(s.value)}</div>
+        <div class="profile-stat-lbl" style="font-size:0.7rem;color:#94a3b8;text-transform:uppercase;margin-top:3px;">${esc(s.label)}</div>
+      </div>`
+    ).join('');
+
+    // Build active tab content
+    let tabBodyHtml = '';
+
+    if (explorerState.tab === 'career') {
+      const activeCat = statCats[explorerState.statCatIdx];
+      if (!activeCat) {
+        tabBodyHtml = `<div style="padding:18px;color:#94a3b8;font-size:13px;">No career year-by-year table returned by ESPN for this athlete yet.</div>`;
+      } else {
+        const glossaryMap = {};
+        (activeCat.glossary || []).forEach((g) => { glossaryMap[g.abbreviation] = g.displayName; });
+        tabBodyHtml = `
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:center;justify-content:space-between;">
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+              ${statCats.map((c, idx) => `
+                <button type="button" class="exp-sub-btn ${idx === explorerState.statCatIdx ? 'active' : ''}" data-exp-statcat="${idx}" style="padding:5px 10px;border-radius:999px;font-size:11.5px;font-weight:700;cursor:pointer;border:1px solid ${idx === explorerState.statCatIdx ? '#9146ff' : 'rgba(255,255,255,0.14)'};background:${idx === explorerState.statCatIdx ? 'rgba(145,70,255,0.28)' : 'rgba(255,255,255,0.04)'};color:${idx === explorerState.statCatIdx ? '#fff' : '#cbd5e1'};">${esc(c.displayName)}</button>
+              `).join('')}
+            </div>
+            <span style="font-size:11px;color:#94a3b8;">Hover headers for glossary</span>
+          </div>
+          <div class="table-responsive" style="max-height:300px;overflow:auto;">
+            <table class="bball-table compact-table" style="width:100%;font-size:12px;">
+              <thead>
+                <tr>
+                  <th>SEASON</th>
+                  <th>TEAM</th>
+                  ${activeCat.labels.map((l) => `<th title="${esc(glossaryMap[l] || l)}">${esc(l)}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody>
+                ${activeCat.rows.map((r) => `
+                  <tr>
+                    <td class="font-bold">${esc(r.season)}</td>
+                    <td class="mono-cell" style="color:#a78bfa;">${esc(r.team)}</td>
+                    ${r.stats.map((v) => `<td class="mono-cell">${esc(v)}</td>`).join('')}
+                  </tr>
+                `).join('')}
+                ${activeCat.totals && activeCat.totals.length ? `
+                  <tr style="background:rgba(0,242,254,0.08);font-weight:800;">
+                    <td colspan="2" style="color:#00f2fe;">CAREER TOTAL / AVG</td>
+                    ${activeCat.totals.map((v) => `<td class="mono-cell" style="color:#fff;">${esc(v)}</td>`).join('')}
+                  </tr>
+                ` : ''}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+    } else if (explorerState.tab === 'gamelog') {
+      const q = explorerState.logFilter.trim().toLowerCase();
+      let filteredGames = (gl.games || []).filter((g) => {
+        if (explorerState.logOutcome === 'win' && !/^W\b/i.test(g.result)) return false;
+        if (explorerState.logOutcome === 'loss' && !/^L\b/i.test(g.result)) return false;
+        if (q && !`${g.date} ${g.matchup} ${g.result}`.toLowerCase().includes(q)) return false;
+        return true;
+      });
+      if (explorerState.sortCol >= 0 && explorerState.sortCol < gl.labels.length) {
+        const sc = explorerState.sortCol;
+        const parseSortVal = (s) => {
+          const str = String(s || '');
+          const firstPart = str.includes('-') ? str.split('-')[0] : str;
+          const n = parseFloat(firstPart);
+          return Number.isNaN(n) ? -999 : n;
+        };
+        filteredGames = [...filteredGames].sort((a, b) => {
+          const va = parseSortVal(a.stats[sc]);
+          const vb = parseSortVal(b.stats[sc]);
+          return explorerState.sortAsc ? va - vb : vb - va;
+        });
+      }
+
+      tabBodyHtml = `
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center;justify-content:space-between;">
+          <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+            ${gl.availableSeasons && gl.availableSeasons.length > 0 ? `
+              <select id="exp-season-select" style="background:#131622;color:#fff;border:1px solid rgba(145,70,255,0.4);border-radius:6px;padding:4px 8px;font-size:12px;font-weight:600;">
+                ${gl.availableSeasons.map((s) => `<option value="${esc(s.year)}" ${String(s.year) === String(gl.selectedSeason) ? 'selected' : ''}>${esc(s.displayName)} Season</option>`).join('')}
+              </select>
+            ` : ''}
+            <input type="text" id="exp-log-search" value="${esc(explorerState.logFilter)}" placeholder="Filter opp (e.g. BOS)..." style="background:#131622;color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:4px 9px;font-size:12px;width:155px;" />
+            <button type="button" data-exp-outcome="all" style="padding:4px 8px;border-radius:6px;font-size:11px;cursor:pointer;border:1px solid ${explorerState.logOutcome === 'all' ? '#00f2fe' : 'rgba(255,255,255,0.12)'};background:${explorerState.logOutcome === 'all' ? 'rgba(0,242,254,0.16)' : 'transparent'};color:#fff;">All (${(gl.games || []).length})</button>
+            <button type="button" data-exp-outcome="win" style="padding:4px 8px;border-radius:6px;font-size:11px;cursor:pointer;border:1px solid ${explorerState.logOutcome === 'win' ? '#10b981' : 'rgba(255,255,255,0.12)'};background:${explorerState.logOutcome === 'win' ? 'rgba(16,185,129,0.2)' : 'transparent'};color:#6ee7b7;">Wins</button>
+            <button type="button" data-exp-outcome="loss" style="padding:4px 8px;border-radius:6px;font-size:11px;cursor:pointer;border:1px solid ${explorerState.logOutcome === 'loss' ? '#ef4444' : 'rgba(255,255,255,0.12)'};background:${explorerState.logOutcome === 'loss' ? 'rgba(239,68,68,0.2)' : 'transparent'};color:#fca5a5;">Losses</button>
+          </div>
+          <span style="font-size:11px;color:#94a3b8;">Click any stat column header to sort</span>
+        </div>
+        ${filteredGames.length === 0 ? `<div style="padding:18px;color:#94a3b8;font-size:13px;">No game log entries match this filter for the selected season.</div>` : `
+          <div class="table-responsive" style="max-height:310px;overflow:auto;">
+            <table class="bball-table compact-table" style="width:100%;font-size:12px;">
+              <thead>
+                <tr>
+                  <th>DATE</th>
+                  <th>OPP</th>
+                  <th>RESULT</th>
+                  ${gl.labels.map((l, idx) => `
+                    <th data-exp-sort="${idx}" style="cursor:pointer;color:${explorerState.sortCol === idx ? '#00f2fe' : ''};" title="Click to sort by ${esc(l)}">
+                      ${esc(l)} ${explorerState.sortCol === idx ? (explorerState.sortAsc ? '↑' : '↓') : ''}
+                    </th>
+                  `).join('')}
+                </tr>
+              </thead>
+              <tbody>
+                ${filteredGames.map((g) => `
+                  <tr>
+                    <td class="mono-cell">${esc(g.date)}</td>
+                    <td class="font-bold">${esc(g.matchup)}</td>
+                    <td class="mono-cell ${/^W\b/i.test(g.result) ? 'pos-val' : /^L\b/i.test(g.result) ? 'neg-val' : ''}">${esc(g.result)}</td>
+                    ${g.stats.map((v) => `<td class="mono-cell">${esc(v)}</td>`).join('')}
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `}
+      `;
+    } else if (explorerState.tab === 'splits') {
+      const activeSplit = splitCats[explorerState.splitCatIdx];
+      if (!activeSplit) {
+        tabBodyHtml = `<div style="padding:18px;color:#94a3b8;font-size:13px;">No situational splits returned by ESPN for this athlete.</div>`;
+      } else {
+        tabBodyHtml = `
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+            ${splitCats.map((sc, idx) => `
+              <button type="button" data-exp-splitcat="${idx}" style="padding:5px 10px;border-radius:999px;font-size:11.5px;font-weight:700;cursor:pointer;border:1px solid ${idx === explorerState.splitCatIdx ? '#00f2fe' : 'rgba(255,255,255,0.14)'};background:${idx === explorerState.splitCatIdx ? 'rgba(0,242,254,0.18)' : 'rgba(255,255,255,0.04)'};color:${idx === explorerState.splitCatIdx ? '#fff' : '#cbd5e1'};">${esc(sc.displayName)}</button>
+            `).join('')}
+          </div>
+          <div class="table-responsive" style="max-height:310px;overflow:auto;">
+            <table class="bball-table compact-table" style="width:100%;font-size:12px;">
+              <thead>
+                <tr>
+                  <th>SPLIT</th>
+                  ${activeSplit.labels.map((l) => `<th>${esc(l)}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody>
+                ${activeSplit.rows.map((r) => `
+                  <tr>
+                    <td class="font-bold">${esc(r.label)}</td>
+                    ${r.stats.map((v) => `<td class="mono-cell">${esc(v)}</td>`).join('')}
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+    } else {
+      // Scouting, Rotowire, Fantasy & Awards tab
+      const roto = data.rotowire;
+      const awards = Array.isArray(data.awards) ? data.awards : [];
+      const fan = data.fantasy;
+      tabBodyHtml = `
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          ${roto?.headline ? `
+            <div style="background:rgba(145,70,255,0.1);border-left:3px solid #9146ff;border-radius:8px;padding:12px 14px;">
+              <div style="font-size:11px;font-weight:800;color:#c4b5fd;text-transform:uppercase;margin-bottom:4px;">📰 Rotowire Latest Beat Report ${roto.published ? `• ${esc(roto.published)}` : ''}</div>
+              <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:4px;">${esc(roto.headline)}</div>
+              ${roto.story ? `<div style="font-size:12.5px;color:#cbd5e1;line-height:1.45;">${esc(roto.story)}</div>` : ''}
+            </div>
+          ` : ''}
+          ${data.biography && (!roto?.headline || data.biography !== roto.headline) ? `
+            <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.09);border-radius:8px;padding:12px 14px;font-size:12.5px;color:#cbd5e1;line-height:1.45;">
+              ${esc(data.biography)}
+            </div>
+          ` : ''}
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;">
+            <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.09);border-radius:8px;padding:12px;">
+              <div style="font-size:11px;font-weight:800;color:#00f2fe;margin-bottom:6px;">🏅 AWARDS &amp; HONORS</div>
+              ${awards.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;">${awards.map((aw) => `<span style="padding:3px 8px;border-radius:999px;background:rgba(251,191,36,0.14);border:1px solid rgba(251,191,36,0.35);color:#fde68a;font-size:11.5px;font-weight:700;">${esc(aw)}</span>`).join('')}</div>` : '<span style="font-size:12px;color:#94a3b8;">Active Roster Competitor</span>'}
+            </div>
+            <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.09);border-radius:8px;padding:12px;">
+              <div style="font-size:11px;font-weight:800;color:#10b981;margin-bottom:6px;">📊 FANTASY &amp; ROSTER METRICS</div>
+              <div style="font-size:12px;color:#cbd5e1;">
+                Draft Rank: <strong>${esc(fan?.draftRank || '-')}</strong> • Pos Rank: <strong>#${esc(fan?.positionRank || '-')}</strong> • Rostered: <strong>${esc(fan?.percentOwned ? `${fan.percentOwned}%` : '-')}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    container.innerHTML = `
+      <div class="profile-hero" style="background:linear-gradient(135deg, rgba(145, 70, 255, 0.25) 0%, rgba(0, 242, 254, 0.14) 100%), #141724;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-bottom:1px solid rgba(255,255,255,0.1);">
+        <div style="display:flex;align-items:center;gap:16px;min-width:0;">
+          <img class="profile-large-headshot" src="${esc(data.headshot)}" alt="${esc(data.name)}" style="width:84px;height:84px;border-radius:50%;object-fit:cover;border:3px solid #9146ff;background:#090a0f;" onerror="this.src='https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90'" />
+          <div style="min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span style="font-size:20px;font-weight:900;color:#fff;">${esc(data.name)}</span>
+              ${data.jersey ? `<span class="brand-badge">#${esc(data.jersey)}</span>` : ''}
+              <span style="font-size:10.5px;padding:2px 8px;border-radius:999px;background:rgba(16,185,129,0.16);border:1px solid rgba(16,185,129,0.35);color:#6ee7b7;font-weight:700;">● ${esc(data.dataSource || 'Live ESPN API')} • ${esc(pulledTime)}</span>
+            </div>
+            <div style="font-size:13px;color:#c4b5fd;font-weight:700;margin-top:2px;">${esc(data.teamName || 'Pro Team')} • ${esc(data.position || 'Athlete')}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">
+              ${metaBadges.map((b) => `<span style="font-size:11px;padding:3px 8px;border-radius:6px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#e2e8f0;">${esc(b)}</span>`).join('')}
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button type="button" id="exp-refresh-live-btn" class="btn btn-outline btn-sm" style="padding:6px 11px;font-size:11.5px;border-color:rgba(0,242,254,0.45);color:#67e8f9;" title="Re-fetch live stats directly from ESPN without cache">↻ Refresh Live</button>
+          <a href="/basketball.html?q=${encodeURIComponent(data.name)}" class="btn btn-outline btn-sm" style="padding:6px 11px;font-size:11.5px;">🔎 Open in Lab</a>
+        </div>
+      </div>
+
+      ${kpiHtml ? `<div class="profile-stats-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;padding:16px 20px 10px;">${kpiHtml}</div>` : ''}
+
+      <div style="padding:6px 20px 20px;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:10px;margin-bottom:12px;">
+          <button type="button" data-exp-tab="gamelog" style="padding:7px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid ${explorerState.tab === 'gamelog' ? '#9146ff' : 'rgba(255,255,255,0.12)'};background:${explorerState.tab === 'gamelog' ? 'linear-gradient(135deg,#9146ff,#6d28d9)' : 'rgba(255,255,255,0.04)'};color:#fff;">🗓️ Game Log (${(gl.games || []).length})</button>
+          <button type="button" data-exp-tab="career" style="padding:7px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid ${explorerState.tab === 'career' ? '#9146ff' : 'rgba(255,255,255,0.12)'};background:${explorerState.tab === 'career' ? 'linear-gradient(135deg,#9146ff,#6d28d9)' : 'rgba(255,255,255,0.04)'};color:#fff;">📊 Career Stats (${statCats.length})</button>
+          <button type="button" data-exp-tab="splits" style="padding:7px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid ${explorerState.tab === 'splits' ? '#9146ff' : 'rgba(255,255,255,0.12)'};background:${explorerState.tab === 'splits' ? 'linear-gradient(135deg,#9146ff,#6d28d9)' : 'rgba(255,255,255,0.04)'};color:#fff;">🔀 Splits (${splitCats.length})</button>
+          <button type="button" data-exp-tab="scouting" style="padding:7px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid ${explorerState.tab === 'scouting' ? '#9146ff' : 'rgba(255,255,255,0.12)'};background:${explorerState.tab === 'scouting' ? 'linear-gradient(135deg,#9146ff,#6d28d9)' : 'rgba(255,255,255,0.04)'};color:#fff;">📰 Scouting &amp; Awards</button>
+        </div>
+        ${tabBodyHtml}
+      </div>
+    `;
+
+    // Wire interactive explorer listeners cleanly
+    container.querySelectorAll('[data-exp-tab]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        explorerState.tab = btn.getAttribute('data-exp-tab') || 'gamelog';
+        renderAthleteExplorerHtml(container, data, onFetchSeason);
+      });
+    });
+    container.querySelectorAll('[data-exp-statcat]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        explorerState.statCatIdx = Number(btn.getAttribute('data-exp-statcat') || 0);
+        renderAthleteExplorerHtml(container, data, onFetchSeason);
+      });
+    });
+    container.querySelectorAll('[data-exp-splitcat]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        explorerState.splitCatIdx = Number(btn.getAttribute('data-exp-splitcat') || 0);
+        renderAthleteExplorerHtml(container, data, onFetchSeason);
+      });
+    });
+    container.querySelectorAll('[data-exp-outcome]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        explorerState.logOutcome = btn.getAttribute('data-exp-outcome') || 'all';
+        renderAthleteExplorerHtml(container, data, onFetchSeason);
+      });
+    });
+    container.querySelectorAll('[data-exp-sort]').forEach((th) => {
+      th.addEventListener('click', () => {
+        const idx = Number(th.getAttribute('data-exp-sort'));
+        if (explorerState.sortCol === idx) {
+          explorerState.sortAsc = !explorerState.sortAsc;
+        } else {
+          explorerState.sortCol = idx;
+          explorerState.sortAsc = false;
+        }
+        renderAthleteExplorerHtml(container, data, onFetchSeason);
+      });
+    });
+    const searchEl = container.querySelector('#exp-log-search');
+    if (searchEl) {
+      searchEl.addEventListener('input', (e) => {
+        explorerState.logFilter = e.target.value || '';
+        renderAthleteExplorerHtml(container, data, onFetchSeason);
+        const ref = container.querySelector('#exp-log-search');
+        if (ref) {
+          ref.focus();
+          ref.setSelectionRange(ref.value.length, ref.value.length);
+        }
+      });
+    }
+    const seasonSel = container.querySelector('#exp-season-select');
+    if (seasonSel && typeof onFetchSeason === 'function') {
+      seasonSel.addEventListener('change', (e) => {
+        onFetchSeason(e.target.value);
+      });
+    }
+    const refreshBtn = container.querySelector('#exp-refresh-live-btn');
+    if (refreshBtn && typeof onFetchSeason === 'function') {
+      refreshBtn.addEventListener('click', () => {
+        onFetchSeason(gl.selectedSeason !== 'Current' ? gl.selectedSeason : undefined);
+      });
+    }
+  }
+
+  window.FreeBallStatsAthleteExplorer = {
+    resetState: () => {
+      explorerState.tab = 'gamelog';
+      explorerState.statCatIdx = 0;
+      explorerState.splitCatIdx = 0;
+      explorerState.logFilter = '';
+      explorerState.logOutcome = 'all';
+      explorerState.sortCol = -1;
+      explorerState.sortAsc = false;
+    },
+    renderInto: renderAthleteExplorerHtml,
+  };
+
   window.FreeBallStatsSmartScreen = {
     SmartScreenController,
     renderSvgHalfCourtShotChart,

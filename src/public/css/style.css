@@ -1236,12 +1236,13 @@ a {
 /* Player Profile Modal (StatMuse / Reference Grade) */
 .profile-modal-content {
   background: #0d0f17;
-  border: 1px solid rgba(145, 70, 255, 0.3);
+  border: 1px solid rgba(145, 70, 255, 0.35);
   border-radius: var(--radius-lg);
-  width: 100%;
-  max-width: 620px;
+  width: 95vw;
+  max-width: 940px;
+  max-height: 90vh;
+  overflow-y: auto;
   box-shadow: 0 25px 80px rgba(0, 0, 0, 0.95);
-  overflow: hidden;
   position: relative;
 }
 

@@ -129,12 +129,46 @@ export interface AthleteProfileDetails {
   age?: number;
   college?: string;
   experience?: string;
+  birthplace?: string;
+  draftInfo?: string;
+  status?: string;
   headshot: string;
   teamName?: string;
   teamLogo?: string;
+  dataSource?: string;
+  fetchedAt?: string;
   statsSummary?: any;
   overviewStats?: Array<{ label: string; value: string }>;
   biography?: string;
+  statCategories?: Array<{
+    name: string;
+    displayName: string;
+    labels: string[];
+    glossary?: Array<{ abbreviation: string; displayName: string }>;
+    rows: Array<{ season: string; team: string; stats: string[] }>;
+    totals?: string[];
+  }>;
+  gameLog?: {
+    labels: string[];
+    availableSeasons: Array<{ year: string; displayName: string }>;
+    selectedSeason: string;
+    games: Array<{
+      eventId: string;
+      date: string;
+      matchup: string;
+      result: string;
+      stats: string[];
+    }>;
+  };
+  splitCategories?: Array<{
+    name: string;
+    displayName: string;
+    labels: string[];
+    rows: Array<{ label: string; abbr: string; stats: string[] }>;
+  }>;
+  rotowire?: { headline?: string; story?: string; description?: string; published?: string };
+  awards?: string[];
+  fantasy?: { draftRank?: string; positionRank?: string; percentOwned?: string };
 }
 
 class SportsIntelService {
@@ -232,67 +266,242 @@ class SportsIntelService {
     return fallback;
   }
 
-  async getAthleteProfile(sport: string, league: string, athleteId: string): Promise<AthleteProfileDetails> {
-    const cacheKey = `${sport}:${league}:${athleteId}`;
-    const cached = this.athleteCache.get(cacheKey);
-    if (cached) return cached;
-
-    // Check curated NBA advanced profile database first for instant rich metrics
+  async getAthleteProfile(
+    sport: string,
+    league: string,
+    athleteId: string,
+    opts?: { season?: string }
+  ): Promise<AthleteProfileDetails> {
+    // Live on-demand pull directly from ESPN Web APIs (never locked behind stale static cache)
     const curatedNba = basketballResearchService.getPlayers().find(p => p.id === athleteId);
+    const cleanSport = (sport || 'basketball').toLowerCase();
+    const cleanLeague = (league || (cleanSport === 'basketball' ? 'nba' : cleanSport === 'football' ? 'nfl' : cleanSport === 'hockey' ? 'nhl' : 'mlb')).toLowerCase();
+    const base = `https://site.web.api.espn.com/apis/common/v3/sports/${encodeURIComponent(cleanSport)}/${encodeURIComponent(cleanLeague)}/athletes/${encodeURIComponent(athleteId)}`;
+    const seasonSuffix = opts?.season ? `?season=${encodeURIComponent(opts.season)}` : '';
+    const fetchJson = async (url: string): Promise<any> => {
+      try {
+        const res = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          signal: AbortSignal.timeout(4200),
+        });
+        return res.ok ? await res.json() : null;
+      } catch {
+        return null;
+      }
+    };
 
-    try {
-      const url = `https://site.api.espn.com/apis/common/v3/sports/${sport}/${league}/athletes/${athleteId}`;
-      const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const [infoData, overviewData, statsData, gamelogData, splitsData] = await Promise.all([
+      fetchJson(base),
+      fetchJson(`${base}/overview`),
+      fetchJson(`${base}/stats`),
+      fetchJson(`${base}/gamelog${seasonSuffix}`),
+      fetchJson(`${base}/splits${seasonSuffix}`),
+    ]);
 
-      if (res.ok) {
-        const data: any = await res.json();
-        const a = data.athlete || {};
+    if (infoData || overviewData || statsData || gamelogData || splitsData) {
+      const a = infoData?.athlete || {};
 
-        const overviewStats: Array<{ label: string; value: string }> = [];
-        if (data.statsSummary?.statistics) {
-          for (const stat of data.statsSummary.statistics.slice(0, 6)) {
-            overviewStats.push({
-              label: stat.label || stat.name,
-              value: stat.displayValue || String(stat.value),
+      // Parse full career & year-by-year statistical tables from /stats
+      const statCategories: NonNullable<AthleteProfileDetails['statCategories']> = (statsData?.categories || []).map((cat: any) => ({
+        name: String(cat.name || 'stats'),
+        displayName: String(cat.displayName || cat.name || 'Statistics'),
+        labels: Array.isArray(cat.labels) ? cat.labels.map(String) : [],
+        glossary: Array.isArray(cat.glossary)
+          ? cat.glossary.map((g: any) => ({ abbreviation: String(g.abbreviation || ''), displayName: String(g.displayName || '') }))
+          : [],
+        rows: (cat.statistics || []).map((st: any) => ({
+          season: st.season?.displayName || String(st.season?.year || 'Season'),
+          team: String(st.teamSlug || st.teamId || '').replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) || (a.team?.abbreviation || 'PRO'),
+          stats: Array.isArray(st.stats) ? st.stats.map(String) : [],
+        })).reverse(),
+        totals: Array.isArray(cat.totals) ? cat.totals.map(String) : undefined,
+      }));
+
+      // Parse full season game-by-game logs from /gamelog
+      const glLabels: string[] = Array.isArray(gamelogData?.labels) ? gamelogData.labels.map(String) : [];
+      const glEventsMap: Record<string, any> = gamelogData?.events || {};
+      const parsedGames: NonNullable<AthleteProfileDetails['gameLog']>['games'] = [];
+      for (const stType of (gamelogData?.seasonTypes || [])) {
+        for (const cat of (stType?.categories || [])) {
+          for (const ev of (cat?.events || [])) {
+            const eid = String(ev.eventId || '');
+            const meta = glEventsMap[eid] || {};
+            const dateStr = meta.gameDate
+              ? new Date(meta.gameDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
+              : 'Recent';
+            const oppAbbr = meta.opponent?.abbreviation || meta.opponent?.displayName || 'OPP';
+            const matchup = `${meta.atVs || 'vs'} ${oppAbbr}`;
+            const result = `${meta.gameResult || ''} ${meta.score || ''}`.trim() || '-';
+            parsedGames.push({
+              eventId: eid,
+              date: dateStr,
+              matchup,
+              result,
+              stats: Array.isArray(ev.stats) ? ev.stats.map(String) : [],
             });
           }
         }
-
-        if (curatedNba) {
-          overviewStats.push(
-            { label: 'True Shooting (TS%)', value: `${curatedNba.tsPct}%` },
-            { label: 'Effective FG (eFG%)', value: `${curatedNba.efgPct}%` },
-            { label: 'PER / BPM / VORP', value: `${curatedNba.per} / +${curatedNba.bpm} / ${curatedNba.vorp}` },
-            { label: 'Usage Rate (USG%)', value: `${curatedNba.usgPct}%` },
-          );
-        }
-
-        const profile: AthleteProfileDetails = {
-          id: athleteId,
-          name: a.displayName || `${a.firstName || ''} ${a.lastName || ''}`.trim() || curatedNba?.name || 'Player Profile',
-          firstName: a.firstName,
-          lastName: a.lastName,
-          jersey: a.jersey || curatedNba?.jersey,
-          position: a.position?.name || a.position?.displayName || a.position?.abbreviation || curatedNba?.position,
-          height: a.displayHeight || curatedNba?.height,
-          weight: a.displayWeight || curatedNba?.weight,
-          age: a.age || curatedNba?.age,
-          college: a.college?.name || curatedNba?.college,
-          experience: a.experience?.years !== undefined ? (a.experience.years === 0 ? 'Rookie' : `${a.experience.years} yrs`) : undefined,
-          headshot: a.headshot?.href || curatedNba?.headshot || 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=260&h=190',
-          teamName: a.team?.displayName || curatedNba?.team,
-          teamLogo: a.team?.logos?.[0]?.href,
-          statsSummary: data.statsSummary,
-          overviewStats,
-          biography: curatedNba
-            ? `${curatedNba.archetype} — ${curatedNba.signatureStat}.`
-            : (a.debutYear ? `Drafted / Debuted in ${a.debutYear}. Attended ${a.college?.name || 'collegiate athletics'}.` : undefined),
-        };
-
-        this.athleteCache.set(cacheKey, profile);
-        return profile;
       }
-    } catch (err) {}
+
+      const seasonFilter = (gamelogData?.filters || []).find((f: any) => f.name === 'season');
+      const availableSeasons = Array.isArray(seasonFilter?.options)
+        ? seasonFilter.options.map((o: any) => ({ year: String(o.value), displayName: String(o.displayValue || o.value) }))
+        : [];
+      const selectedSeason = String(seasonFilter?.value || opts?.season || availableSeasons[0]?.year || 'Current');
+
+      // Parse situational splits (Home/Road, Month, Result, Rest, Conference, Opponent)
+      const spLabels: string[] = Array.isArray(splitsData?.labels) ? splitsData.labels.map(String) : [];
+      const splitCategories: NonNullable<AthleteProfileDetails['splitCategories']> = (splitsData?.splitCategories || []).map((sc: any) => ({
+        name: String(sc.name || 'split'),
+        displayName: sc.displayName === 'split' ? 'Situational (Home / Road / Rest / Conf)' : String(sc.displayName || sc.name || 'Splits'),
+        labels: spLabels,
+        rows: (sc.splits || []).map((row: any) => ({
+          label: String(row.displayName || row.abbreviation || '-'),
+          abbr: String(row.abbreviation || row.displayName || '-'),
+          stats: Array.isArray(row.stats) ? row.stats.map(String) : [],
+        })),
+      }));
+
+      // Build rich live KPI overview cards from Regular Season /overview + /stats + computed efficiency
+      const overviewStats: Array<{ label: string; value: string }> = [];
+      const ovLabels: string[] = Array.isArray(overviewData?.statistics?.labels) ? overviewData.statistics.labels : [];
+      const ovRegSplit = (overviewData?.statistics?.splits || []).find((s: any) => /regular/i.test(s.displayName || '')) || overviewData?.statistics?.splits?.[0];
+      const ovCarSplit = (overviewData?.statistics?.splits || []).find((s: any) => /career/i.test(s.displayName || ''));
+      const ovVal = (lbl: string): string | undefined => {
+        const i = ovLabels.indexOf(lbl);
+        return i >= 0 && ovRegSplit?.stats?.[i] !== undefined ? String(ovRegSplit.stats[i]) : undefined;
+      };
+
+      if (cleanSport === 'basketball' && ovRegSplit?.stats?.length) {
+        const pts = ovVal('PTS');
+        const reb = ovVal('REB');
+        const ast = ovVal('AST');
+        const fg = ovVal('FG%');
+        const tp = ovVal('3P%');
+        const ft = ovVal('FT%');
+        const min = ovVal('MIN');
+        const gp = ovVal('GP');
+        const stl = ovVal('STL');
+        const blk = ovVal('BLK');
+        if (pts !== undefined) overviewStats.push({ label: 'PPG (Season)', value: pts });
+        if (reb !== undefined) overviewStats.push({ label: 'RPG (Season)', value: reb });
+        if (ast !== undefined) overviewStats.push({ label: 'APG (Season)', value: ast });
+        if (fg !== undefined) overviewStats.push({ label: 'FG% / 3P% / FT%', value: `${fg}% / ${tp ?? '-'}% / ${ft ?? '-'}%` });
+        if (min !== undefined || gp !== undefined) overviewStats.push({ label: 'Minutes • Games', value: `${min ?? '-'} MPG • ${gp ?? '-'} GP` });
+        if (stl !== undefined || blk !== undefined) overviewStats.push({ label: 'STL / BLK Per Game', value: `${stl ?? '0'} / ${blk ?? '0'}` });
+
+        // Dynamically calculate True Shooting % & eFG% from live Regular Season Averages row (no static cache)
+        const avgCat = statCategories.find(c => /averages/i.test(c.name) || /averages/i.test(c.displayName));
+        const latestRow = avgCat?.rows?.[0];
+        if (latestRow && avgCat) {
+          const getCatStat = (label: string) => {
+            const idx = avgCat.labels.indexOf(label);
+            return idx >= 0 ? latestRow.stats[idx] : undefined;
+          };
+          const [fgm, fga] = basketballResearchService.parseMadeAttempted(getCatStat('FG'));
+          const [tpm] = basketballResearchService.parseMadeAttempted(getCatStat('3PT'));
+          const [, fta] = basketballResearchService.parseMadeAttempted(getCatStat('FT'));
+          const ptsNum = parseFloat(getCatStat('PTS') || pts || '0');
+          if (fga > 0 && ptsNum > 0) {
+            const ts = basketballResearchService.computeTrueShootingPct(ptsNum, fga, fta);
+            const efg = basketballResearchService.computeEffectiveFgPct(fgm, tpm, fga);
+            overviewStats.push({ label: 'Live TS% / eFG%', value: `${ts}% / ${efg}%` });
+          }
+        }
+        if (ovCarSplit?.stats?.length) {
+          const cIdx = ovLabels.indexOf('PTS');
+          const c3Idx = ovLabels.indexOf('3P%');
+          if (cIdx >= 0) {
+            overviewStats.push({ label: 'Career Avg', value: `${ovCarSplit.stats[cIdx]} PPG${c3Idx >= 0 ? ` • ${ovCarSplit.stats[c3Idx]}% 3P` : ''}` });
+          }
+        }
+      } else if (ovRegSplit?.stats?.length) {
+        ovLabels.slice(0, 8).forEach((lbl, idx) => {
+          if (ovRegSplit.stats[idx] !== undefined) {
+            overviewStats.push({ label: lbl, value: String(ovRegSplit.stats[idx]) });
+          }
+        });
+      } else if (infoData?.statsSummary?.statistics?.length) {
+        for (const stat of infoData.statsSummary.statistics.slice(0, 8)) {
+          overviewStats.push({
+            label: stat.displayName || stat.label || stat.name,
+            value: stat.displayValue || String(stat.value),
+          });
+        }
+      }
+
+      if (curatedNba) {
+        overviewStats.push(
+          { label: 'PER / BPM / VORP', value: `${curatedNba.per} / +${curatedNba.bpm} / ${curatedNba.vorp}` },
+          { label: 'Usage Rate (USG%)', value: `${curatedNba.usgPct}%` },
+        );
+      }
+
+      const rotowire = overviewData?.rotowire
+        ? {
+            headline: overviewData.rotowire.headline,
+            story: overviewData.rotowire.story,
+            description: overviewData.rotowire.description,
+            published: overviewData.rotowire.published,
+          }
+        : undefined;
+      const awards = Array.isArray(overviewData?.awards)
+        ? overviewData.awards.map((aw: any) => `${aw.displayCount ? `${aw.displayCount} ` : ''}${aw.name}`).filter(Boolean)
+        : [];
+      const fantasy = overviewData?.fantasy
+        ? {
+            draftRank: overviewData.fantasy.draftRank ? String(overviewData.fantasy.draftRank) : undefined,
+            positionRank: overviewData.fantasy.positionRank ? String(overviewData.fantasy.positionRank) : undefined,
+            percentOwned: overviewData.fantasy.percentOwned ? String(overviewData.fantasy.percentOwned) : undefined,
+          }
+        : undefined;
+
+      const draftText = a.draft?.displayText || (a.debutYear ? `Debuted ${a.debutYear}` : undefined);
+
+      const profile: AthleteProfileDetails = {
+        id: athleteId,
+        name: a.displayName || `${a.firstName || ''} ${a.lastName || ''}`.trim() || curatedNba?.name || 'Player Profile',
+        firstName: a.firstName,
+        lastName: a.lastName,
+        jersey: a.jersey || curatedNba?.jersey,
+        position: a.position?.name || a.position?.displayName || a.position?.abbreviation || curatedNba?.position,
+        height: a.displayHeight || curatedNba?.height,
+        weight: a.displayWeight || curatedNba?.weight,
+        age: a.age || curatedNba?.age,
+        college: a.college?.name || curatedNba?.college,
+        experience: a.experience?.years !== undefined ? (a.experience.years === 0 ? 'Rookie' : `${a.experience.years} yrs`) : undefined,
+        birthplace: a.displayBirthPlace || undefined,
+        draftInfo: draftText,
+        status: a.status?.name || 'Active',
+        headshot: a.headshot?.href || curatedNba?.headshot || `https://a.espncdn.com/i/headshots/${cleanLeague}/players/full/${athleteId}.png`,
+        teamName: a.team?.displayName || curatedNba?.team,
+        teamLogo: a.team?.logos?.[0]?.href,
+        dataSource: 'Live ESPN API (On-Demand)',
+        fetchedAt: new Date().toISOString(),
+        statsSummary: infoData?.statsSummary,
+        overviewStats,
+        biography: rotowire?.headline
+          ? `${rotowire.headline} ${rotowire.story || ''}`.trim()
+          : curatedNba
+          ? `${curatedNba.archetype} — ${curatedNba.signatureStat}.`
+          : draftText
+          ? `${draftText}. ${a.displayBirthPlace ? `Born in ${a.displayBirthPlace}.` : ''}`.trim()
+          : undefined,
+        statCategories,
+        gameLog: {
+          labels: glLabels,
+          availableSeasons,
+          selectedSeason,
+          games: parsedGames,
+        },
+        splitCategories,
+        rotowire,
+        awards,
+        fantasy,
+      };
+
+      return profile;
+    }
 
     if (curatedNba) {
       const nbaProfile: AthleteProfileDetails = {
@@ -316,7 +525,6 @@ class SportsIntelService {
         ],
         biography: `${curatedNba.archetype} — ${curatedNba.signatureStat}.`,
       };
-      this.athleteCache.set(cacheKey, nbaProfile);
       return nbaProfile;
     }
 
@@ -344,7 +552,6 @@ class SportsIntelService {
           })),
           biography: `${found.teamName} ${found.position} • Active in ${g.sportBadge}.`,
         };
-        this.athleteCache.set(cacheKey, sportProfile);
         return sportProfile;
       }
     }

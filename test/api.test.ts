@@ -782,6 +782,19 @@ test('StreamFree API Streamer Suite', async (t) => {
     assert.ok(!demoRes.body.includes('waiting-box {\n      display: flex;'), 'Expected live demo stream not to show blocking waiting overlay');
   });
 
+  await t.test('GET /api/v1/athlete/:sport/:league/:athlete_id pulls live full stats, career tables, gamelogs & splits on demand (e.g. Egor Demin)', async () => {
+    const res = await server.inject({ method: 'GET', url: '/api/v1/athlete/basketball/nba/5175643' });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.headers['cache-control'], 'no-store');
+    const data = res.json();
+    assert.equal(data.name, 'Egor Demin');
+    assert.ok(Array.isArray(data.overviewStats) && data.overviewStats.length >= 4, 'Expected live season PPG/RPG/APG KPIs');
+    assert.ok(!data.overviewStats.some((s: any) => s.label === 'Roster' && s.value === 'Verified'), 'Must not fall back to placeholder Tier/Roster boxes');
+    assert.ok(Array.isArray(data.statCategories) && data.statCategories.length >= 1, 'Expected career year-by-year statCategories');
+    assert.ok(data.gameLog && Array.isArray(data.gameLog.games) && data.gameLog.games.length >= 1, 'Expected full gameLog games');
+    assert.ok(Array.isArray(data.splitCategories) && data.splitCategories.length >= 1, 'Expected situational splitCategories');
+  });
+
   await server.close();
 });
 

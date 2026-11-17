@@ -1305,69 +1305,44 @@ function renderRosters(rosters) {
   }).join('');
 }
 
-// Open StatMuse / Basketball-Reference Grade Athlete Profile
+// Open Live On-Demand Interactive Athlete Stats Explorer
 window.openAthleteProfile = async function(athleteId, sportPath, fallbackName) {
   const modal = document.getElementById('player-profile-modal');
-  if (!modal) return;
+  const mount = document.getElementById('prof-explorer-mount');
+  if (!modal || !mount) return;
 
-  // Reset & Show Modal Loading State
-  document.getElementById('prof-name').textContent = fallbackName || 'Loading Athlete...';
-  document.getElementById('prof-jersey').textContent = '#--';
-  document.getElementById('prof-team-pos').textContent = 'Profile Loading...';
-  document.getElementById('prof-ht-wt').textContent = 'Ht/Wt: --';
-  document.getElementById('prof-age').textContent = 'Age: --';
-  document.getElementById('prof-college').textContent = 'College: --';
-  document.getElementById('prof-exp').textContent = 'Exp: --';
-  document.getElementById('prof-stats-grid').innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--text-dim); padding: 20px;">Fetching player metrics...</div>`;
-  document.getElementById('prof-bio-text').textContent = 'Loading official player background and career information...';
+  if (window.FreeBallStatsAthleteExplorer) {
+    window.FreeBallStatsAthleteExplorer.resetState();
+  }
+  mount.innerHTML = `<div style="padding: 48px 24px; text-align: center; color: var(--text-dim);">Pulling live career stats, game logs &amp; splits for <strong>${escapeHtml(fallbackName || 'Athlete')}</strong> directly from ESPN...</div>`;
   modal.classList.add('show');
 
-  // Parse sport and league (e.g. 'football/nfl' -> sport='football', league='nfl')
-  let sport = 'football';
-  let league = 'nfl';
+  let sport = 'basketball';
+  let league = 'nba';
   if (sportPath && sportPath.includes('/')) {
     const parts = sportPath.split('/');
     sport = parts[0];
     league = parts[1];
   } else if (state.activeStream?.category) {
     sport = state.activeStream.category;
-    league = state.activeStream.league || (sport === 'football' ? 'nfl' : 'nba');
+    league = state.activeStream.league || (sport === 'football' ? 'nfl' : sport === 'hockey' ? 'nhl' : sport === 'baseball' ? 'mlb' : 'nba');
   }
 
-  try {
-    const res = await fetch(`/api/v1/athlete/${encodeURIComponent(sport)}/${encodeURIComponent(league)}/${encodeURIComponent(athleteId)}`);
-    if (res.ok) {
+  const fetchAndRender = async (seasonYear) => {
+    try {
+      const qs = seasonYear ? `?season=${encodeURIComponent(seasonYear)}&t=${Date.now()}` : `?t=${Date.now()}`;
+      const res = await fetch(`/api/v1/athlete/${encodeURIComponent(sport)}/${encodeURIComponent(league)}/${encodeURIComponent(athleteId)}${qs}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error('Failed');
       const data = await res.json();
-      document.getElementById('prof-name').textContent = data.name || fallbackName;
-      document.getElementById('prof-jersey').textContent = data.jersey ? `#${data.jersey}` : '';
-      document.getElementById('prof-team-pos').textContent = `${data.teamName || 'Pro Team'} • ${data.position || 'Athlete'}`;
-      document.getElementById('prof-ht-wt').textContent = `Ht/Wt: ${data.height || '--'}, ${data.weight || '--'}`;
-      document.getElementById('prof-age').textContent = data.age ? `Age: ${data.age}` : 'Age: --';
-      document.getElementById('prof-college').textContent = `College: ${data.college || 'N/A'}`;
-      document.getElementById('prof-exp').textContent = `Exp: ${data.experience || 'Pro'}`;
-      document.getElementById('prof-headshot').src = data.headshot || 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90';
-
-      const statsGrid = document.getElementById('prof-stats-grid');
-      if (data.overviewStats && data.overviewStats.length > 0) {
-        statsGrid.innerHTML = data.overviewStats.map(s => `
-          <div class="profile-stat-box">
-            <div class="profile-stat-val">${escapeHtml(s.value)}</div>
-            <div class="profile-stat-lbl">${escapeHtml(s.label)}</div>
-          </div>
-        `).join('');
-      } else {
-        statsGrid.innerHTML = `
-          <div class="profile-stat-box"><div class="profile-stat-val">Active</div><div class="profile-stat-lbl">Status</div></div>
-          <div class="profile-stat-box"><div class="profile-stat-val">Pro</div><div class="profile-stat-lbl">Tier</div></div>
-          <div class="profile-stat-box"><div class="profile-stat-val">Verified</div><div class="profile-stat-lbl">Roster</div></div>
-        `;
+      if (window.FreeBallStatsAthleteExplorer) {
+        window.FreeBallStatsAthleteExplorer.renderInto(mount, data, fetchAndRender);
       }
-
-      document.getElementById('prof-bio-text').textContent = data.biography || `${data.name} is an active competitor currently featuring in live league action.`;
+    } catch (err) {
+      mount.innerHTML = `<div style="padding: 32px; text-align: center; color: #f87171;">Unable to load live stats for ${escapeHtml(fallbackName || 'Athlete')} right now.</div>`;
     }
-  } catch (err) {
-    document.getElementById('prof-bio-text').textContent = `Overview for ${fallbackName || 'Player'}. Complete seasonal analytics will be synced.`;
-  }
+  };
+
+  await fetchAndRender();
 };
 
 // Modal Live Chat

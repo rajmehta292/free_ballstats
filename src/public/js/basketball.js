@@ -29,8 +29,12 @@
       renderStandingsTable();
       renderGlossary(hubData.glossary || []);
 
-      // Run initial natural language showcase query
-      await executeNaturalLanguageQuery('Nikola Jokic vs Luka Doncic advanced comparison');
+      // Run initial natural language showcase query (or ?q= passed from Player Explorer)
+      const urlQ = new URLSearchParams(window.location.search).get('q');
+      const initQ = urlQ || 'Nikola Jokic vs Luka Doncic advanced comparison';
+      const qInput = document.getElementById('nl-query-input');
+      if (qInput && urlQ) qInput.value = urlQ;
+      await executeNaturalLanguageQuery(initQ);
     } catch (err) {
       console.error('Error initializing Basketball Research Lab:', err);
     }
@@ -1164,49 +1168,30 @@
     const posEl = document.getElementById('player-modal-pos');
     if (!modal || !body) return;
 
-    modal.classList.remove('hidden');
-    body.innerHTML = `<div style="padding:2rem;text-align:center;color:var(--text-secondary);">Loading NBA Reference Athlete Card...</div>`;
-
-    try {
-      const res = await fetch(`/api/v1/athlete/basketball/nba/${encodeURIComponent(athleteId)}?t=${Date.now()}`);
-      const p = await res.json();
-
-      if (nameEl) nameEl.textContent = p.name || 'NBA Athlete';
-      if (posEl) posEl.textContent = p.position || 'NBA';
-
-      const statsGrid = (p.overviewStats || [])
-        .map(
-          s => `
-          <div style="background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:0.75rem;text-align:center;">
-            <div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;">${escapeHtml(s.label)}</div>
-            <div style="font-size:1.1rem;font-weight:800;color:var(--accent-secondary);margin-top:0.25rem;">${escapeHtml(s.value)}</div>
-          </div>
-        `
-        )
-        .join('');
-
-      body.innerHTML = `
-        <div style="display:flex;gap:1.25rem;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap;">
-          <img src="${p.headshot}" alt="${escapeHtml(p.name)}" style="width:96px;height:96px;border-radius:50%;object-fit:cover;border:2px solid var(--accent);" onerror="this.src='https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90'" />
-          <div>
-            <h3 style="font-size:1.35rem;font-weight:800;margin-bottom:0.25rem;">${escapeHtml(p.name)} ${p.jersey ? `<span style="color:var(--accent);">#${escapeHtml(p.jersey)}</span>` : ''}</h3>
-            <div style="color:var(--text-secondary);font-size:0.9rem;margin-bottom:0.35rem;">${escapeHtml(p.teamName || 'NBA')} • ${escapeHtml(p.position || '')}</div>
-            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;font-size:0.8rem;color:var(--text-muted);">
-              ${p.height ? `<span>📏 Height: <strong>${escapeHtml(p.height)}</strong></span>` : ''}
-              ${p.weight ? `<span>⚖️ Weight: <strong>${escapeHtml(p.weight)}</strong></span>` : ''}
-              ${p.age ? `<span>🎂 Age: <strong>${p.age}</strong></span>` : ''}
-              ${p.college ? `<span>🎓 Origin: <strong>${escapeHtml(p.college)}</strong></span>` : ''}
-            </div>
-          </div>
-        </div>
-        ${p.biography ? `<div style="padding:0.75rem 1rem;background:rgba(145,70,255,0.1);border-left:3px solid var(--accent);border-radius:6px;margin-bottom:1.25rem;font-size:0.88rem;">${escapeHtml(p.biography)}</div>` : ''}
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.75rem;">
-          ${statsGrid}
-        </div>
-      `;
-    } catch (e) {
-      body.innerHTML = `<div style="padding:1rem;color:var(--danger);">Failed to load athlete profile.</div>`;
+    if (window.FreeBallStatsAthleteExplorer) {
+      window.FreeBallStatsAthleteExplorer.resetState();
     }
+    modal.classList.remove('hidden');
+
+    const loadLive = async (seasonYear) => {
+      body.innerHTML = `<div style="padding:2.5rem;text-align:center;color:var(--text-secondary);">Pulling live career stats, game logs &amp; splits directly from ESPN API...</div>`;
+      try {
+        const qs = seasonYear ? `?season=${encodeURIComponent(seasonYear)}&t=${Date.now()}` : `?t=${Date.now()}`;
+        const res = await fetch(`/api/v1/athlete/basketball/nba/${encodeURIComponent(athleteId)}${qs}`, { cache: 'no-store' });
+        const p = await res.json();
+
+        if (nameEl) nameEl.textContent = p.name || 'NBA Athlete';
+        if (posEl) posEl.textContent = p.position || 'NBA';
+
+        if (window.FreeBallStatsAthleteExplorer) {
+          window.FreeBallStatsAthleteExplorer.renderInto(body, p, loadLive);
+        }
+      } catch (e) {
+        body.innerHTML = `<div style="padding:1rem;color:var(--danger);">Failed to load live athlete explorer.</div>`;
+      }
+    };
+
+    await loadLive();
   }
 
   function bindEventListeners() {
