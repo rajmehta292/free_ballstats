@@ -771,6 +771,17 @@ test('StreamFree API Streamer Suite', async (t) => {
     }
   });
 
+  await t.test('Embed player merges /api/v1/sources/:key so live upstream streams do not lock behind Stream Starting Soon', async () => {
+    const forceRes = await server.inject({ method: 'GET', url: '/embed/basketball/unit-check-stream?force=1' });
+    assert.equal(forceRes.statusCode, 200);
+    assert.ok(forceRes.body.includes('display: none;'), 'Expected waiting banner hidden when stream is live or forced');
+    assert.ok(forceRes.body.includes('Load Stream Anyway'), 'Expected manual Load Stream Anyway bypass button on waiting banner');
+
+    const demoRes = await server.inject({ method: 'GET', url: '/embed/demo/custom-demo-stream' });
+    assert.equal(demoRes.statusCode, 200);
+    assert.ok(!demoRes.body.includes('waiting-box {\n      display: flex;'), 'Expected live demo stream not to show blocking waiting overlay');
+  });
+
   await server.close();
 });
 

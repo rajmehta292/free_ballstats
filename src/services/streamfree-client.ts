@@ -181,10 +181,18 @@ export class StreamFreeClient {
     }
 
     const cached = cacheService.getStream(streamKey);
-    if (cached) return cached;
+    if (cached && Array.isArray(cached.sources) && cached.sources.length > 0) return cached;
 
     try {
-      const stream = await this.fetchWithFailover<StreamItem>(`/api/v1/streams/${encodeURIComponent(streamKey)}`);
+      const stream = cached || await this.fetchWithFailover<StreamItem>(`/api/v1/streams/${encodeURIComponent(streamKey)}`);
+      if (stream && (!Array.isArray(stream.sources) || stream.sources.length === 0)) {
+        try {
+          const srcResp = await this.getSources(streamKey);
+          if (srcResp && Array.isArray(srcResp.sources) && srcResp.sources.length > 0) {
+            stream.sources = srcResp.sources;
+          }
+        } catch {}
+      }
       cacheService.setStream(streamKey, stream);
       return stream;
     } catch (err: any) {

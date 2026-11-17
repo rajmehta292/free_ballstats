@@ -366,9 +366,16 @@ function renderStreams() {
     );
   }
 
+  const isStreamActiveOrLive = (s) => {
+    if ((s.sources || []).some(src => src.live)) return true;
+    const nowSec = Date.now() / 1000;
+    if (s.match_timestamp && nowSec >= (s.match_timestamp - 600) && nowSec <= (s.match_timestamp + 16200)) return true;
+    return !s.match_timestamp;
+  };
+
   // Live only filter
   if (state.liveOnly) {
-    filtered = filtered.filter(s => (s.sources || []).some(src => src.live));
+    filtered = filtered.filter(isStreamActiveOrLive);
   }
 
   // Sort
@@ -395,7 +402,7 @@ function renderStreams() {
   }
 
   grid.innerHTML = filtered.map(stream => {
-    const isLive = (stream.sources || []).some(src => src.live);
+    const isLive = isStreamActiveOrLive(stream);
     const highestQuality = (stream.sources || []).find(s => s.quality === 'FHD')?.quality || (stream.sources || [])[0]?.quality || 'HD';
     const matchTime = formatTimestamp(stream.match_timestamp);
 
@@ -521,11 +528,12 @@ window.openPlayerModal = async function(streamKey) {
   iframe.src = baseEmbedUrl;
   modal.classList.add('show');
 
-  // Populate Stream Source Switcher Bar inside the Watch Modal
+  // Populate Stream Source Switcher Bar inside the Watch Modal (hydrating /api/v1/sources/:key if omitted)
   const srcPillsEl = document.getElementById('modal-source-pills');
-  if (srcPillsEl) {
-    const sources = Array.isArray(stream.sources) && stream.sources.length > 0
-      ? stream.sources
+  const renderModalSourceButtons = (sourcesList) => {
+    if (!srcPillsEl) return;
+    const sources = Array.isArray(sourcesList) && sourcesList.length > 0
+      ? sourcesList
       : [{ quality: 'FHD', live: true, type: 'Primary' }];
     srcPillsEl.innerHTML = `
       <span style="font-size:11px;font-weight:800;color:#94a3b8;">📡 STREAM FEEDS:</span>
@@ -543,6 +551,18 @@ window.openPlayerModal = async function(streamKey) {
         iframe.src = `${baseEmbedUrl}&src=${encodeURIComponent(idx)}&t=${Date.now()}`;
       });
     });
+  };
+  renderModalSourceButtons(stream.sources);
+  if (!Array.isArray(stream.sources) || stream.sources.length === 0) {
+    fetch(`/api/v1/sources/${encodeURIComponent(stream.stream_key)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((srcData) => {
+        if (srcData && Array.isArray(srcData.sources) && srcData.sources.length > 0) {
+          stream.sources = srcData.sources;
+          renderModalSourceButtons(stream.sources);
+        }
+      })
+      .catch(() => {});
   }
 
   const reloadBtn = document.getElementById('modal-reload-stream-btn');

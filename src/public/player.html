@@ -1257,7 +1257,7 @@
       const iframe = document.getElementById('pro-iframe');
       video.style.display = 'none';
       iframe.style.display = 'block';
-      iframe.src = `/embed/${encodeURIComponent(category)}/${encodeURIComponent(streamKey)}?autoplay=1`;
+      iframe.src = `/embed/${encodeURIComponent(category)}/${encodeURIComponent(streamKey)}?autoplay=1&hud=0`;
     }
 
     function setupControls() {

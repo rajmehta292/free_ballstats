@@ -8,27 +8,36 @@ export const embedRoutes: FastifyPluginAsync = async (fastify) => {
    */
   fastify.get<{
     Params: { category: string; stream_key: string };
-    Querystring: { autoplay?: string; muted?: string; quality?: string; hud?: string; src?: string };
+    Querystring: { autoplay?: string; muted?: string; quality?: string; hud?: string; src?: string; force?: string };
   }>('/embed/:category/:stream_key', async (request, reply) => {
     const { category, stream_key } = request.params;
-    const { autoplay, muted, hud, src } = request.query;
+    const { autoplay, muted, hud, src, force } = request.query;
 
-    const stream = await streamFreeClient.getStreamByKey(stream_key);
+    const [stream, sourcesResp] = await Promise.all([
+      streamFreeClient.getStreamByKey(stream_key).catch(() => null),
+      streamFreeClient.getSources(stream_key).catch(() => null),
+    ]);
     const activeMirror = streamFreeClient.getActiveMirror();
 
-    // Determine default video source URL
+    // Determine default video source URL (merging /api/v1/sources/:key when /streams/:key omits sources)
     let defaultSourceUrl = '';
     let isLive = false;
     let availableSources: any[] = [];
 
-    if (stream && stream.sources && stream.sources.length > 0) {
-      availableSources = stream.sources;
+    const mergedSources = (sourcesResp?.sources && sourcesResp.sources.length > 0)
+      ? sourcesResp.sources
+      : (stream?.sources && stream.sources.length > 0 ? stream.sources : []);
+
+    if (mergedSources.length > 0) {
+      availableSources = mergedSources;
       const srcIdx = src !== undefined ? Number(src) : -1;
-      const picked = (srcIdx >= 0 && stream.sources[srcIdx]) ? stream.sources[srcIdx] : (stream.sources.find(s => s.live) || stream.sources[0]);
+      const picked = (srcIdx >= 0 && availableSources[srcIdx]) ? availableSources[srcIdx] : (availableSources.find(s => s.live) || availableSources[0]);
       defaultSourceUrl = picked.url;
-      isLive = stream.sources.some(s => s.live);
+      isLive = availableSources.some(s => s.live) || force === '1';
     } else {
       defaultSourceUrl = `${activeMirror}/embed/${encodeURIComponent(category)}/${encodeURIComponent(stream_key)}`;
+      const nowSec = Math.floor(Date.now() / 1000);
+      isLive = force === '1' || Boolean(stream?.match_timestamp && nowSec >= (stream.match_timestamp - 300) && nowSec <= (stream.match_timestamp + 16200));
     }
 
     const title = stream ? `${stream.name} | Free_BallStats Player` : 'Live Stream';
@@ -211,7 +220,10 @@ export const embedRoutes: FastifyPluginAsync = async (fastify) => {
     <div class="waiting-box" id="waiting-banner">
       <h2>Stream Starting Soon</h2>
       <p>${stream ? stream.name : stream_key} will be broadcasted once the event commences.</p>
-      <button class="btn-action" onclick="checkLiveStatus()">Check Live Status</button>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">
+        <button class="btn-action" onclick="checkLiveStatus()">Check Live Status</button>
+        <button class="btn-action" style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.22);" onclick="document.getElementById('waiting-banner').style.display='none'">Load Stream Anyway</button>
+      </div>
     </div>
 
     <!-- Direct or Upstream Player -->

@@ -90,7 +90,7 @@ function createTileElement(index, stream) {
 
   tile.innerHTML = `
     <div class="tile-header">
-      <div style="font-weight: 700; font-size: 12px; color: var(--accent);">Screen ${index + 1}</div>
+      <div style="font-weight: 700; font-size: 12px; color: var(--accent); flex-shrink: 0;">Screen ${index + 1}</div>
       <select id="tile-select-${index}">
         ${selectOptions}
       </select>
@@ -102,7 +102,7 @@ function createTileElement(index, stream) {
     <div class="tile-body" id="tile-body-${index}">
       ${stream ? `
         <iframe
-          src="/embed/${encodeURIComponent(stream.category)}/${encodeURIComponent(stream.stream_key)}?muted=${index === 0 ? '0' : '1'}"
+          src="/embed/${encodeURIComponent(stream.category)}/${encodeURIComponent(stream.stream_key)}?muted=${index === 0 ? '0' : '1'}&hud=0"
           allow="fullscreen; picture-in-picture; autoplay"
           allowfullscreen
         ></iframe>
@@ -119,7 +119,7 @@ function createTileElement(index, stream) {
     if (newStream) {
       body.innerHTML = `
         <iframe
-          src="/embed/${encodeURIComponent(newStream.category)}/${encodeURIComponent(newStream.stream_key)}?muted=${index === 0 ? '0' : '1'}"
+          src="/embed/${encodeURIComponent(newStream.category)}/${encodeURIComponent(newStream.stream_key)}?muted=${index === 0 ? '0' : '1'}&hud=0"
           allow="fullscreen; picture-in-picture; autoplay"
           allowfullscreen
         ></iframe>

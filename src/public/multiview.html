@@ -48,9 +48,9 @@
       flex: 1;
       min-height: 600px;
     }
-    .grid-1 { grid-template-columns: 1fr; }
-    .grid-2 { grid-template-columns: 1fr 1fr; }
-    .grid-4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+    .grid-1 { grid-template-columns: minmax(0, 1fr); }
+    .grid-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .grid-4 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: 1fr 1fr; }
     .multiview-tile {
       background: #000;
       border: 1px solid var(--border-color);
@@ -60,7 +60,8 @@
       display: flex;
       flex-direction: column;
       box-shadow: var(--shadow-card);
-      min-height: 320px;
+      min-height: 360px;
+      min-width: 0;
       transition: border-color 0.25s, box-shadow 0.25s;
     }
     .multiview-tile.crunch-time-tile {
@@ -79,6 +80,7 @@
       font-size: 11px;
       font-family: monospace;
       white-space: nowrap;
+      flex-shrink: 0;
     }
     .tile-telemetry-badge.crunch {
       background: rgba(245, 158, 11, 0.2);
@@ -87,23 +89,30 @@
     }
     .tile-header {
       background: rgba(18, 20, 29, 0.9);
-      padding: 10px 14px;
+      padding: 10px 12px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      gap: 8px;
       border-bottom: 1px solid var(--border-color);
       z-index: 10;
+      min-width: 0;
     }
     .tile-header select {
       flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
       background: var(--bg-card);
       color: #fff;
       border: 1px solid var(--border-color);
-      padding: 6px 10px;
+      padding: 6px 8px;
       border-radius: var(--radius-sm);
       font-size: 12px;
       outline: none;
+    }
+    .tile-header button {
+      flex-shrink: 0;
     }
     .tile-body {
       flex: 1;
