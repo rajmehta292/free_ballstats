@@ -3,19 +3,19 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Free_BallStats — Advanced Basketball Research & In-Game Analytics Lab</title>
+  <title>Free_BallStats — Basketball Research &amp; Sports Intelligence Lab</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css" />
 </head>
-<body>
-  <!-- Top Navigation Bar -->
-  <header class="navbar">
+<body class="bball-lab-page">
+  <!-- Single-Row Top Navigation Bar -->
+  <header class="navbar bball-navbar">
     <div class="nav-left">
       <a href="/" class="brand">
         <div class="brand-logo">
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
             <circle cx="12" cy="12" r="10" stroke="url(#bballGrad)" stroke-width="2.2"/>
             <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" stroke="url(#bballGrad)" stroke-width="1.8"/>
             <defs>
@@ -28,25 +28,24 @@
           </svg>
         </div>
         <span class="brand-title">FREE_<span class="accent">BALLSTATS</span></span>
-        <span class="badge-pro">RESEARCH v3.0 • SMART SCREEN</span>
+        <span class="badge-pro">LAB v3.2</span>
       </a>
 
       <nav class="nav-links">
         <a href="/" class="nav-link">Live Streams</a>
-        <a href="/basketball.html" class="nav-link active nav-link-bball">🏀 Basketball Research Lab</a>
+        <a href="/basketball.html" class="nav-link active nav-link-bball">🏀 Research Lab</a>
         <a href="/multiview.html" class="nav-link">Multi-View <span class="badge-mini">4x</span></a>
-        <a href="/api-explorer.html" class="nav-link">🚀 API Data Hub</a>
-        <a href="/docs" target="_blank" class="nav-link">Swagger Docs</a>
+        <a href="/api-explorer.html" class="nav-link">🚀 API Hub</a>
+        <a href="/docs" target="_blank" class="nav-link">Swagger</a>
       </nav>
     </div>
 
     <div class="nav-right">
-      <div class="status-pill" title="ESPN + Basketball Reference + Cleaning the Glass Engine">
+      <div class="status-pill" title="ESPN Live API + Official NHL/MLB Failover + Research Engine">
         <span class="pulse-dot online"></span>
-        <span>NBA ANALYTICS ENGINE: LIVE</span>
+        <span>ENGINE LIVE</span>
       </div>
-      <button type="button" id="bball-open-minidock-btn" class="btn btn-outline btn-sm" onclick="if(window.launchResearchSmartDock) window.launchResearchSmartDock();">📺 Live Mini-Player</button>
-      <a href="/" class="btn btn-secondary btn-sm">📺 Watch Live Streams</a>
+      <button type="button" id="bball-open-minidock-btn" class="btn btn-outline btn-sm" onclick="if(window.launchResearchSmartDock) window.launchResearchSmartDock();">📺 Mini-Player</button>
     </div>
   </header>
 
@@ -55,10 +54,10 @@
     <section class="bball-hero">
       <div class="bball-hero-header">
         <div>
-          <div class="bball-eyebrow">DEAN OLIVER FOUR FACTORS • HOLLINGER GAME SCORE • CLEANING THE GLASS SPLITS • STATMUSE NLP</div>
-          <h1 class="bball-title">Basketball Research &amp; In-Game Intelligence Lab</h1>
+          <div class="bball-eyebrow">FOUR FACTORS • COURTOPTIX XY SHOTS • ON-DEMAND ESPN TELEMETRY • MULTI-SPORT LAB</div>
+          <h1 class="bball-title">Basketball Research &amp; Sports Intelligence Lab</h1>
           <p class="bball-subtitle">
-            Real-time possession efficiency, True Shooting (<code>TS%</code>), Effective FG (<code>eFG%</code>), Starters vs. Bench rotation splits, spatial shot diets, and head-to-head player modeling.
+            Query any NBA player, matchup, or leader naturally, analyze live game efficiency &amp; shot diets, compare franchises head-to-head, or switch workspaces below.
           </p>
         </div>
         <div class="bball-league-benchmarks" id="league-benchmarks-bar">
@@ -77,44 +76,48 @@
           <input
             type="text"
             id="nl-query-input"
-            placeholder="Search any NBA player (even typos like 'buddy heild'), matchup ('Jokic vs SGA'), team ('Bulls roster'), live leaders ('3P% leaders'), or 'Today NBA games'..."
+            placeholder="Ask anything: e.g. 'buddy hield stats', 'Jokic vs SGA', 'Celtics roster', '3P% leaders', or 'Today NBA games'..."
             autocomplete="off"
           />
-          <button type="submit" class="btn btn-primary">Run Research Query</button>
+          <button type="submit" class="btn btn-primary">Search</button>
         </form>
         <div class="nl-preset-pills">
-          <span class="preset-label">Instant Research Queries:</span>
-          <button type="button" class="preset-pill" data-query="who leads the mvp race">MVP Race Ladder</button>
-          <button type="button" class="preset-pill" data-query="Nikola Jokic vs SGA advanced comparison">Jokic vs. SGA</button>
+          <span class="preset-label">Quick Queries:</span>
+          <button type="button" class="preset-pill" data-query="who leads the mvp race">MVP Race</button>
+          <button type="button" class="preset-pill" data-query="Nikola Jokic vs SGA advanced comparison">Jokic vs SGA</button>
           <button type="button" class="preset-pill" data-query="Buddy Hield stats">Buddy Hield (Live)</button>
-          <button type="button" class="preset-pill" data-query="How are the Celtics doing?">Celtics Team Scouting</button>
-          <button type="button" class="preset-pill" data-query="NBA scoring leaders PPG">Scoring Leaders (PPG)</button>
-          <button type="button" class="preset-pill" data-query="Today NBA games">Today's NBA Slate</button>
-          <button type="button" class="preset-pill" data-query="Best shooting centers TS%">Best Shooting Centers</button>
+          <button type="button" class="preset-pill" data-query="How are the Celtics doing?">Celtics Scouting</button>
+          <button type="button" class="preset-pill" data-query="NBA scoring leaders PPG">Scoring Leaders</button>
+          <button type="button" class="preset-pill" data-query="Today NBA games">Today's Slate</button>
+          <button type="button" class="preset-pill" data-query="Best shooting centers TS%">Top Shooting C</button>
         </div>
       </div>
 
-      <!-- Natural Language Answer Showcase Card -->
+      <!-- Natural Language Answer Showcase Card (Collapsible) -->
       <div id="nl-query-result" class="nl-result-card"></div>
     </section>
 
-    <!-- Navigation Sub-Tabs for Research Modules -->
-    <div class="bball-section-nav">
-      <a href="#ingame-lab" class="bball-sec-pill active">🏀 NBA In-Game &amp; CourtOptix Lab</a>
-      <a href="#team-hub" class="bball-sec-pill">🏢 Team 360° Depth Charts &amp; Schedules</a>
-      <a href="#injury-wire" class="bball-sec-pill">🏥 Live League Injury Wire</a>
-      <a href="#multisport-lab" class="bball-sec-pill">🌐 All-Sports Deep Telemetry</a>
-      <a href="#comparison-lab" class="bball-sec-pill">⚔️ Head-to-Head Player Comparison</a>
-      <a href="#leaderboard-matrix" class="bball-sec-pill">📊 Reference Leaderboard</a>
-      <a href="#standings-glossary" class="bball-sec-pill">🏆 Standings &amp; Glossary</a>
+    <!-- Sticky Workspace Command Bar -->
+    <div class="bball-workspace-bar" id="bball-workspace-bar">
+      <div class="bball-section-nav" role="tablist" aria-label="Research Lab Workspaces">
+        <button type="button" class="bball-sec-pill active" data-ws-tab="nba-game" role="tab" aria-selected="true">🏀 NBA Live Game Lab</button>
+        <button type="button" class="bball-sec-pill" data-ws-tab="compare" role="tab" aria-selected="false">⚔️ Compare Players &amp; Teams</button>
+        <button type="button" class="bball-sec-pill" data-ws-tab="rankings" role="tab" aria-selected="false">📊 Leaderboards &amp; Standings</button>
+        <button type="button" class="bball-sec-pill" data-ws-tab="team360" role="tab" aria-selected="false">🏢 Team 360° Hub</button>
+        <button type="button" class="bball-sec-pill" data-ws-tab="injury" role="tab" aria-selected="false">🏥 Live Injury Wire</button>
+        <button type="button" class="bball-sec-pill" data-ws-tab="multisport" role="tab" aria-selected="false">🌐 All-Sports Telemetry</button>
+      </div>
+      <button type="button" id="ws-view-all-btn" class="ws-mode-toggle" title="Toggle between focused workspace tabs and viewing all modules stacked">
+        ⊞ Stacked View
+      </button>
     </div>
 
-    <!-- SECTION 1: LIVE IN-GAME & SUPPORTING STATS LAB -->
-    <section id="ingame-lab" class="bball-card-section">
+    <!-- WORKSPACE 1: LIVE NBA IN-GAME & SUPPORTING STATS LAB -->
+    <section id="ingame-lab" class="bball-card-section workspace-panel active-ws" data-ws-group="nba-game">
       <div class="section-header-row">
         <div>
-          <h2 class="section-heading">📡 In-Game &amp; Supporting Analytics Command Center</h2>
-          <p class="section-desc">Select a matchup to inspect Quarter-by-Quarter Linescores, Dean Oliver's Four Factors, Starters vs. Bench Rotation Splits, Shot Diet, and Hollinger Game Scores.</p>
+          <h2 class="section-heading">📡 NBA In-Game &amp; CourtOptix Command Center</h2>
+          <p class="section-desc">Select a matchup for Quarter Linescores, Four Factors, Rotation Splits, CourtOptix Shot Zones, On-Court 5v5 Stints, and Box Scores.</p>
         </div>
         <div id="game-selector-tabs" class="game-selector-tabs"></div>
       </div>
@@ -122,74 +125,59 @@
       <!-- Active Game Scoreboard + Linescore + Pace Projection -->
       <div id="active-game-overview" class="ingame-overview-grid"></div>
 
-      <!-- Four Factors + Unit Splits + Shot Diet 3-Column Grid -->
+      <!-- Row 1: Four Factors + Unit Splits + Shot Diet -->
       <div class="ingame-three-col">
-        <!-- Col 1: Dean Oliver's Four Factors -->
         <div class="analytics-panel" id="four-factors-panel"></div>
-
-        <!-- Col 2: Starters vs Bench Rotation Splits -->
         <div class="analytics-panel" id="unit-splits-panel"></div>
-
-        <!-- Col 3: Spatial Shot Diet & Scoring Profile -->
         <div class="analytics-panel" id="shot-diet-panel"></div>
       </div>
 
-      <!-- v3.0 CourtOptix Shot Chart, On-Court 5v5 Lineup & Stints, Win Prob Worm, and Synergy Play Types -->
+      <!-- Row 2: CourtOptix Shot Chart & On-Court 5v5 Lineup / Stints -->
       <div class="ingame-two-col" style="margin-top: 1.25rem;">
         <div class="analytics-panel" id="spatial-shot-chart-panel"></div>
         <div class="analytics-panel" id="oncourt-lineup-stints-panel"></div>
       </div>
+
+      <!-- Row 3: Win Prob Worm & Synergy Play-Type Efficiency -->
       <div class="ingame-two-col" style="margin-top: 1.25rem;">
         <div class="analytics-panel" id="win-prob-worm-panel"></div>
         <div class="analytics-panel" id="synergy-playtypes-panel"></div>
       </div>
 
-      <!-- Automated In-Game Analytical Insights Strip -->
+      <!-- Row 4: Automated In-Game Analytical Insights Strip -->
       <div class="analytics-panel" style="margin-top: 1.25rem;">
         <div class="panel-title-row">
-          <h3>🧠 Real-Time Broadcast &amp; Coaching Analytical Insights</h3>
+          <h3>🧠 Real-Time Coaching &amp; Broadcast Insights</h3>
           <span class="badge-mini">AUTOMATED TELEMETRY</span>
         </div>
         <div id="ingame-insights-grid" class="insights-cards-grid"></div>
       </div>
 
-      <!-- Dual-Mode Advanced & Traditional Box Score -->
+      <!-- Row 5: Dual-Mode Advanced & Traditional Box Score -->
       <div class="analytics-panel" style="margin-top: 1.25rem;">
         <div class="panel-title-row">
           <div>
-            <h3>📋 Player In-Game Box Score — Advanced &amp; Traditional Telemetry</h3>
-            <p class="text-muted" style="font-size:0.8rem;">Click any player to inspect their full StatMuse/Reference bio &amp; season card.</p>
+            <h3>📋 Player In-Game Box Score</h3>
+            <p class="text-muted" style="font-size:0.8rem;">Click any player row to open their live on-demand career stats, game logs &amp; Player DNA.</p>
           </div>
           <div class="box-controls-row">
             <div id="box-team-switch" class="segmented-control"></div>
             <div id="box-mode-switch" class="segmented-control">
-              <button type="button" class="seg-btn active" data-mode="advanced">⚡ Advanced (GmSc, TS%, xEFG%, BPM, WPA, 48-Pace)</button>
-              <button type="button" class="seg-btn" data-mode="traditional">📊 Traditional (PTS, REB, AST, FG, 3PT)</button>
+              <button type="button" class="seg-btn active" data-mode="advanced">⚡ Advanced (GmSc, TS%, xEFG%, BPM)</button>
+              <button type="button" class="seg-btn" data-mode="traditional">📊 Traditional (PTS, REB, AST, FG)</button>
             </div>
           </div>
         </div>
-        <div id="ingame-boxscore-table-wrap" class="table-responsive"></div>
+        <div id="ingame-boxscore-table-wrap" class="table-responsive sticky-col-table"></div>
       </div>
     </section>
 
-    <!-- SECTION 1B: MULTI-SPORT DEEP TELEMETRY LAB (SOCCER, NFL, COLLEGE FOOTBALL, NHL HOCKEY, COLLEGE BASKETBALL) -->
-    <section id="multisport-lab" class="bball-card-section">
+    <!-- WORKSPACE 2: COMPARE LAB (PLAYER VS PLAYER + TEAM VS TEAM H2H) -->
+    <section id="comparison-lab" class="bball-card-section workspace-panel" data-ws-group="compare">
       <div class="section-header-row">
         <div>
-          <h2 class="section-heading">🌐 Universal Multi-Sport Deep Analytics &amp; Spatial Telemetry Lab</h2>
-          <p class="section-desc">Explore reference-grade in-game telemetry across <strong>Soccer (Opta/StatsBomb xG, Field Tilt, PPDA)</strong>, <strong>NFL &amp; College Football (Next Gen Stats EPA/Play, Success Rate, Pass Rush Win Rate)</strong>, <strong>NHL Hockey (MoneyPuck 5v5 Corsi CF%, xGF%, High-Danger Slot HDCF%)</strong>, and <strong>College Basketball (KenPom AdjEM, Four Factors &amp; Kill Shots)</strong>.</p>
-        </div>
-        <div id="multisport-selector-tabs" class="game-selector-tabs"></div>
-      </div>
-      <div id="multisport-lab-content"></div>
-    </section>
-
-    <!-- SECTION 2: HEAD-TO-HEAD PLAYER COMPARISON LAB & SVG RADAR -->
-    <section id="comparison-lab" class="bball-card-section">
-      <div class="section-header-row">
-        <div>
-          <h2 class="section-heading">⚔️ Head-to-Head Player Comparison Lab &amp; Percentile Radar</h2>
-          <p class="section-desc">Compare any two NBA stars across 13 traditional &amp; advanced Reference metrics (`TS%`, `eFG%`, `PER`, `BPM`, `VORP`, `USG%`, `NetRTG`, `Stocks`) with 6-axis percentile radar charting.</p>
+          <h2 class="section-heading">⚔️ Head-to-Head Player Comparison &amp; Percentile Radar</h2>
+          <p class="section-desc">Compare any two NBA stars across 13 metrics (<code>TS%</code>, <code>eFG%</code>, <code>PER</code>, <code>BPM</code>, <code>VORP</code>, <code>USG%</code>, <code>NetRTG</code>, <code>Stocks</code>) with 6-axis percentile radar charting.</p>
         </div>
         <div class="compare-selectors">
           <select id="compare-p1-select" class="select-input"></select>
@@ -199,14 +187,30 @@
       </div>
 
       <div id="comparison-lab-content" class="comparison-lab-grid"></div>
+
+      <!-- Team vs Team H2H Intelligence Matrix (Live /api/v1/data/h2h) -->
+      <div class="team-h2h-subpanel" id="team-h2h-lab" style="margin-top: 1.75rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color);">
+        <div class="section-header-row">
+          <div>
+            <h2 class="section-heading">🆚 Franchise Head-to-Head Matchup Intelligence (Live H2H)</h2>
+            <p class="section-desc">Live team comparison merging standings, scoring differential, Last-5 form, active injuries, and derived composite edge.</p>
+          </div>
+          <div class="compare-selectors">
+            <select id="team-h2h-a-select" class="select-input"></select>
+            <span class="vs-badge">VS</span>
+            <select id="team-h2h-b-select" class="select-input"></select>
+          </div>
+        </div>
+        <div id="team-h2h-result"></div>
+      </div>
     </section>
 
-    <!-- SECTION 3: ADVANCED PLAYER LEADERBOARD MATRIX -->
-    <section id="leaderboard-matrix" class="bball-card-section">
+    <!-- WORKSPACE 3A: LEADERBOARD MATRIX -->
+    <section id="leaderboard-matrix" class="bball-card-section workspace-panel" data-ws-group="rankings">
       <div class="section-header-row">
         <div>
           <h2 class="section-heading">📊 NBA Advanced Reference Leaderboard Matrix</h2>
-          <p class="section-desc">Filter by position or archetype and sort by holistic impact metrics (`PER`, `BPM`, `VORP`, `TS%`, `eFG%`, `GmSc`, `USG%`, `NetRTG`).</p>
+          <p class="section-desc">Filter by position or archetype and sort by impact metrics (<code>PER</code>, <code>BPM</code>, <code>VORP</code>, <code>TS%</code>, <code>eFG%</code>, <code>GmSc</code>, <code>USG%</code>, <code>NetRTG</code>). Click any player for live career splits.</p>
         </div>
         <div class="matrix-controls">
           <input type="text" id="matrix-search" class="select-input" placeholder="Filter player, team, or archetype..." />
@@ -235,12 +239,12 @@
         </div>
       </div>
 
-      <div id="leaderboard-table-wrap" class="table-responsive"></div>
+      <div id="leaderboard-table-wrap" class="table-responsive sticky-col-table"></div>
     </section>
 
-    <!-- SECTION 4: CONFERENCE STANDINGS & ANALYTICS GLOSSARY -->
-    <section id="standings-glossary" class="bball-card-section">
-      <div class="ingame-two-col">
+    <!-- WORKSPACE 3B: CONFERENCE STANDINGS & ANALYTICS GLOSSARY -->
+    <section id="standings-glossary" class="bball-card-section workspace-panel" data-ws-group="rankings">
+      <div class="rankings-split-layout">
         <div class="analytics-panel">
           <div class="panel-title-row">
             <h3>🏆 NBA Conference Standings &amp; Net Rating Splits</h3>
@@ -262,64 +266,96 @@
       </div>
     </section>
 
-    <!-- SECTION 5: LIVE 360 TEAM INTELLIGENCE HUB (DEPTH CHART, ROSTER, SCHEDULE) -->
-    <section id="team-hub" class="bball-card-section">
+    <!-- WORKSPACE 4: LIVE 360 TEAM INTELLIGENCE HUB (ALL 30 TEAMS) -->
+    <section id="team-hub" class="bball-card-section workspace-panel" data-ws-group="team360">
       <div class="section-header-row">
         <div>
           <h2 class="section-heading">🏢 Team 360° Intelligence Hub — Depth Charts, Rosters &amp; Schedules</h2>
-          <p class="section-desc">Live on-demand ESPN feed across any franchise. Click any athlete in the Depth Chart or Roster to launch their full Career &amp; Game Log Explorer.</p>
+          <p class="section-desc">Live on-demand ESPN feed across all 30 NBA franchises. Click any player in the Depth Chart or Roster to launch their Career &amp; Game Log Explorer.</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <select id="team360-select" class="select-input">
-            <option value="BOS">Boston Celtics (BOS)</option>
+            <option value="ATL">Atlanta Hawks (ATL)</option>
+            <option value="BOS" selected>Boston Celtics (BOS)</option>
+            <option value="BKN">Brooklyn Nets (BKN)</option>
+            <option value="CHA">Charlotte Hornets (CHA)</option>
+            <option value="CHI">Chicago Bulls (CHI)</option>
             <option value="CLE">Cleveland Cavaliers (CLE)</option>
-            <option value="OKC">Oklahoma City Thunder (OKC)</option>
-            <option value="NYK">New York Knicks (NYK)</option>
-            <option value="LAL">Los Angeles Lakers (LAL)</option>
+            <option value="DAL">Dallas Mavericks (DAL)</option>
             <option value="DEN">Denver Nuggets (DEN)</option>
+            <option value="DET">Detroit Pistons (DET)</option>
             <option value="GSW">Golden State Warriors (GSW)</option>
             <option value="HOU">Houston Rockets (HOU)</option>
-            <option value="PHI">Philadelphia 76ers (PHI)</option>
-            <option value="BKN">Brooklyn Nets (BKN)</option>
-            <option value="DAL">Dallas Mavericks (DAL)</option>
-            <option value="MIN">Minnesota Timberwolves (MIN)</option>
-            <option value="MIL">Milwaukee Bucks (MIL)</option>
-            <option value="SAS">San Antonio Spurs (SAS)</option>
-            <option value="ORL">Orlando Magic (ORL)</option>
-            <option value="MIA">Miami Heat (MIA)</option>
-            <option value="CHI">Chicago Bulls (CHI)</option>
             <option value="IND">Indiana Pacers (IND)</option>
-            <option value="DET">Detroit Pistons (DET)</option>
+            <option value="LAC">LA Clippers (LAC)</option>
+            <option value="LAL">Los Angeles Lakers (LAL)</option>
+            <option value="MEM">Memphis Grizzlies (MEM)</option>
+            <option value="MIA">Miami Heat (MIA)</option>
+            <option value="MIL">Milwaukee Bucks (MIL)</option>
+            <option value="MIN">Minnesota Timberwolves (MIN)</option>
+            <option value="NOP">New Orleans Pelicans (NOP)</option>
+            <option value="NYK">New York Knicks (NYK)</option>
+            <option value="OKC">Oklahoma City Thunder (OKC)</option>
+            <option value="ORL">Orlando Magic (ORL)</option>
+            <option value="PHI">Philadelphia 76ers (PHI)</option>
             <option value="PHX">Phoenix Suns (PHX)</option>
+            <option value="POR">Portland Trail Blazers (POR)</option>
+            <option value="SAC">Sacramento Kings (SAC)</option>
+            <option value="SAS">San Antonio Spurs (SAS)</option>
             <option value="TOR">Toronto Raptors (TOR)</option>
-            <option value="ATL">Atlanta Hawks (ATL)</option>
+            <option value="UTA">Utah Jazz (UTA)</option>
+            <option value="WAS">Washington Wizards (WAS)</option>
           </select>
+          <button type="button" id="team360-h2h-btn" class="btn btn-outline btn-sm">⚔️ Compare in H2H</button>
           <a id="team360-api-link" href="/api/v1/data/team/basketball/nba/BOS" target="_blank" class="btn btn-outline btn-sm">JSON API</a>
         </div>
       </div>
       <div id="team360-content"></div>
     </section>
 
-    <!-- SECTION 6: REAL-TIME NBA INJURY WIRE -->
-    <section id="injury-wire" class="bball-card-section">
+    <!-- WORKSPACE 5: REAL-TIME NBA INJURY WIRE -->
+    <section id="injury-wire" class="bball-card-section workspace-panel" data-ws-group="injury">
       <div class="section-header-row">
         <div>
           <h2 class="section-heading">🏥 Live League Injury Wire &amp; Availability Tracker</h2>
           <p class="section-desc">Real-time official ESPN NBA injury report across all 30 franchises. Click any player name to open their full Live Stats Explorer.</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <input type="text" id="injury-search-input" class="select-input" placeholder="Filter by player, team, or Out/Questionable..." style="min-width:230px;" />
+          <input type="text" id="injury-search-input" class="select-input" placeholder="Search player, team, or status..." style="min-width:255px;" />
           <a href="/api/v1/data/injuries/basketball/nba?format=csv" download="nba_injuries.csv" class="btn btn-outline btn-sm">⬇ Export CSV</a>
         </div>
       </div>
-      <div id="injury-wire-grid" class="table-responsive" style="max-height:420px;overflow:auto;"></div>
+      <div class="injury-toolbar-row" id="injury-toolbar-row">
+        <div id="injury-summary-pills" class="injury-summary-pills"></div>
+        <div id="injury-status-filters" class="segmented-control">
+          <button type="button" class="seg-btn active" data-inj-filter="all">All Reports</button>
+          <button type="button" class="seg-btn" data-inj-filter="out">Out Only</button>
+          <button type="button" class="seg-btn" data-inj-filter="gtd">Day-To-Day / Questionable</button>
+        </div>
+      </div>
+      <div id="injury-wire-grid" class="table-responsive dark-scroll-box"></div>
+    </section>
+
+    <!-- WORKSPACE 6: MULTI-SPORT DEEP TELEMETRY LAB -->
+    <section id="multisport-lab" class="bball-card-section workspace-panel" data-ws-group="multisport">
+      <div class="section-header-row">
+        <div>
+          <h2 class="section-heading">🌐 Universal Multi-Sport Deep Analytics &amp; Spatial Telemetry Lab</h2>
+          <p class="section-desc">Switch across <strong>Soccer (xG &amp; Pitch Map)</strong>, <strong>NFL &amp; CFB (Next Gen Stats EPA)</strong>, <strong>NHL Hockey (Corsi &amp; Slot HDCF%)</strong>, and <strong>College Basketball (KenPom AdjEM)</strong>.</p>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end;">
+          <div id="multisport-sport-filters" class="segmented-control"></div>
+          <div id="multisport-selector-tabs" class="game-selector-tabs"></div>
+        </div>
+      </div>
+      <div id="multisport-lab-content"></div>
     </section>
   </main>
 
   <!-- Athlete Profile Modal -->
   <div id="player-profile-modal" class="modal hidden" style="z-index: 2000;">
     <div class="modal-backdrop" id="player-modal-backdrop"></div>
-    <div class="modal-content modal-md" style="max-width: 940px; max-height: 90vh; overflow-y: auto;">
+    <div class="modal-content modal-md" style="max-width: 960px; max-height: 90vh; overflow-y: auto;">
       <div class="modal-header">
         <div class="modal-title-group">
           <span class="live-indicator"></span>

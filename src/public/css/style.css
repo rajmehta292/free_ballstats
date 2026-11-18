@@ -25,14 +25,20 @@
   box-sizing: border-box;
 }
 
+html {
+  max-width: 100%;
+  overflow-x: clip;
+}
+
 body {
   background-color: var(--bg-primary);
   color: var(--text-main);
   font-family: var(--font-sans);
   min-height: 100vh;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 a {
@@ -1352,17 +1358,68 @@ footer {
 /* ============================================================================
    DEDICATED BASKETBALL RESEARCH & IN-GAME ANALYTICS LAB (basketball.html)
    ============================================================================ */
+.bball-lab-page *::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.bball-lab-page *::-webkit-scrollbar-track {
+  background: rgba(9, 10, 16, 0.9);
+  border-radius: 99px;
+}
+.bball-lab-page *::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.28);
+  border-radius: 99px;
+  border: 2px solid transparent;
+}
+.bball-lab-page *::-webkit-scrollbar-thumb:hover {
+  background: rgba(145, 70, 255, 0.55);
+}
+.bball-lab-page * {
+  scrollbar-width: thin;
+  scrollbar-color: #475569 #0c0e16;
+}
+.dark-scroll-box {
+  max-height: 460px;
+  overflow-y: auto;
+  overflow-x: auto;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  scrollbar-width: thin;
+  scrollbar-color: #475569 #0c0e16;
+}
+
 .nav-left, .nav-right {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+  min-width: 0;
 }
 
 .navbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 24px;
+  padding: 10px 22px;
+  gap: 14px;
+}
+
+.bball-navbar .brand {
+  gap: 9px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.bball-navbar .brand-title {
+  font-size: 17px;
+  white-space: nowrap;
+}
+
+.bball-navbar .nav-link,
+.bball-navbar .status-pill,
+.bball-navbar .badge-pro,
+.bball-navbar .btn-sm {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .brand-logo {
@@ -1381,21 +1438,21 @@ footer {
   font-weight: 800;
   padding: 2px 7px;
   border-radius: 99px;
-  margin-left: 6px;
+  margin-left: 4px;
 }
 
 .nav-links {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .nav-link {
   color: var(--text-muted);
   text-decoration: none;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
-  padding: 7px 13px;
+  padding: 6px 11px;
   border-radius: var(--radius-md);
   transition: all 0.2s;
 }
@@ -1434,12 +1491,14 @@ footer {
 }
 
 .bball-lab-container {
+  width: 100%;
   max-width: 1460px;
   margin: 0 auto;
-  padding: 20px 24px 64px;
+  padding: 18px 24px 64px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 18px;
+  box-sizing: border-box;
 }
 
 .bball-hero {
@@ -1665,36 +1724,197 @@ footer {
   font-family: 'JetBrains Mono', monospace;
 }
 
-/* Section Navigation Pills */
+/* Sticky Workspace Command Bar */
+.bball-workspace-bar {
+  position: sticky;
+  top: 57px;
+  z-index: 80;
+  background: rgba(11, 13, 20, 0.92);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
 .bball-section-nav {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  min-width: 0;
+  padding-bottom: 1px;
 }
 
 .bball-sec-pill {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--text-muted);
   text-decoration: none;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 700;
-  padding: 9px 16px;
-  border-radius: 99px;
-  transition: all 0.2s;
+  padding: 7px 13px;
+  border-radius: 10px;
+  transition: all 0.18s;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .bball-sec-pill:hover, .bball-sec-pill.active {
-  background: var(--accent);
+  background: linear-gradient(135deg, rgba(145, 70, 255, 0.9), rgba(14, 165, 233, 0.85));
   color: #fff;
-  border-color: var(--accent);
+  border-color: transparent;
+  box-shadow: 0 4px 14px rgba(145, 70, 255, 0.35);
+}
+
+.ws-mode-toggle {
+  background: rgba(249, 115, 22, 0.12);
+  border: 1px solid rgba(249, 115, 22, 0.35);
+  color: #fdba74;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 7px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.18s;
+}
+
+.ws-mode-toggle:hover, .ws-mode-toggle.active {
+  background: #f97316;
+  color: #fff;
+  border-color: #f97316;
+}
+
+.workspace-panel {
+  display: none;
+}
+
+.workspace-panel.active-ws {
+  display: block;
+  animation: fbsFadeInWs 0.2s ease-out;
+}
+
+.bball-lab-container.show-all-ws .workspace-panel {
+  display: block;
+}
+
+@keyframes fbsFadeInWs {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.nl-result-header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-wrap: wrap;
+}
+
+.nl-collapse-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.nl-collapse-btn:hover {
+  background: rgba(145, 70, 255, 0.25);
+  color: #fff;
+}
+
+.rankings-split-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.depth-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (max-width: 992px) {
+  .depth-chart-grid {
+    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  }
+}
+
+.sticky-col-table {
+  position: relative;
+}
+
+.sticky-col-table th:first-child,
+.sticky-col-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: #141724;
+  box-shadow: 2px 0 6px rgba(0, 0, 0, 0.35);
+}
+
+.sticky-col-table thead th:first-child {
+  z-index: 4;
+  background: #1a1e2e;
+}
+
+.sticky-col-table tr.clickable-row:hover td:first-child {
+  background: #221d36;
+}
+
+.dark-scroll-box {
+  max-height: 460px;
+  overflow: auto;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.injury-toolbar-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.injury-summary-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inj-kpi-pill {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
 }
 
 .bball-card-section {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
-  padding: 22px;
+  padding: 20px;
+  min-width: 0;
 }
 
 .section-header-row {

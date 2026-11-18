@@ -6,15 +6,64 @@
   let activeGameIndex = 0;
   let activeMultiSportIndex = 0;
   let activeMultiSportFilter = 'all';
+  let activeMultiSportCategory = 'all';
   let activeBoxTeam = 'team1';
   let activeBoxMode = 'advanced';
   let activeConference = 'western';
+  let activeWorkspace = 'nba-game';
+  let showAllWorkspaces = false;
+  let nlResultCollapsed = false;
+  let injuryStatusFilter = 'all';
+
+  const NBA_FRANCHISES = [
+    ['ATL', 'Atlanta Hawks'], ['BOS', 'Boston Celtics'], ['BKN', 'Brooklyn Nets'],
+    ['CHA', 'Charlotte Hornets'], ['CHI', 'Chicago Bulls'], ['CLE', 'Cleveland Cavaliers'],
+    ['DAL', 'Dallas Mavericks'], ['DEN', 'Denver Nuggets'], ['DET', 'Detroit Pistons'],
+    ['GSW', 'Golden State Warriors'], ['HOU', 'Houston Rockets'], ['IND', 'Indiana Pacers'],
+    ['LAC', 'LA Clippers'], ['LAL', 'Los Angeles Lakers'], ['MEM', 'Memphis Grizzlies'],
+    ['MIA', 'Miami Heat'], ['MIL', 'Milwaukee Bucks'], ['MIN', 'Minnesota Timberwolves'],
+    ['NOP', 'New Orleans Pelicans'], ['NYK', 'New York Knicks'], ['OKC', 'Oklahoma City Thunder'],
+    ['ORL', 'Orlando Magic'], ['PHI', 'Philadelphia 76ers'], ['PHX', 'Phoenix Suns'],
+    ['POR', 'Portland Trail Blazers'], ['SAC', 'Sacramento Kings'], ['SAS', 'San Antonio Spurs'],
+    ['TOR', 'Toronto Raptors'], ['UTA', 'Utah Jazz'], ['WAS', 'Washington Wizards'],
+  ];
+
+  function resolveWorkspaceFromHash() {
+    const h = (window.location.hash || '').replace(/^#/, '').toLowerCase();
+    const map = {
+      'ingame-lab': 'nba-game',
+      'comparison-lab': 'compare',
+      'team-h2h-lab': 'compare',
+      'leaderboard-matrix': 'rankings',
+      'standings-glossary': 'rankings',
+      'team-hub': 'team360',
+      'injury-wire': 'injury',
+      'multisport-lab': 'multisport',
+    };
+    return map[h] || null;
+  }
+
+  function switchWorkspace(wsId) {
+    activeWorkspace = wsId || 'nba-game';
+    document.querySelectorAll('[data-ws-tab]').forEach((btn) => {
+      const isMatch = btn.getAttribute('data-ws-tab') === activeWorkspace;
+      btn.classList.toggle('active', isMatch);
+      btn.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+    });
+    document.querySelectorAll('.workspace-panel[data-ws-group]').forEach((sec) => {
+      sec.classList.toggle('active-ws', sec.getAttribute('data-ws-group') === activeWorkspace);
+    });
+  }
 
   async function initBasketballLab() {
-    // Mount Persistent Smart Mini-Player Dock if user docked a live broadcast
-    if (window.FreeBallStatsSmartScreen && window.FreeBallStatsSmartScreen.mountResearchLabSmartDock) {
-      window.FreeBallStatsSmartScreen.mountResearchLabSmartDock();
+    const params = new URLSearchParams(window.location.search);
+    // Only auto-mount the floating mini-player dock if explicitly requested via ?dock=
+    if (params.get('dock') && window.FreeBallStatsSmartScreen && window.FreeBallStatsSmartScreen.mountResearchLabSmartDock) {
+      window.FreeBallStatsSmartScreen.mountResearchLabSmartDock(true);
     }
+
+    const hashWs = resolveWorkspaceFromHash();
+    if (hashWs) switchWorkspace(hashWs);
 
     try {
       const res = await fetch(`/api/v1/basketball/hub?t=${Date.now()}`);
@@ -25,12 +74,13 @@
       renderActiveGameLab();
       renderMultiSportLab();
       initComparisonSelectors(hubData.players || []);
+      initTeamH2HSelectors();
       renderLeaderboardMatrix(hubData.players || []);
       renderStandingsTable();
       renderGlossary(hubData.glossary || []);
 
       // Run initial natural language showcase query (or ?q= passed from Player Explorer)
-      const urlQ = new URLSearchParams(window.location.search).get('q');
+      const urlQ = params.get('q');
       const initQ = urlQ || 'Nikola Jokic vs Luka Doncic advanced comparison';
       const qInput = document.getElementById('nl-query-input');
       if (qInput && urlQ) qInput.value = urlQ;
@@ -114,11 +164,17 @@
         : '';
 
       container.innerHTML = `
-        <div class="nl-answer-main">
+        <div class="nl-result-header-bar">
+          <div class="nl-query-tag">STATMUSE / LIVE NBA INTELLIGENCE • QUERY: "${escapeHtml(data.query)}"</div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            ${hero.id ? `<button type="button" class="nl-collapse-btn" id="nl-open-hero-btn">👤 Open ${escapeHtml(hero.name || 'Player')} Explorer</button>` : ''}
+            <button type="button" class="nl-collapse-btn" id="nl-toggle-collapse-btn">${nlResultCollapsed ? '▸ Expand Answer' : '▾ Collapse Answer'}</button>
+          </div>
+        </div>
+        <div class="nl-answer-main" id="nl-answer-body" style="display:${nlResultCollapsed ? 'none' : 'block'};">
           <div class="nl-answer-top">
             ${avatarsHtml}
             <div class="nl-answer-copy">
-              <div class="nl-query-tag">STATMUSE / LIVE NBA INTELLIGENCE • QUERY: "${escapeHtml(data.query)}"</div>
               ${correctionHtml}
               <h3 class="nl-headline">${escapeHtml(data.headline)}</h3>
               <p class="nl-narrative">${escapeHtml(data.narrative)}</p>
@@ -135,8 +191,19 @@
         </div>
       `;
 
+      document.getElementById('nl-toggle-collapse-btn')?.addEventListener('click', (e) => {
+        nlResultCollapsed = !nlResultCollapsed;
+        const bodyEl = document.getElementById('nl-answer-body');
+        if (bodyEl) bodyEl.style.display = nlResultCollapsed ? 'none' : 'block';
+        e.currentTarget.textContent = nlResultCollapsed ? '▸ Expand Answer' : '▾ Collapse Answer';
+      });
+      document.getElementById('nl-open-hero-btn')?.addEventListener('click', () => {
+        if (hero.id) openPlayerModal(hero.id, 'basketball/nba');
+      });
+
       container.querySelectorAll('.nl-suggest-btn').forEach(btn => {
         btn.addEventListener('click', () => {
+          nlResultCollapsed = false;
           const nextQ = btn.getAttribute('data-suggest') || '';
           const input = document.getElementById('nl-query-input');
           if (input) input.value = nextQ;
@@ -144,11 +211,24 @@
         });
       });
 
+      // Make any table rows matching known NBA players clickable
+      const rosterLookup = new Map((hubData?.players || []).map((p) => [String(p.name || '').toLowerCase(), p.id]));
+      container.querySelectorAll('tbody tr').forEach((tr) => {
+        const firstCell = tr.querySelector('td');
+        const txt = String(firstCell?.textContent || '').replace(/^\d+\.\s*/, '').trim().toLowerCase();
+        const pid = rosterLookup.get(txt) || (hero.name && String(hero.name).toLowerCase() === txt ? hero.id : null);
+        if (pid) {
+          tr.classList.add('clickable-row');
+          tr.title = `Click to open full Live Stats Explorer for ${firstCell.textContent.trim()}`;
+          tr.addEventListener('click', () => openPlayerModal(pid, 'basketball/nba'));
+        }
+      });
+
       const avatarEl = container.querySelector('.nl-single-avatar');
       if (avatarEl && hero.id) {
         avatarEl.style.cursor = 'pointer';
         avatarEl.title = `Open full athlete card for ${hero.name || 'Player'}`;
-        avatarEl.addEventListener('click', () => openPlayerModal(hero.id));
+        avatarEl.addEventListener('click', () => openPlayerModal(hero.id, 'basketball/nba'));
       }
     } catch (err) {
       container.innerHTML = `<div style="padding:1rem;color:var(--danger);">Unable to process query.</div>`;
@@ -441,26 +521,33 @@
       const sd1 = t1.shotDiet;
       const sd2 = t2.shotDiet;
 
-      const renderDietBar = (teamAbbr, sd) => `
+      const renderDietBar = (teamAbbr, sd) => {
+        const segTxt = (label, pct) => {
+          if (pct >= 14) return `${label} ${pct}%`;
+          if (pct >= 7) return `${pct}%`;
+          return '';
+        };
+        return `
         <div class="shot-diet-team">
           <div class="shot-diet-header">
             <strong>${escapeHtml(teamAbbr)} Spatial Scoring Breakdown</strong>
             <span>Fastbreak: ${sd.fastbreakPts} PTS • Max Lead: +${sd.biggestLead}</span>
           </div>
           <div class="stacked-diet-bar">
-            <div class="diet-seg paint" style="width:${sd.paintPtsSharePct}%" title="Paint: ${sd.paintPts} PTS (${sd.paintPtsSharePct}%)">Paint ${sd.paintPtsSharePct}%</div>
-            <div class="diet-seg perim" style="width:${sd.perimeterPtsSharePct}%" title="3PT Perimeter: ${sd.perimeterPts} PTS (${sd.perimeterPtsSharePct}%)">3PT ${sd.perimeterPtsSharePct}%</div>
-            <div class="diet-seg mid" style="width:${sd.midrangePtsSharePct}%" title="Mid-Range: ${sd.midrangePts} PTS (${sd.midrangePtsSharePct}%)">Mid</div>
-            <div class="diet-seg ft" style="width:${sd.ftPtsSharePct}%" title="Free Throws: ${sd.ftPts} PTS (${sd.ftPtsSharePct}%)">FT ${sd.ftPtsSharePct}%</div>
+            <div class="diet-seg paint" style="width:${sd.paintPtsSharePct}%" title="Paint: ${sd.paintPts} PTS (${sd.paintPtsSharePct}%)">${segTxt('Paint', sd.paintPtsSharePct)}</div>
+            <div class="diet-seg perim" style="width:${sd.perimeterPtsSharePct}%" title="3PT Perimeter: ${sd.perimeterPts} PTS (${sd.perimeterPtsSharePct}%)">${segTxt('3PT', sd.perimeterPtsSharePct)}</div>
+            <div class="diet-seg mid" style="width:${sd.midrangePtsSharePct}%" title="Mid-Range: ${sd.midrangePts} PTS (${sd.midrangePtsSharePct}%)">${segTxt('Mid', sd.midrangePtsSharePct)}</div>
+            <div class="diet-seg ft" style="width:${sd.ftPtsSharePct}%" title="Free Throws: ${sd.ftPts} PTS (${sd.ftPtsSharePct}%)">${segTxt('FT', sd.ftPtsSharePct)}</div>
           </div>
           <div class="shot-diet-legend">
-            <span><i class="dot paint"></i> Paint: ${sd.paintPts} pts</span>
-            <span><i class="dot perim"></i> 3PT: ${sd.perimeterPts} pts</span>
-            <span><i class="dot mid"></i> Mid: ${sd.midrangePts} pts</span>
-            <span><i class="dot ft"></i> FT: ${sd.ftPts} pts</span>
+            <span><i class="dot paint"></i> Paint: ${sd.paintPts} (${sd.paintPtsSharePct}%)</span>
+            <span><i class="dot perim"></i> 3PT: ${sd.perimeterPts} (${sd.perimeterPtsSharePct}%)</span>
+            <span><i class="dot mid"></i> Mid: ${sd.midrangePts} (${sd.midrangePtsSharePct}%)</span>
+            <span><i class="dot ft"></i> FT: ${sd.ftPts} (${sd.ftPtsSharePct}%)</span>
           </div>
         </div>
       `;
+      };
 
       dietEl.innerHTML = `
         <div class="panel-title-row">
@@ -513,7 +600,7 @@
         wormEl.innerHTML = `
           <div class="panel-title-row">
             <h3>📈 Win Probability Worm &amp; Leverage Index (LI)</h3>
-            <span class="badge-mini">INPREDICTABLE</span>
+            <span class="badge-mini" title="Inpredictable-style Leverage Index & Win Probability Added model">WIN PROB MODEL</span>
           </div>
           ${window.FreeBallStatsSmartScreen.renderWinProbWormChart(game)}
         `;
@@ -702,10 +789,11 @@
   // 2B. UNIVERSAL MULTI-SPORT DEEP TELEMETRY LAB (SOCCER, NFL, CFB, NHL, NCAAB)
   // =========================================================================
   function renderMultiSportLab() {
+    const sportFiltersWrap = document.getElementById('multisport-sport-filters');
     const tabsWrap = document.getElementById('multisport-selector-tabs');
     const contentWrap = document.getElementById('multisport-lab-content');
-    const msGames = hubData?.multiSportGames || [];
-    if (!tabsWrap || !contentWrap || msGames.length === 0) return;
+    const allMsGames = hubData?.multiSportGames || [];
+    if (!tabsWrap || !contentWrap || allMsGames.length === 0) return;
 
     const sportIcons = {
       soccer: '⚽',
@@ -714,6 +802,38 @@
       hockey: '🏒',
       ncaab: '🎓🏀',
     };
+
+    if (sportFiltersWrap) {
+      const catDefs = [
+        ['all', 'All Sports'],
+        ['soccer', '⚽ Soccer'],
+        ['nfl', '🏈 NFL'],
+        ['ncaaf', '🎓 CFB'],
+        ['hockey', '🏒 NHL'],
+        ['ncaab', '🎓 NCAAB'],
+      ];
+      sportFiltersWrap.innerHTML = catDefs
+        .map(([k, lbl]) => `<button type="button" class="seg-btn ${activeMultiSportCategory === k ? 'active' : ''}" data-ms-cat="${k}">${lbl}</button>`)
+        .join('');
+      sportFiltersWrap.querySelectorAll('[data-ms-cat]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          activeMultiSportCategory = btn.getAttribute('data-ms-cat') || 'all';
+          activeMultiSportIndex = 0;
+          activeMultiSportFilter = 'all';
+          renderMultiSportLab();
+        });
+      });
+    }
+
+    const msGames = activeMultiSportCategory === 'all'
+      ? allMsGames
+      : allMsGames.filter((g) => g.sportType === activeMultiSportCategory);
+    if (msGames.length === 0) {
+      tabsWrap.innerHTML = '';
+      contentWrap.innerHTML = `<div style="padding:1.5rem;color:var(--text-muted);">No tracked events in this sport filter right now.</div>`;
+      return;
+    }
+    if (activeMultiSportIndex >= msGames.length) activeMultiSportIndex = 0;
 
     tabsWrap.innerHTML = msGames
       .map((sa, idx) => {
@@ -888,7 +1008,7 @@
 
       container.innerHTML = `
         <div class="compare-top-cards">
-          <div class="compare-player-card p1-border">
+          <div class="compare-player-card p1-border" style="cursor:pointer;" data-open-pid="${escapeHtml(p1.id)}" title="Click to open live career profile">
             <img src="${p1.headshot}" alt="${escapeHtml(p1.name)}" onerror="this.src='https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90'" />
             <div>
               <span class="badge-mini" style="background:rgba(145,70,255,0.2);color:#c4b5fd;">${escapeHtml(p1.team)} • #${escapeHtml(p1.jersey)} ${escapeHtml(p1.position)}</span>
@@ -906,7 +1026,7 @@
             </div>
           </div>
 
-          <div class="compare-player-card p2-border">
+          <div class="compare-player-card p2-border" style="cursor:pointer;" data-open-pid="${escapeHtml(p2.id)}" title="Click to open live career profile">
             <img src="${p2.headshot}" alt="${escapeHtml(p2.name)}" onerror="this.src='https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90'" />
             <div>
               <span class="badge-mini" style="background:rgba(0,242,254,0.18);color:#67e8f9;">${escapeHtml(p2.team)} • #${escapeHtml(p2.jersey)} ${escapeHtml(p2.position)}</span>
@@ -950,6 +1070,12 @@
           </table>
         </div>
       `;
+      container.querySelectorAll('[data-open-pid]').forEach((card) => {
+        card.addEventListener('click', () => {
+          const pid = card.getAttribute('data-open-pid');
+          if (pid) openPlayerModal(pid, 'basketball/nba');
+        });
+      });
     } catch (err) {
       console.error('Error comparing players:', err);
     }
@@ -957,20 +1083,20 @@
 
   function buildRadarChartSvg(p1, p2) {
     const axes = [
-      { key: 'scoring', label: 'SCORING' },
-      { key: 'playmaking', label: 'PLAYMAKING' },
-      { key: 'rebounding', label: 'REBOUNDING' },
-      { key: 'efficiency', label: 'EFFICIENCY (TS%)' },
-      { key: 'defense', label: 'DEFENSE' },
-      { key: 'impact', label: 'IMPACT (BPM)' },
+      { key: 'scoring', label: 'SCORING', anchor: 'middle' },
+      { key: 'playmaking', label: 'PLAYMAKING', anchor: 'start' },
+      { key: 'rebounding', label: 'REBOUNDING', anchor: 'start' },
+      { key: 'efficiency', label: 'TS% EFF', anchor: 'middle' },
+      { key: 'defense', label: 'DEFENSE', anchor: 'end' },
+      { key: 'impact', label: 'BPM IMPACT', anchor: 'end' },
     ];
-    const cx = 150;
-    const cy = 135;
-    const radius = 92;
+    const cx = 190;
+    const cy = 148;
+    const radius = 84;
 
-    const getPoint = (idx, pct) => {
+    const getPoint = (idx, pct, customR = radius) => {
       const angle = (Math.PI * 2 * idx) / axes.length - Math.PI / 2;
-      const r = (Math.max(10, Math.min(100, pct)) / 100) * radius;
+      const r = (Math.max(10, Math.min(100, pct)) / 100) * customR;
       const x = cx + r * Math.cos(angle);
       const y = cy + r * Math.sin(angle);
       return `${x.toFixed(1)},${y.toFixed(1)}`;
@@ -986,10 +1112,10 @@
     const axisLines = axes
       .map((ax, idx) => {
         const end = getPoint(idx, 100).split(',');
-        const lblPt = getPoint(idx, 118).split(',');
+        const lblPt = getPoint(idx, 100, radius + 22).split(',');
         return `
           <line x1="${cx}" y1="${cy}" x2="${end[0]}" y2="${end[1]}" stroke="rgba(255,255,255,0.15)" stroke-width="1" />
-          <text x="${lblPt[0]}" y="${lblPt[1]}" fill="#a1a1aa" font-size="9" font-weight="700" text-anchor="middle" dominant-baseline="middle">${ax.label}</text>
+          <text x="${lblPt[0]}" y="${lblPt[1]}" fill="#cbd5e1" font-size="9.5" font-weight="800" text-anchor="${ax.anchor}" dominant-baseline="middle">${ax.label}</text>
         `;
       })
       .join('');
@@ -998,13 +1124,91 @@
     const p2Pts = axes.map((ax, idx) => getPoint(idx, p2.radarPercentiles?.[ax.key] || 80)).join(' ');
 
     return `
-      <svg viewBox="0 0 300 270" width="290" height="260" class="radar-svg">
+      <svg viewBox="0 0 380 296" width="350" height="272" class="radar-svg">
         ${gridRings}
         ${axisLines}
         <polygon points="${p1Pts}" fill="rgba(145, 70, 255, 0.32)" stroke="#9146ff" stroke-width="2.4" />
         <polygon points="${p2Pts}" fill="rgba(0, 242, 254, 0.25)" stroke="#00f2fe" stroke-width="2.4" />
       </svg>
     `;
+  }
+
+  // =========================================================================
+  // 3B. FRANCHISE HEAD-TO-HEAD INTELLIGENCE MATRIX (/api/v1/data/h2h)
+  // =========================================================================
+  function initTeamH2HSelectors() {
+    const sA = document.getElementById('team-h2h-a-select');
+    const sB = document.getElementById('team-h2h-b-select');
+    if (!sA || !sB) return;
+
+    const optsHtml = NBA_FRANCHISES.map(([abbr, name]) => `<option value="${abbr}">${escapeHtml(name)} (${abbr})</option>`).join('');
+    sA.innerHTML = optsHtml;
+    sB.innerHTML = optsHtml;
+    sA.value = 'BOS';
+    sB.value = 'CLE';
+
+    const trigger = () => loadTeamH2H(sA.value, sB.value);
+    sA.addEventListener('change', trigger);
+    sB.addEventListener('change', trigger);
+    trigger();
+  }
+
+  async function loadTeamH2H(teamA, teamB) {
+    const wrap = document.getElementById('team-h2h-result');
+    if (!wrap) return;
+    wrap.innerHTML = `<div style="padding:1.25rem;color:var(--text-secondary);">Synthesizing live H2H matchup matrix for <strong>${escapeHtml(teamA)} vs ${escapeHtml(teamB)}</strong>...</div>`;
+    try {
+      const res = await fetch(`/api/v1/data/h2h/${encodeURIComponent(teamA)}/${encodeURIComponent(teamB)}?t=${Date.now()}`);
+      const d = await res.json();
+      const tA = d.teamA || {};
+      const tB = d.teamB || {};
+
+      wrap.innerHTML = `
+        <div class="compare-top-cards" style="grid-template-columns:1fr 1fr;">
+          <div class="compare-player-card p1-border">
+            ${tA.logo ? `<img src="${escapeHtml(tA.logo)}" alt="${escapeHtml(tA.abbreviation)}" style="width:56px;height:56px;border-radius:10px;object-fit:contain;" />` : ''}
+            <div>
+              <span class="badge-mini">${escapeHtml(tA.standingSummary || 'NBA')}</span>
+              <h3>${escapeHtml(tA.name || teamA)} (${escapeHtml(tA.record || '-')})</h3>
+              <small class="text-muted">${(tA.injuries || []).length} Listed Injuries • Click Team 360° for full roster</small>
+            </div>
+          </div>
+          <div class="compare-player-card p2-border">
+            ${tB.logo ? `<img src="${escapeHtml(tB.logo)}" alt="${escapeHtml(tB.abbreviation)}" style="width:56px;height:56px;border-radius:10px;object-fit:contain;" />` : ''}
+            <div>
+              <span class="badge-mini" style="background:rgba(0,242,254,0.16);color:#67e8f9;">${escapeHtml(tB.standingSummary || 'NBA')}</span>
+              <h3>${escapeHtml(tB.name || teamB)} (${escapeHtml(tB.record || '-')})</h3>
+              <small class="text-muted">${(tB.injuries || []).length} Listed Injuries • Provenance: ${escapeHtml(d.provenance?.confidence || 'estimated')}</small>
+            </div>
+          </div>
+        </div>
+        <div class="verdict-banner">
+          <strong>⚖️ Derived Composite H2H Edge:</strong> ${escapeHtml(d.modelEdgeSummary || '')}
+        </div>
+        <div class="table-responsive">
+          <table class="bball-table compact-table">
+            <thead>
+              <tr>
+                <th>${escapeHtml(tA.abbreviation || teamA)}</th>
+                <th style="text-align:center;">MATCHUP METRIC</th>
+                <th style="text-align:right;">${escapeHtml(tB.abbreviation || teamB)}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(d.comparisonMetrics || []).map((m) => `
+                <tr>
+                  <td class="mono-cell font-bold">${escapeHtml(String(m.teamA))}</td>
+                  <td style="text-align:center;color:var(--text-muted);font-weight:700;">${escapeHtml(m.metric)}</td>
+                  <td class="mono-cell font-bold" style="text-align:right;">${escapeHtml(String(m.teamB))}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+    } catch (e) {
+      wrap.innerHTML = `<div style="padding:1rem;color:var(--danger);">Unable to load H2H matchup matrix.</div>`;
+    }
   }
 
   // =========================================================================
@@ -1176,13 +1380,32 @@
   // =========================================================================
   // 6. ATHLETE PROFILE MODAL
   // =========================================================================
-  async function openPlayerModal(athleteId) {
+  function normalizeSportLeaguePath(rawSportLeague) {
+    const s = String(rawSportLeague || 'basketball/nba').toLowerCase().trim();
+    if (s.includes('/')) return s;
+    const map = {
+      basketball: 'basketball/nba',
+      ncaab: 'basketball/mens-college-basketball',
+      nfl: 'football/nfl',
+      football: 'football/nfl',
+      ncaaf: 'football/college-football',
+      hockey: 'hockey/nhl',
+      nhl: 'hockey/nhl',
+      baseball: 'baseball/mlb',
+      mlb: 'baseball/mlb',
+      soccer: 'soccer/eng.1',
+    };
+    return map[s] || 'basketball/nba';
+  }
+
+  async function openPlayerModal(athleteId, sportLeague = 'basketball/nba') {
     const modal = document.getElementById('player-profile-modal');
     const body = document.getElementById('player-modal-body');
     const nameEl = document.getElementById('player-modal-name');
     const posEl = document.getElementById('player-modal-pos');
-    if (!modal || !body) return;
+    if (!modal || !body || !athleteId) return;
 
+    const leaguePath = normalizeSportLeaguePath(sportLeague);
     if (window.FreeBallStatsAthleteExplorer) {
       window.FreeBallStatsAthleteExplorer.resetState();
     }
@@ -1192,11 +1415,11 @@
       body.innerHTML = `<div style="padding:2.5rem;text-align:center;color:var(--text-secondary);">Pulling live career stats, game logs &amp; splits directly from ESPN API...</div>`;
       try {
         const qs = seasonYear ? `?season=${encodeURIComponent(seasonYear)}&t=${Date.now()}` : `?t=${Date.now()}`;
-        const res = await fetch(`/api/v1/athlete/basketball/nba/${encodeURIComponent(athleteId)}${qs}`, { cache: 'no-store' });
+        const res = await fetch(`/api/v1/athlete/${leaguePath}/${encodeURIComponent(athleteId)}${qs}`, { cache: 'no-store' });
         const p = await res.json();
 
-        if (nameEl) nameEl.textContent = p.name || 'NBA Athlete';
-        if (posEl) posEl.textContent = p.position || 'NBA';
+        if (nameEl) nameEl.textContent = p.name || 'Live Athlete Profile';
+        if (posEl) posEl.textContent = p.position || leaguePath.split('/')[1].toUpperCase();
 
         if (window.FreeBallStatsAthleteExplorer) {
           window.FreeBallStatsAthleteExplorer.renderInto(body, p, loadLive);
@@ -1209,13 +1432,57 @@
     await loadLive();
   }
 
+  // Expose globally so On-Court 5v5 and Multi-Sport Active Unit cards inside smart-screen.js open seamlessly
+  window.openAthleteProfile = (athleteId, sportLeague) => openPlayerModal(athleteId, sportLeague);
+
   function bindEventListeners() {
+    // Workspace navigation tabs & stacked view toggle
+    document.querySelectorAll('[data-ws-tab]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const targetWs = btn.getAttribute('data-ws-tab') || 'nba-game';
+        showAllWorkspaces = false;
+        document.querySelector('.bball-lab-container')?.classList.remove('show-all-ws');
+        document.getElementById('ws-view-all-btn')?.classList.remove('active');
+        switchWorkspace(targetWs);
+      });
+    });
+
+    document.getElementById('ws-view-all-btn')?.addEventListener('click', (e) => {
+      showAllWorkspaces = !showAllWorkspaces;
+      const container = document.querySelector('.bball-lab-container');
+      if (container) container.classList.toggle('show-all-ws', showAllWorkspaces);
+      e.currentTarget.classList.toggle('active', showAllWorkspaces);
+      e.currentTarget.textContent = showAllWorkspaces ? '◫ Focused Tabs' : '⊞ Stacked View';
+    });
+
+    document.getElementById('team360-h2h-btn')?.addEventListener('click', () => {
+      const chosen = document.getElementById('team360-select')?.value || 'BOS';
+      const sA = document.getElementById('team-h2h-a-select');
+      const sB = document.getElementById('team-h2h-b-select');
+      if (sA && sB) {
+        sA.value = chosen;
+        if (sB.value === chosen) sB.value = chosen === 'BOS' ? 'CLE' : 'BOS';
+        loadTeamH2H(sA.value, sB.value);
+      }
+      switchWorkspace('compare');
+      document.getElementById('team-h2h-lab')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    document.querySelectorAll('#injury-status-filters [data-inj-filter]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#injury-status-filters .seg-btn').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        injuryStatusFilter = btn.getAttribute('data-inj-filter') || 'all';
+        renderInjuryWireTable(document.getElementById('injury-search-input')?.value || '');
+      });
+    });
     const form = document.getElementById('nl-query-form');
     const input = document.getElementById('nl-query-input');
     if (form && input) {
       form.addEventListener('submit', e => {
         e.preventDefault();
         if (input.value.trim()) {
+          nlResultCollapsed = false;
           executeNaturalLanguageQuery(input.value.trim());
         }
       });
@@ -1223,6 +1490,7 @@
 
     document.querySelectorAll('.preset-pill').forEach(btn => {
       btn.addEventListener('click', () => {
+        nlResultCollapsed = false;
         const q = btn.getAttribute('data-query') || '';
         if (input) input.value = q;
         executeNaturalLanguageQuery(q);
@@ -1305,7 +1573,7 @@
         <div class="ingame-two-col">
           <div class="analytics-panel">
             <div class="panel-title-row"><h3>🗺️ Positional Depth Chart</h3><span class="badge-mini">CLICK PLAYER FOR STATS</span></div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px;">
+            <div class="depth-chart-grid">
               ${dcEntries.length ? dcEntries.map(([pos, list]) => `
                 <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:8px;">
                   <div style="font-size:11px;font-weight:800;color:#00f2fe;margin-bottom:5px;">${escapeHtml(pos)}</div>
@@ -1343,7 +1611,7 @@
 
           <div class="analytics-panel">
             <div class="panel-title-row"><h3>👥 Active Roster &amp; Physicals</h3><span class="badge-mini">LIVE STATS EXPLORER</span></div>
-            <div class="table-responsive" style="max-height:360px;overflow:auto;">
+            <div class="table-responsive dark-scroll-box" style="max-height:360px;">
               <table class="bball-table compact-table">
                 <thead><tr><th>PLAYER</th><th>POS</th><th>#</th><th>AGE</th><th>HT</th><th>ORIGIN</th></tr></thead>
                 <tbody>
@@ -1394,11 +1662,30 @@
 
   function renderInjuryWireTable(filterText) {
     const wrap = document.getElementById('injury-wire-grid');
+    const summaryEl = document.getElementById('injury-summary-pills');
     if (!wrap) return;
+
+    if (summaryEl) {
+      const total = cachedInjuryList.length;
+      const outCnt = cachedInjuryList.filter((i) => /\bout\b/i.test(i.status)).length;
+      const gtdCnt = total - outCnt;
+      summaryEl.innerHTML = `
+        <span class="inj-kpi-pill">📋 Total Listed: <strong>${total}</strong></span>
+        <span class="inj-kpi-pill" style="border-color:rgba(239,68,68,0.35);color:#fca5a5;">🚫 Out: <strong>${outCnt}</strong></span>
+        <span class="inj-kpi-pill" style="border-color:rgba(251,191,36,0.35);color:#fde68a;">⚠️ Questionable / DTD: <strong>${gtdCnt}</strong></span>
+      `;
+    }
+
     const f = (filterText || '').trim().toLowerCase();
-    const list = f
+    let list = f
       ? cachedInjuryList.filter(i => `${i.player} ${i.teamName} ${i.teamAbbr} ${i.status} ${i.comment}`.toLowerCase().includes(f))
       : cachedInjuryList;
+
+    if (injuryStatusFilter === 'out') {
+      list = list.filter((i) => /\bout\b/i.test(i.status));
+    } else if (injuryStatusFilter === 'gtd') {
+      list = list.filter((i) => !/\bout\b/i.test(i.status));
+    }
 
     if (list.length === 0) {
       wrap.innerHTML = `<div style="padding:1rem;color:var(--text-muted);">No matching injuries found.</div>`;
@@ -1418,7 +1705,7 @@
                 <td><span class="badge-mini">${escapeHtml(i.position)}</span></td>
                 <td><span style="padding:2px 7px;border-radius:999px;font-size:11px;font-weight:700;background:${isOut ? 'rgba(239,68,68,0.18)' : 'rgba(251,191,36,0.18)'};color:${isOut ? '#fca5a5' : '#fde68a'};">${escapeHtml(i.status)}</span></td>
                 <td class="mono-cell">${escapeHtml(i.returnDate || '-')}</td>
-                <td><small style="color:#94a3b8;">${escapeHtml(i.comment)}</small></td>
+                <td><small style="color:#94a3b8;white-space:normal;display:block;min-width:260px;max-width:540px;line-height:1.4;">${escapeHtml(i.comment)}</small></td>
               </tr>
             `;
           }).join('')}

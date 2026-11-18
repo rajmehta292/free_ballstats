@@ -16,6 +16,19 @@
       .replace(/"/g, '&quot;');
   }
 
+  function formatOrdinal(val) {
+    const n = Math.round(Number(val));
+    if (!Number.isFinite(n)) return esc(val);
+    const mod100 = n % 100;
+    if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+    switch (n % 10) {
+      case 1: return `${n}st`;
+      case 2: return `${n}nd`;
+      case 3: return `${n}rd`;
+      default: return `${n}th`;
+    }
+  }
+
   function saveActiveStreamForDock(streamMeta) {
     if (!streamMeta || !streamMeta.stream_key) return;
     try {
@@ -231,7 +244,7 @@
           <div style="font-size:10px;color:#94a3b8;margin-top:6px;">
             ${esc(sp.subtitle || 'Hover telemetry markers for play breakdown and efficiency.')}
           </div>
-          ${!compact && zonesHtml ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:6px;margin-top:8px;">${zonesHtml}</div>` : ''}
+          ${!compact && zonesHtml ? `<div style="display:grid;grid-template-columns:${(sp.zones || []).length === 4 ? 'repeat(2,minmax(0,1fr))' : 'repeat(auto-fit,minmax(180px,1fr))'};gap:6px;margin-top:8px;">${zonesHtml}</div>` : ''}
         </div>
       `;
     }
@@ -320,7 +333,7 @@
             <span><strong style="color:#fbbf24;">●</strong> Goal &nbsp; <strong style="color:#00f2fe;">●</strong> ${esc(t1Abbr)} On-Target &nbsp; <strong style="color:#f97316;">●</strong> ${esc(t2Abbr)} On-Target &nbsp; <strong>✕</strong> Off/Blocked</span>
             <span>Hover markers for xG, PSxG &amp; Shot Zone</span>
           </div>
-          ${!compact && zonesHtml ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:6px;margin-top:8px;">${zonesHtml}</div>` : ''}
+          ${!compact && zonesHtml ? `<div style="display:grid;grid-template-columns:${(sp.zones || []).length === 4 ? 'repeat(2,minmax(0,1fr))' : 'repeat(auto-fit,minmax(180px,1fr))'};gap:6px;margin-top:8px;">${zonesHtml}</div>` : ''}
         </div>
       `;
     }
@@ -406,7 +419,7 @@
             <span><strong style="color:#fbbf24;">●</strong> Touchdown &nbsp; <strong style="color:#00f2fe;">●</strong> ${esc(t1Abbr)} Explosive Play &nbsp; <strong style="color:#f97316;">●</strong> ${esc(t2Abbr)} Explosive Play &nbsp; <strong style="color:#ef4444;">✕</strong> Inc/Sack</span>
             <span>Hover plays for EPA &amp; Yardage</span>
           </div>
-          ${!compact && zonesHtml ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:6px;margin-top:8px;">${zonesHtml}</div>` : ''}
+          ${!compact && zonesHtml ? `<div style="display:grid;grid-template-columns:${(sp.zones || []).length === 4 ? 'repeat(2,minmax(0,1fr))' : 'repeat(auto-fit,minmax(180px,1fr))'};gap:6px;margin-top:8px;">${zonesHtml}</div>` : ''}
         </div>
       `;
     }
@@ -489,7 +502,7 @@
             <span><strong style="color:#fbbf24;">●</strong> Goal &nbsp; <strong style="color:#00f2fe;">●</strong> ${esc(t1Abbr)} SOG &nbsp; <strong style="color:#f97316;">●</strong> ${esc(t2Abbr)} SOG &nbsp; <strong>✕</strong> Miss/Block</span>
             <span>Home-Plate Polygon = High-Danger Slot</span>
           </div>
-          ${!compact && zonesHtml ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:6px;margin-top:8px;">${zonesHtml}</div>` : ''}
+          ${!compact && zonesHtml ? `<div style="display:grid;grid-template-columns:${(sp.zones || []).length === 4 ? 'repeat(2,minmax(0,1fr))' : 'repeat(auto-fit,minmax(180px,1fr))'};gap:6px;margin-top:8px;">${zonesHtml}</div>` : ''}
         </div>
       `;
     }
@@ -538,12 +551,14 @@
             })
             .join('');
 
-    const zoneLabelsSvg = [
+    const zoneLabelsSvg = filterSide !== 'zones'
+      ? ''
+      : [
       { key: 'restricted_area', shortLbl: 'AT RIM', friendlyName: 'At Rim (Restricted Area)', x: 250, y: 74 },
       { key: 'paint_non_ra', shortLbl: 'PAINT', friendlyName: 'In the Paint (Floaters)', x: 250, y: 148 },
       { key: 'midrange', shortLbl: 'MID-RNG', friendlyName: 'Mid-Range Jumper', x: 120, y: 175 },
-      { key: 'corner_3_left', shortLbl: 'L COR 3', friendlyName: 'Left Corner 3PT', x: 35, y: 90 },
-      { key: 'corner_3_right', shortLbl: 'R COR 3', friendlyName: 'Right Corner 3PT', x: 465, y: 90 },
+      { key: 'corner_3_left', shortLbl: 'L COR 3', friendlyName: 'Left Corner 3PT', x: 48, y: 82 },
+      { key: 'corner_3_right', shortLbl: 'R COR 3', friendlyName: 'Right Corner 3PT', x: 452, y: 82 },
       { key: 'above_break_3', shortLbl: 'ARC 3PT', friendlyName: 'Top / Wing 3PT', x: 250, y: 315 },
     ]
       .map((pos) => {
@@ -551,7 +566,7 @@
         if (!z || z.fgm === undefined) return '';
         const sign = z.deltaVsLeague >= 0 ? '+' : '';
         return `<g transform="translate(${pos.x}, ${pos.y})">
-          <rect x="-44" y="-20" width="88" height="40" rx="6" fill="rgba(7, 9, 14, 0.88)" stroke="${z.deltaVsLeague >= 0 ? 'rgba(16,185,129,0.55)' : 'rgba(248,113,113,0.45)'}" stroke-width="1.2"/>
+          <rect x="-44" y="-20" width="88" height="40" rx="6" fill="rgba(7, 9, 14, 0.92)" stroke="${z.deltaVsLeague >= 0 ? 'rgba(16,185,129,0.55)' : 'rgba(248,113,113,0.45)'}" stroke-width="1.2"/>
           <text x="0" y="-8" text-anchor="middle" fill="#94a3b8" font-size="7.5" font-weight="800">${pos.shortLbl}</text>
           <text x="0" y="3" text-anchor="middle" fill="#ffffff" font-size="9.5" font-weight="800">${z.fgm}/${z.fga} (${z.fgPct}%)</text>
           <text x="0" y="14" text-anchor="middle" fill="${z.deltaVsLeague >= 0 ? '#10b981' : '#f87171'}" font-size="8" font-weight="700">${sign}${z.deltaVsLeague}% vs NBA</text>
@@ -688,7 +703,7 @@
             <div style="font-size:10px;font-weight:800;color:#a78bfa;margin-bottom:6px;text-transform:uppercase;">
               🔄 TACTICAL PHASE &amp; STINT FLOW • ${esc(au.activePhaseSummary || sa.situationBanner || '')}
             </div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px;">
+            <div style="display:grid;grid-template-columns:${stintsList.length === 4 ? 'repeat(2,minmax(0,1fr))' : 'repeat(auto-fit,minmax(190px,1fr))'};gap:6px;">
               ${stintsList.map((st) => {
                 const lbl = st.label || st.periodLabel || '';
                 const subRange = st.startMark ? `${st.startMark} → ${st.endMark}` : (st.timeRange || '');
@@ -774,7 +789,7 @@
           <div style="font-size:10px;font-weight:800;color:#a78bfa;margin-bottom:6px;text-transform:uppercase;">
             🔄 PopcornMachine Rotation Stint GameFlow • ${esc(oc.activeStintMargin || '')}
           </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px;">
+          <div style="display:grid;grid-template-columns:${(hudData.stintTimeline || []).length === 4 ? 'repeat(2,minmax(0,1fr))' : 'repeat(auto-fit,minmax(190px,1fr))'};gap:6px;">
             ${(hudData.stintTimeline || []).map((st) => `
               <div style="background:rgba(0,0,0,0.45);border-left:3px solid ${st.netSwing >= 0 ? '#00f2fe' : '#f97316'};padding:6px 8px;border-radius:4px;font-size:10.5px;">
                 <div style="display:flex;justify-content:space-between;font-weight:800;color:#e2e8f0;">
@@ -894,9 +909,9 @@
                   <tr style="border-bottom:1px solid rgba(255,255,255,0.04);text-align:right;">
                     <td style="text-align:left;padding:5px;font-weight:700;color:#e2e8f0;">${esc(r.label || r.playType)}</td>
                     <td style="padding:5px;color:#cbd5e1;">${r.team1FreqPct}%</td>
-                    <td style="padding:5px;font-weight:800;color:#00f2fe;">${esc(r.team1Efficiency)} <small style="color:#a78bfa;">(${r.team1Percentile}th)</small></td>
+                    <td style="padding:5px;font-weight:800;color:#00f2fe;">${esc(r.team1Efficiency)} <small style="color:#a78bfa;">(${formatOrdinal(r.team1Percentile)})</small></td>
                     <td style="padding:5px;color:#cbd5e1;">${r.team2FreqPct}%</td>
-                    <td style="padding:5px;font-weight:800;color:#fb923c;">${esc(r.team2Efficiency)} <small style="color:#a78bfa;">(${r.team2Percentile}th)</small></td>
+                    <td style="padding:5px;font-weight:800;color:#fb923c;">${esc(r.team2Efficiency)} <small style="color:#a78bfa;">(${formatOrdinal(r.team2Percentile)})</small></td>
                     <td style="padding:5px;"><span style="padding:1px 6px;border-radius:4px;font-size:9.5px;font-weight:800;background:rgba(16,185,129,0.18);color:#34d399;">${esc(r.edge)}</span></td>
                   </tr>
                 `).join('')}
@@ -935,7 +950,7 @@
                 <td style="padding:4px;color:#00f2fe;">${pt.efgPct}%</td>
                 <td style="padding:4px;">
                   <span style="padding:1px 5px;border-radius:4px;font-size:9.5px;font-weight:800;background:${pt.percentile >= 75 ? 'rgba(16,185,129,0.2)' : 'rgba(145,70,255,0.2)'};color:${pt.percentile >= 75 ? '#34d399' : '#c4b5fd'};">
-                    ${pt.percentile}th
+                    ${formatOrdinal(pt.percentile)}
                   </span>
                 </td>
               </tr>
@@ -946,7 +961,7 @@
     `;
 
     return `
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-top:10px;">
+      <div style="display:grid;grid-template-columns:1fr;gap:10px;margin-top:8px;">
         ${renderTeamPlayTable(t1, '#00f2fe')}
         ${t2 && Array.isArray(t2.playTypes) ? renderTeamPlayTable(t2, '#f97316') : ''}
       </div>
