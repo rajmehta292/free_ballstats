@@ -101,12 +101,15 @@
   <script>
     (function () {
       const endpoints = [
-        { id: 'scoreboard', title: 'Live Scoreboard + Spreads/O/U', desc: 'Games, live scores, broadcasts & betting odds', csv: true, build: (s, l) => `/api/v1/data/scoreboard/${s}/${l}` },
-        { id: 'standings', title: 'Conference & League Standings', desc: 'W-L, PCT, Diff, Home/Away, L10, Streak', csv: true, build: (s, l) => `/api/v1/data/standings/${s}/${l}` },
+        { id: 'scoreboard', title: 'Live Scoreboard + Provenance & Odds', desc: 'Games, live scores, spreads & sparse ?fields=', csv: true, build: (s, l) => `/api/v1/data/scoreboard/${s}/${l}` },
+        { id: 'standings', title: 'Conference & League Standings', desc: 'Includes NHL/MLB official API failovers & CSV', csv: true, build: (s, l) => `/api/v1/data/standings/${s}/${l}` },
         { id: 'injuries', title: 'Real-Time League Injury Wire', desc: 'Out / Questionable / Day-to-Day & comments', csv: true, build: (s, l) => `/api/v1/data/injuries/${s}/${l}` },
-        { id: 'leaders', title: 'Statistical Leaders Across Categories', desc: 'PPG, APG, RPG, 3P%, Passing/Goals/HR', csv: true, build: (s, l) => `/api/v1/data/leaders/${s}/${l}` },
+        { id: 'h2h', title: 'Head-to-Head Matchup Intelligence', desc: 'Merges standings, L5 form, injuries & active odds', csv: false, build: (s, l) => `/api/v1/data/h2h/${s === 'basketball' ? 'BOS/CLE' : s === 'football' ? 'PHI/KC' : s === 'hockey' ? 'EDM/FLA' : 'NYY/LAD'}?sport=${s}&league=${l}` },
         { id: 'team', title: '360° Team Hub (Depth Chart + Schedule)', desc: 'Roster, Depth Chart, Results & Injuries', csv: false, build: (s, l) => `/api/v1/data/team/${s}/${l}/${s === 'basketball' ? 'BOS' : s === 'football' ? 'PHI' : s === 'hockey' ? 'EDM' : s === 'baseball' ? 'LAD' : 'ARS'}` },
-        { id: 'athlete', title: 'On-Demand Athlete Explorer API', desc: 'Career year-by-year, full game log & splits', csv: false, build: (s, l) => `/api/v1/athlete/${s}/${l}/${s === 'basketball' ? '5175643' : s === 'football' ? '4361579' : '3112335'}` },
+        { id: 'leaders', title: 'Statistical Leaders Across Categories', desc: 'PPG, APG, RPG, 3P%, Passing/Goals/HR', csv: true, build: (s, l) => `/api/v1/data/leaders/${s}/${l}` },
+        { id: 'athlete', title: 'On-Demand Athlete Explorer + DNA API', desc: 'Career tables, game log, rolling L5/L10 & Player DNA', csv: false, build: (s, l) => `/api/v1/athlete/${s}/${l}/${s === 'basketball' ? '5175643' : s === 'football' ? '4361579' : '3112335'}` },
+        { id: 'capabilities', title: 'League Capability Discovery Matrix', desc: 'Machine-readable feature matrix across all leagues', csv: false, build: () => `/api/v1/data/capabilities` },
+        { id: 'providers', title: 'Provider Health & Circuit Breakers', desc: 'Live latency, errors, cache SWR stats & API usage', csv: false, build: () => `/api/v1/providers/health` },
         { id: 'query', title: 'StatMuse Natural Language Query', desc: 'MVP Race, fuzzy names, H2H & leaders', csv: false, build: () => `/api/v1/basketball/query?q=${encodeURIComponent('who leads the mvp race')}` },
         { id: 'search', title: 'Cross-Sport Global Search', desc: 'Resolve any athlete or team ID live', csv: false, build: (s) => `/api/v1/data/search?q=${encodeURIComponent(s === 'football' ? 'Mahomes' : 'Buddy Hield')}&sport=${s}` },
       ];

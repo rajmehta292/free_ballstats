@@ -1,6 +1,29 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { config } from '../config.js';
 
+/** Reject non-HTTP(S) schemes, localhost, loopback, private RFC1918, and cloud metadata IPs to prevent SSRF */
+export function isSafeExternalUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    if (!host || host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal')) return false;
+    if (host === '::1' || host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd')) return false;
+    const ipv4 = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+    if (ipv4) {
+      const [a, b] = [Number(ipv4[1]), Number(ipv4[2])];
+      if (a === 127 || a === 10 || a === 0) return false;
+      if (a === 169 && b === 254) return false;
+      if (a === 172 && b >= 16 && b <= 31) return false;
+      if (a === 192 && b === 168) return false;
+      if (a === 100 && b >= 64 && b <= 127) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const proxyRoutes: FastifyPluginAsync = async (fastify) => {
   /**
    * GET /api/v1/proxy/m3u8
@@ -25,8 +48,8 @@ export const proxyRoutes: FastifyPluginAsync = async (fastify) => {
   }, async (request, reply) => {
     const { url, referer } = request.query;
 
-    if (!url) {
-      return reply.status(400).send({ error: 'URL query parameter is required' });
+    if (!url || !isSafeExternalUrl(url)) {
+      return reply.status(400).send({ error: 'Valid public HTTP(S) URL query parameter is required' });
     }
 
     try {
@@ -115,8 +138,8 @@ export const proxyRoutes: FastifyPluginAsync = async (fastify) => {
   }, async (request, reply) => {
     const { url, referer } = request.query;
 
-    if (!url) {
-      return reply.status(400).send({ error: 'URL parameter is required' });
+    if (!url || !isSafeExternalUrl(url)) {
+      return reply.status(400).send({ error: 'Valid public HTTP(S) URL parameter is required' });
     }
 
     try {

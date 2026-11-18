@@ -2550,6 +2550,67 @@
           </div>
         `;
       }
+    } else if (explorerState.tab === 'dna') {
+      const rw = data.rollingWindows;
+      const dna = data.playerDna;
+      const l5Metrics = rw?.last5?.metrics ? Object.entries(rw.last5.metrics) : [];
+      const l10Metrics = rw?.last10?.metrics || {};
+      tabBodyHtml = `
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          ${rw && l5Metrics.length ? `
+            <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(0,242,254,0.22);border-radius:10px;padding:12px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+                <strong style="font-size:12.5px;color:#00f2fe;">📈 Rolling Form Windows (Computed from Live Game Log)</strong>
+                <span style="font-size:10.5px;color:#94a3b8;">Source: Verified ESPN Game Log (${rw.last5.games}G${rw.last10 ? ` & ${rw.last10.games}G` : ''})</span>
+              </div>
+              <div class="table-responsive">
+                <table class="bball-table compact-table" style="font-size:12px;">
+                  <thead>
+                    <tr>
+                      <th>WINDOW</th>
+                      ${l5Metrics.map(([k]) => `<th>${esc(k)}</th>`).join('')}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="font-bold" style="color:#00f2fe;">Last ${rw.last5.games} Games</td>
+                      ${l5Metrics.map(([, v]) => `<td class="mono-cell font-bold">${esc(v)}</td>`).join('')}
+                    </tr>
+                    ${rw.last10 ? `
+                      <tr>
+                        <td class="font-bold" style="color:#a78bfa;">Last ${rw.last10.games} Games</td>
+                        ${l5Metrics.map(([k]) => `<td class="mono-cell">${esc(l10Metrics[k] ?? '-')}</td>`).join('')}
+                      </tr>
+                    ` : ''}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ` : '<div style="padding:12px;color:#94a3b8;font-size:12.5px;">Rolling L5/L10 trends require at least 2 logged games this season.</div>'}
+
+          ${dna && Array.isArray(dna.axes) ? `
+            <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(145,70,255,0.28);border-radius:10px;padding:12px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px;">
+                <strong style="font-size:12.5px;color:#c4b5fd;">🧬 Player DNA Statistical Fingerprint</strong>
+                <span style="font-size:10.5px;color:#fcd34d;">Derived Estimate (Normalized from Live Season Splits)</span>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
+                ${dna.axes.map((ax) => `
+                  <div style="background:rgba(0,0,0,0.35);border-radius:8px;padding:8px 10px;">
+                    <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:5px;">
+                      <strong style="color:#e2e8f0;">${esc(ax.label)}</strong>
+                      <span style="font-family:monospace;color:#00f2fe;">${esc(ax.rawLabel)} (${ax.score}/100)</span>
+                    </div>
+                    <div style="height:6px;background:#1e293b;border-radius:999px;overflow:hidden;">
+                      <div style="width:${ax.score}%;height:100%;background:linear-gradient(90deg,#9146ff,#00f2fe);"></div>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      `;
     } else {
       // Scouting, Rotowire, Fantasy & Awards tab
       const roto = data.rotowire;
@@ -2614,6 +2675,7 @@
           <button type="button" data-exp-tab="gamelog" style="padding:7px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid ${explorerState.tab === 'gamelog' ? '#9146ff' : 'rgba(255,255,255,0.12)'};background:${explorerState.tab === 'gamelog' ? 'linear-gradient(135deg,#9146ff,#6d28d9)' : 'rgba(255,255,255,0.04)'};color:#fff;">🗓️ Game Log (${(gl.games || []).length})</button>
           <button type="button" data-exp-tab="career" style="padding:7px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid ${explorerState.tab === 'career' ? '#9146ff' : 'rgba(255,255,255,0.12)'};background:${explorerState.tab === 'career' ? 'linear-gradient(135deg,#9146ff,#6d28d9)' : 'rgba(255,255,255,0.04)'};color:#fff;">📊 Career Stats (${statCats.length})</button>
           <button type="button" data-exp-tab="splits" style="padding:7px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid ${explorerState.tab === 'splits' ? '#9146ff' : 'rgba(255,255,255,0.12)'};background:${explorerState.tab === 'splits' ? 'linear-gradient(135deg,#9146ff,#6d28d9)' : 'rgba(255,255,255,0.04)'};color:#fff;">🔀 Splits (${splitCats.length})</button>
+          <button type="button" data-exp-tab="dna" style="padding:7px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid ${explorerState.tab === 'dna' ? '#9146ff' : 'rgba(255,255,255,0.12)'};background:${explorerState.tab === 'dna' ? 'linear-gradient(135deg,#9146ff,#6d28d9)' : 'rgba(255,255,255,0.04)'};color:#fff;">🧬 DNA &amp; Rolling Form</button>
           <button type="button" data-exp-tab="scouting" style="padding:7px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid ${explorerState.tab === 'scouting' ? '#9146ff' : 'rgba(255,255,255,0.12)'};background:${explorerState.tab === 'scouting' ? 'linear-gradient(135deg,#9146ff,#6d28d9)' : 'rgba(255,255,255,0.04)'};color:#fff;">📰 Scouting &amp; Awards</button>
         </div>
         ${tabBodyHtml}

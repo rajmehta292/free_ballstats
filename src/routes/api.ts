@@ -864,62 +864,108 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
   // ===========================================================================
   // OPEN FEDERATED SPORTS DATA GATEWAY (Zero-DB Live Normalization + CSV/JSON)
   // ===========================================================================
-  const sendCsvOrJson = (reply: any, payload: any, rows: any[], filename: string, format?: string) => {
-    if ((format || '').toLowerCase() === 'csv') {
+  const sendCsvOrJson = (
+    request: any,
+    reply: any,
+    payload: any,
+    rows: any[],
+    listKey: string | null,
+    filename: string,
+    opts?: { format?: string; fields?: string; limit?: string; offset?: string }
+  ) => {
+    const isCsv = (opts?.format || '').toLowerCase() === 'csv';
+    const apiKey = request.headers['x-api-key'] as string | undefined;
+    sportsDataGateway.recordApiUsage(request.routeOptions?.url || request.url, apiKey, isCsv);
+
+    const shaped = sportsDataGateway.shapeRows(rows, {
+      fields: opts?.fields,
+      limit: opts?.limit !== undefined ? Number(opts.limit) : undefined,
+      offset: opts?.offset !== undefined ? Number(opts.offset) : undefined,
+    });
+
+    if (isCsv) {
       reply.header('Content-Type', 'text/csv; charset=utf-8');
       reply.header('Content-Disposition', `attachment; filename="${filename}.csv"`);
-      return reply.send(sportsDataGateway.toCsv(rows));
+      return reply.send(sportsDataGateway.toCsv(shaped.items as any[]));
+    }
+
+    if (listKey && (opts?.fields || opts?.limit !== undefined || opts?.offset !== undefined)) {
+      return reply.send({
+        ...payload,
+        count: shaped.pagination.returned,
+        pagination: shaped.pagination,
+        [listKey]: shaped.items,
+      });
     }
     return reply.send(payload);
   };
 
+  fastify.get('/data/capabilities', {
+    schema: {
+      description: 'Discover supported sports, leagues, upstream providers, and exact endpoint capabilities',
+      tags: ['Open Sports Data API'],
+    },
+  }, async (_request, reply) => {
+    return reply.send(sportsDataGateway.getCapabilities());
+  });
+
+  fastify.get('/providers/health', {
+    schema: {
+      description: 'Live upstream provider health, circuit breaker states, latency metrics, cache stats, and API tier telemetry',
+      tags: ['Diagnostics', 'Open Sports Data API'],
+    },
+  }, async (_request, reply) => {
+    return reply.send(sportsDataGateway.getProviderHealth());
+  });
+
   fastify.get<{
     Params: { sport: string; league: string };
-    Querystring: { date?: string; format?: string };
+    Querystring: { date?: string; format?: string; fields?: string; limit?: string; offset?: string };
   }>('/data/scoreboard/:sport/:league', {
     schema: {
-      description: 'Live multi-sport scoreboard with odds/spreads, venue, broadcast, and optional CSV export (?format=csv)',
+      description: 'Live multi-sport scoreboard with odds/spreads, provenance, sparse ?fields=, pagination & ?format=csv',
       tags: ['Open Sports Data API'],
     },
   }, async (request, reply) => {
     const { sport, league } = request.params;
-    const { date, format } = request.query;
+    const { date, format, fields, limit, offset } = request.query;
     const payload = await sportsDataGateway.getScoreboard(sport, league, date);
-    return sendCsvOrJson(reply, payload, payload.events, `${league}_scoreboard`, format);
+    return sendCsvOrJson(request, reply, payload, payload.events, 'events', `${league}_scoreboard`, { format, fields, limit, offset });
   });
 
   fastify.get<{
     Params: { sport: string; league: string };
-    Querystring: { format?: string };
+    Querystring: { format?: string; fields?: string; limit?: string; offset?: string };
   }>('/data/standings/:sport/:league', {
     schema: {
-      description: 'Normalized live conference & league standings across NBA, WNBA, NFL, NHL, MLB, Soccer (?format=csv supported)',
+      description: 'Normalized live conference & league standings with NHL/MLB official failovers, ?fields=, pagination & ?format=csv',
       tags: ['Open Sports Data API'],
     },
   }, async (request, reply) => {
     const { sport, league } = request.params;
+    const { format, fields, limit, offset } = request.query;
     const payload = await sportsDataGateway.getStandings(sport, league);
-    return sendCsvOrJson(reply, payload, payload.teams, `${league}_standings`, request.query.format);
+    return sendCsvOrJson(request, reply, payload, payload.teams, 'teams', `${league}_standings`, { format, fields, limit, offset });
   });
 
   fastify.get<{
     Params: { sport: string; league: string };
-    Querystring: { team?: string; format?: string };
+    Querystring: { team?: string; format?: string; fields?: string; limit?: string; offset?: string };
   }>('/data/injuries/:sport/:league', {
     schema: {
-      description: 'Real-time league injury wire with team/player filter and CSV export (?team=BOS&format=csv)',
+      description: 'Real-time league injury wire with ?team=, sparse ?fields=, pagination & ?format=csv',
       tags: ['Open Sports Data API'],
     },
   }, async (request, reply) => {
     const { sport, league } = request.params;
-    const { team, format } = request.query;
+    const { team, format, fields, limit, offset } = request.query;
     const payload = await sportsDataGateway.getInjuries(sport, league, team);
-    return sendCsvOrJson(reply, payload, payload.injuries, `${league}_injuries`, format);
+    return sendCsvOrJson(request, reply, payload, payload.injuries, 'injuries', `${league}_injuries`, { format, fields, limit, offset });
   });
 
   fastify.get<{
     Params: { sport: string; league: string };
-    Querystring: { category?: string; format?: string };
+    Querystring: { category?: string; format?: string; fields?: string; limit?: string; offset?: string };
   }>('/data/leaders/:sport/:league', {
     schema: {
       description: 'Live multi-sport league statistical leaders across all categories (?format=csv flattens all leaders)',
@@ -927,13 +973,13 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
     },
   }, async (request, reply) => {
     const { sport, league } = request.params;
-    const { category, format } = request.query;
+    const { category, format, fields, limit, offset } = request.query;
     const payload = await sportsDataGateway.getLeaders(sport, league);
     const cats = category
       ? payload.categories.filter((c: any) => c.name.toLowerCase().includes(category.toLowerCase()) || c.abbreviation.toLowerCase() === category.toLowerCase())
       : payload.categories;
     const flatRows = cats.flatMap((c: any) => c.leaders.map((l: any) => ({ category: c.displayName, stat: c.abbreviation, ...l })));
-    return sendCsvOrJson(reply, { ...payload, categories: cats }, flatRows, `${league}_leaders`, format);
+    return sendCsvOrJson(request, reply, { ...payload, categories: cats }, flatRows, null, `${league}_leaders`, { format, fields, limit, offset });
   });
 
   fastify.get<{
@@ -945,6 +991,7 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
     },
   }, async (request, reply) => {
     const { sport, league, team_query } = request.params;
+    sportsDataGateway.recordApiUsage('/data/team/:sport/:league/:team_query', request.headers['x-api-key'] as string | undefined, false);
     try {
       const payload = await sportsDataGateway.getTeamHub(sport, league, team_query);
       return reply.send(payload);
@@ -954,8 +1001,28 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   fastify.get<{
+    Params: { teamA: string; teamB: string };
+    Querystring: { sport?: string; league?: string };
+  }>('/data/h2h/:teamA/:teamB', {
+    schema: {
+      description: 'Head-to-Head Matchup Intelligence Matrix combining standings, L5 form, depth charts, injuries & active odds',
+      tags: ['Open Sports Data API'],
+    },
+  }, async (request, reply) => {
+    const { teamA, teamB } = request.params;
+    const { sport, league } = request.query;
+    sportsDataGateway.recordApiUsage('/data/h2h/:teamA/:teamB', request.headers['x-api-key'] as string | undefined, false);
+    try {
+      const payload = await sportsDataGateway.getHeadToHeadIntel(teamA, teamB, sport, league);
+      return reply.send(payload);
+    } catch (err: any) {
+      return reply.status(404).send({ error: 'Not Found', message: err.message });
+    }
+  });
+
+  fastify.get<{
     Params: { event_id: string };
-    Querystring: { sport?: string; league?: string; format?: string };
+    Querystring: { sport?: string; league?: string; format?: string; fields?: string; limit?: string; offset?: string };
   }>('/data/pbp/:event_id', {
     schema: {
       description: 'Live Play-by-Play, Real XY Shot Coordinates, PBPStats Scoring Runs (>=8-0) & Win Probability Swings (?format=csv)',
@@ -963,9 +1030,10 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
     },
   }, async (request, reply) => {
     const { event_id } = request.params;
-    const { sport, league, format } = request.query;
+    const { sport, league, format, fields, limit, offset } = request.query;
     const payload = await sportsDataGateway.getPlayByPlayAnalytics(event_id, sport, league);
-    return sendCsvOrJson(reply, payload, payload.shotCoordinates.length ? payload.shotCoordinates : payload.recentPlays, `pbp_${event_id}`, format);
+    const listKey = payload.shotCoordinates.length ? 'shotCoordinates' : 'recentPlays';
+    return sendCsvOrJson(request, reply, payload, (payload as any)[listKey], listKey, `pbp_${event_id}`, { format, fields, limit, offset });
   });
 
   fastify.get<{
@@ -977,8 +1045,56 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
     },
   }, async (request, reply) => {
     const { q, sport } = request.query;
+    sportsDataGateway.recordApiUsage('/data/search', request.headers['x-api-key'] as string | undefined, false);
     const payload = await sportsDataGateway.searchAll(q || '', sport);
     return reply.send(payload);
+  });
+
+  /**
+   * GET /api/v1/live/scoreboard/:sport/:league
+   * Real-time Server-Sent Events (SSE) scoreboard push stream — emits updates only when scores/clocks change
+   */
+  fastify.get<{
+    Params: { sport: string; league: string };
+  }>('/live/scoreboard/:sport/:league', {
+    schema: {
+      description: 'Server-Sent Events (SSE) live scoreboard push stream emitting diffs when game scores/statuses change',
+      tags: ['Real-Time', 'Open Sports Data API'],
+    },
+  }, async (request, reply) => {
+    const { sport, league } = request.params;
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+    });
+
+    let lastHash = '';
+    const pushSnapshot = async (eventName = 'scoreboard_update') => {
+      try {
+        const sb = await sportsDataGateway.getScoreboard(sport, league);
+        const signature = JSON.stringify((sb.events || []).map((e: any) => `${e.eventId}:${e.homeScore}-${e.awayScore}:${e.statusDetail}`));
+        if (signature !== lastHash || eventName === 'connected') {
+          lastHash = signature;
+          reply.raw.write(`event: ${eventName}\ndata: ${JSON.stringify(sb)}\n\n`);
+        } else {
+          reply.raw.write(`: heartbeat ${Date.now()}\n\n`);
+        }
+      } catch {
+        reply.raw.write(`: upstream_retry ${Date.now()}\n\n`);
+      }
+    };
+
+    await pushSnapshot('connected');
+    const timer = setInterval(() => {
+      pushSnapshot('scoreboard_update');
+    }, 10000);
+
+    request.raw.on('close', () => {
+      clearInterval(timer);
+    });
+    return reply;
   });
 };
 

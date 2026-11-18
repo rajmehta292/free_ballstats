@@ -9,7 +9,7 @@
 [![Fastify](https://img.shields.io/badge/Fastify-5.2-000000.svg?style=for-the-badge&logo=fastify&logoColor=white)](https://fastify.dev/)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933.svg?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![Smart Screen](https://img.shields.io/badge/Smart_Screen-L--Bar_%7C_Glass_HUD_%7C_RedZone-f97316.svg?style=for-the-badge)](https://github.com/rajmehta292/free_ballstats)
-[![Tests](https://img.shields.io/badge/Tests-24%2F24_Passing-10b981.svg?style=for-the-badge)](./test/api.test.ts)
+[![Tests](https://img.shields.io/badge/Tests-37%2F37_Passing-10b981.svg?style=for-the-badge)](./test/api.test.ts)
 
 **A unified real-time sports streaming & analytics platform built with TypeScript, Fastify 5, HLS.js, SSE, Custom SVG Data Visualizations, and Multi-Source ESPN Telemetry.**
 
@@ -35,7 +35,7 @@
 - **Responsive Zero-Occlusion Smart Screen UI (`smart-screen.js`)**: Engineered a dual-mode broadcast overlay featuring **L-Bar Squeeze-Back (`72% × 78%` scaled video + right/bottom telemetry rails)**, **Translucent Glass HUD**, **Auto-Triggered Smart Cards**, **Smart Fullscreen**, and a **Persistent Mini-Player Dock** linking the player to the standalone Analytics Research Lab.
 - **NFL RedZone Many-to-One Command Center (`redzone-intel-service.ts`)**: Designed a real-time **Heat Ranking Engine (`0–100`)** across all 14 weekly NFL games combining Red Zone proximity, Goal-to-Go threats, 4th-quarter Witching Hour leverage, live Fantasy PPR pace scoring, Double-Box game pinning, a chronological TD/Turnover feed, and a client-side **anti-spoiler ring buffer (`0s / -15s / -30s`)**.
 - **Sport-Authentic Multi-Sport Analytics & Pre/Live/Post State Machine**: Eliminated cross-sport metric/roster leakage and `0-0` pre-game math singularities across 6+ leagues, dynamically swapping 100% sport-native **SVG spatial surfaces** (NBA Half-Court, Soccer Pitch `xG`, NFL 100-Yard Turf `EPA`, NHL Ice Rink `Corsi/xGF`) and four analytical pillars per sport.
-- **Automated Quality Gate (`24/24` Passing)**: Built an in-process HTTP route (`fastify.inject`) and deterministic analytics unit test suite using Node's native test runner (`node:test`) covering pre-game states, cross-sport isolation, RedZone Heat prioritization, player comparisons, and proxy/export pipelines.
+- **Automated Quality Gate (`37/37` Passing)**: Built an in-process HTTP route (`fastify.inject`) and deterministic analytics unit test suite using Node's native test runner (`node:test`) covering pre-game states, cross-sport isolation, RedZone Heat prioritization, player comparisons, federated gateway provenance & failover, SSRF proxy hardening, and export pipelines.
 
 ---
 
@@ -45,10 +45,10 @@
 | :--- | :--- | :--- |
 | **Runtime & Language** | **Node.js (>= 20.x)**, **TypeScript 5.7** (`ESM`), **tsx** | Strictly typed backend services, ES module builds, hot-reload dev workflows, and direct TypeScript test execution. |
 | **Web Server & API** | **Fastify 5.2**, `@fastify/cors`, `@fastify/static`, `@fastify/swagger`, `@fastify/swagger-ui` | High-throughput REST API gateway, static asset serving, and auto-generated OpenAPI `/docs` portal. |
-| **Streaming & Media** | **HLS.js (`1.5.7`)**, Custom `.m3u8`/`.ts` CORS Proxy, Native PiP API, Fullscreen API | Adaptive bitrate HLS video playback with quality selection, Theater Mode, Picture-in-Picture, and CORS header rewriting for third-party manifests. |
-| **Real-Time & Caching** | **Server-Sent Events (SSE)**, **`lru-cache` (`11.0.2`)**, **`dotenv`** | Multi-tier TTL caching (`12s` RedZone slate, `20s` gamecast intel, `1h` athlete bios) and push-based live match chat streams. |
-| **Frontend Architecture** | **Vanilla ES6+ Modules**, **CSS Grid / Flexbox**, **Inline Procedural SVG**, **`localStorage`** | Zero-build, low-latency client UI (`index.html`, `player.html`, `basketball.html`, `multiview.html`) with shared reusable telemetry/SVG components (`smart-screen.js`). |
-| **External Data APIs** | **ESPN Site API**, **ESPN Core / Athlete Statistics API**, **StreamFree Mirror Cluster** | Live scoreboards, play-by-play win probability, drives, box scores, season/career player splits, news, and redundant stream discovery. |
+| **Streaming & Media** | **HLS.js (`1.5.7`)**, SSRF-Hardened `.m3u8`/`.ts` CORS Proxy, Native PiP API, Fullscreen API | Adaptive bitrate HLS video playback with quality selection, Theater Mode, Picture-in-Picture, SSRF private/loopback IP blocking, and CORS header rewriting for third-party manifests. |
+| **Real-Time & Caching** | **Server-Sent Events (SSE)**, **`lru-cache` (`11.0.2`)**, Request Coalescing, **`dotenv`** | Multi-tier SWR LRU caching (`15s` live scoreboards, `300s` team/standings, `10m` stale-while-error fallback), in-flight promise deduplication, per-provider circuit breakers, and push-based live scoreboard & chat SSE streams. |
+| **Frontend Architecture** | **Vanilla ES6+ Modules**, **CSS Grid / Flexbox**, **Inline Procedural SVG**, **`localStorage`** | Zero-build, low-latency client UI (`index.html`, `player.html`, `basketball.html`, `multiview.html`, `api-explorer.html`) with shared reusable telemetry/SVG components (`smart-screen.js`). |
+| **External Data APIs** | **ESPN Site & Core APIs**, **Official NHL API (`api-web.nhle.com`)**, **Official MLB StatsAPI (`statsapi.mlb.com`)**, **TheSportsDB**, **StreamFree Mirror Cluster** | Zero-database federated sports telemetry: live scoreboards, standings, rosters, depth charts, play-by-play win probability, XY shot coordinates, career/rolling player splits, and redundant stream discovery. |
 | **Testing & QA** | **`node:test`**, **`node:assert/strict`**, `fastify.inject` | Fast deterministic unit + integration verification across all routes and edge cases without requiring external server startup. |
 
 ---
@@ -222,15 +222,16 @@ free_ballstats/
 │   ├── config.ts                              # Env config, StreamFree mirror pool, LRU TTL constants
 │   ├── types/stream.ts                        # Shared TypeScript interfaces for streams & sources
 │   ├── routes/
-│   │   ├── api.ts                             # Core REST endpoints (/streams, /intel, /redzone/intel, /basketball/*, /athlete/*)
+│   │   ├── api.ts                             # Core REST endpoints (/streams, /intel, /redzone/intel, /basketball/*, /athlete/*, /data/*, /live/scoreboard/*, /providers/health)
 │   │   ├── embed.ts                           # Clean responsive video embed wrapper
-│   │   ├── proxy.ts                           # CORS-enabled HLS (.m3u8) manifest & segment proxy
+│   │   ├── proxy.ts                           # SSRF-hardened CORS HLS (.m3u8) manifest & segment proxy
 │   │   ├── chat.ts                            # Real-time match chat & SSE subscription endpoints
 │   │   ├── export.ts                          # IPTV M3U & XMLTV EPG playlist exporters
 │   │   └── health.ts                          # Server uptime & health diagnostics
 │   ├── services/
+│   │   ├── sports-data-gateway.ts             # Zero-DB Federated Sports Data Gateway (ESPN + NHL/MLB/TheSportsDB failover, SWR LRU, coalescing, H2H, CSV)
 │   │   ├── redzone-intel-service.ts           # NFL RedZone Multi-Game Heat Engine, Event Feed, PPR Fantasy & Spotlight selector
-│   │   ├── sports-intel-service.ts            # Unified ESPN router, name matcher, selective summary hydration & athlete profiles
+│   │   ├── sports-intel-service.ts            # Unified ESPN router, name matcher, selective summary hydration & on-demand Athlete Bio/Splits/Rolling DNA
 │   │   ├── basketball-research-service.ts     # NBA Four Factors, xEFG%, GmSc, projected starters, Player Compare & NLP Query Engine
 │   │   ├── multi-sport-analytics-service.ts   # Sport-authentic analytics for Soccer, NFL, NCAAF, NHL & NCAAB
 │   │   ├── streamfree-client.ts               # Multi-mirror stream discovery with failover & caching
@@ -243,10 +244,11 @@ free_ballstats/
 │       ├── player.html                        # Pro HLS Player (Quality selector, Theater, PiP, Smart Screen HUD & Gamecast tabs)
 │       ├── basketball.html & js/basketball.js # Standalone Sports Research Lab & Persistent Mini-Player Dock
 │       ├── multiview.html & js/multiview.js   # 4-Screen Quad Split-Screen Matrix
-│       ├── js/smart-screen.js                 # Shared Smart Screen Controller (L-Bar, Glass HUD, Smart Cards, SVG surfaces & RedZone UI)
+│       ├── api-explorer.html                  # Interactive Open Sports Data API Hub & Multi-Language SDK Snippet Builder
+│       ├── js/smart-screen.js                 # Shared Smart Screen Controller (L-Bar, Glass HUD, Smart Cards, SVG surfaces, Athlete Explorer & RedZone UI)
 │       └── css/style.css                      # Unified dark-mode broadcast design system & responsive layouts
 ├── test/
-│   └── api.test.ts                            # 24 automated unit & HTTP injection tests covering all modules
+│   └── api.test.ts                            # 37 automated unit & HTTP injection tests covering all modules
 ├── docs/screenshots/                          # Product UI screenshots & architecture visuals
 └── package.json                               # Dependencies & TypeScript/test scripts
 ```
@@ -255,13 +257,28 @@ free_ballstats/
 
 ## 🔌 Complete REST & SSE API Specification
 
+### Federated Open Sports Data Gateway (`/api/v1/data/*`, `/api/v1/live/*`, `/api/v1/providers/*`)
+Zero-database federated endpoints with `provenance` metadata, per-provider circuit breakers, sparse `?fields=`, pagination (`?limit=`, `?offset=`), `?format=csv`, and optional `x-api-key` telemetry headers.
+| Method | Endpoint | Description |
+| :---: | :--- | :--- |
+| `GET` | `/api/v1/data/capabilities` | Machine-readable sport/league capability & failover provider matrix (`espn`, `nhl_official`, `mlb_official`, `thesportsdb`). |
+| `GET` | `/api/v1/providers/health` | Real-time provider circuit-breaker status, cache stats, and API request telemetry (`free` / `pro` tiers). |
+| `GET` | `/api/v1/data/scoreboard/:sport/:league` | Live multi-sport scoreboard + Vegas spread/O/U odds (`nhl_official` failover for NHL). Supports `?date=`, `?fields=`, `?limit=`, `?format=csv`. |
+| `GET` | `/api/v1/data/standings/:sport/:league` | Conference/division standings (`nhl_official` & `mlb_official` failovers + `?format=csv`). |
+| `GET` | `/api/v1/data/injuries/:sport/:league` | Live multi-sport injury wire (JSON & CSV). |
+| `GET` | `/api/v1/data/leaders/:sport/:league` | League statistical leaders (JSON & CSV). |
+| `GET` | `/api/v1/data/team/:sport/:league/:team` | Team 360 Hub: record, positional depth chart, active roster, injuries, and recent schedule. |
+| `GET` | `/api/v1/data/h2h/:teamA/:teamB` | **Head-to-Head Intelligence Matrix** merging standings, net diff, Last-5 form, active injuries, and derived analytical edge estimate. |
+| `GET` | `/api/v1/data/pbp/:sport/:league/:event_id` | Play-by-play timeline, scoring runs, and raw XY shot coordinates (`?format=csv`). |
+| `GET` | `/api/v1/live/scoreboard/:sport/:league` | Real-time **Server-Sent Events (SSE)** delta push stream for live scoreboards. |
+
 ### RedZone & Multi-Sport Live Intelligence
 | Method | Endpoint | Description |
 | :---: | :--- | :--- |
 | `GET` | `/api/v1/redzone/intel` | **NFL RedZone Multi-Game Slate**: Returns all NFL games ranked by RedZone Heat (`0–100`), rolling TD/Turnover/RedZone Event Feed, Fantasy PPR leaderboard, and hydrated spotlight intel. Supports `?pinnedEventId=` & `?pinnedB=`. |
 | `GET` | `/api/v1/intel/:stream_key` | Unified live Gamecast intel for any stream (Scoreboard, Linescore, Win Probability, Box Score, Rosters, Leaders, Scoring Timeline, News, plus `redzoneIntel` when watching RedZone). |
 | `GET` | `/api/v1/basketball/smart-hud/:stream_key` | Smart Screen L-Bar & Glass HUD payload supporting `basketball`, `nfl_redzone`, `soccer`, `nfl`, `ncaaf`, `hockey`, and `ncaab`. |
-| `GET` | `/api/v1/athlete/:sport/:league/:athlete_id` | Athlete bio card, physical profile, college/draft info, and statistical splits. |
+| `GET` | `/api/v1/athlete/:sport/:league/:athlete_id` | On-demand Athlete Explorer: bio, career year-by-year stats, full gamelog, situational splits, computed **L5/L10 Rolling Form**, and derived **6-Axis Player DNA**. |
 
 ### Basketball Research Engine (`/api/v1/basketball/*`)
 | Method | Endpoint | Description |
@@ -301,6 +318,7 @@ The platform launches at **`http://localhost:3000`**:
 - 🎮 **Live Sports Hub**: `http://localhost:3000/`
 - 📺 **Pro Player (Smart Screen + RedZone Command Center)**: `http://localhost:3000/player.html?key=redzone&category=football`
 - 🏀 **Basketball & Sports Research Lab**: `http://localhost:3000/basketball.html`
+- 🔌 **Open Sports Data API Hub**: `http://localhost:3000/api-explorer.html`
 - 🔲 **4-Screen Multi-View Matrix**: `http://localhost:3000/multiview.html`
 - 📚 **Swagger / OpenAPI Docs**: `http://localhost:3000/docs`
 
@@ -308,7 +326,7 @@ The platform launches at **`http://localhost:3000`**:
 ```bash
 npm test
 ```
-Executes all **24 tests** in [`test/api.test.ts`](./test/api.test.ts), verifying stream CRUD & filtering, HLS proxying, IPTV/XMLTV exports, multi-sport isolation (`Soccer`, `NFL`, `NCAAF`, `NHL`, `NCAAB`), NBA `0-0` pre-game boundary handling, RedZone Heat Engine ranking & Fantasy PPR telemetry, and `/api/v1/redzone/intel` routes.
+Executes all **37 tests** in [`test/api.test.ts`](./test/api.test.ts), verifying stream CRUD & filtering, SSRF-hardened HLS proxying, IPTV/XMLTV exports, multi-sport isolation (`Soccer`, `NFL`, `NCAAF`, `NHL`, `NCAAB`), NBA `0-0` pre-game boundary handling, RedZone Heat Engine ranking & Fantasy PPR telemetry, Federated Open Data Gateway provenance/capabilities/health/sparse-fields/H2H intel, and on-demand Athlete DNA & Rolling Form.
 
 ---
 

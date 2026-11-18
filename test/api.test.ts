@@ -824,6 +824,61 @@ test('StreamFree API Streamer Suite', async (t) => {
     assert.ok(hubPage.body.includes('Unified Open Sports Data API'));
   });
 
+  await t.test('Proxy SSRF guard blocks loopback and cloud metadata URLs cleanly', async () => {
+    const loopbackRes = await server.inject({
+      method: 'GET',
+      url: '/api/v1/proxy/m3u8?url=http://127.0.0.1:3000/health',
+    });
+    assert.equal(loopbackRes.statusCode, 400);
+
+    const metadataRes = await server.inject({
+      method: 'GET',
+      url: '/api/v1/proxy/segment?url=http://169.254.169.254/latest/meta-data',
+    });
+    assert.equal(metadataRes.statusCode, 400);
+  });
+
+  await t.test('Federated Gateway provenance, capability matrix, provider health, sparse fields, H2H intel & Athlete DNA/Rolling Form', async () => {
+    const capRes = await server.inject({ method: 'GET', url: '/api/v1/data/capabilities' });
+    assert.equal(capRes.statusCode, 200);
+    const cap = capRes.json();
+    assert.ok(Array.isArray(cap.leagues) && cap.leagues.length >= 6, 'Expected multi-sport capability matrix');
+    assert.ok(cap.features && cap.features.sparseFieldSelection && cap.features.liveSseScoreboard);
+    assert.ok(cap.leagues.some((l: any) => Array.isArray(l.providers) && l.providers.includes('nhl_official')));
+
+    const healthRes = await server.inject({ method: 'GET', url: '/api/v1/providers/health' });
+    assert.equal(healthRes.statusCode, 200);
+    const health = healthRes.json();
+    assert.ok(Array.isArray(health.providers) && health.providers.length >= 4);
+
+    const sparseRes = await server.inject({
+      method: 'GET',
+      url: '/api/v1/data/scoreboard/basketball/nba?fields=eventId,name&limit=2',
+      headers: { 'x-api-key': 'test-client-key' },
+    });
+    assert.equal(sparseRes.statusCode, 200);
+    const sparse = sparseRes.json();
+    assert.ok(sparse.provenance && sparse.provenance.provider && sparse.provenance.cacheStatus);
+    assert.ok(Array.isArray(sparse.events) && sparse.events.length <= 2);
+    if (sparse.events.length > 0) {
+      assert.ok('eventId' in sparse.events[0] && 'name' in sparse.events[0]);
+      assert.equal('venue' in sparse.events[0], false, 'Sparse fields filter should omit unrequested fields');
+    }
+
+    const h2hRes = await server.inject({ method: 'GET', url: '/api/v1/data/h2h/BOS/CLE' });
+    assert.equal(h2hRes.statusCode, 200);
+    const h2h = h2hRes.json();
+    assert.ok(h2h.teamA && h2h.teamB && typeof h2h.modelEdgeSummary === 'string');
+    assert.equal(h2h.provenance?.confidence, 'estimated');
+
+    const athRes = await server.inject({ method: 'GET', url: '/api/v1/athlete/basketball/nba/5175643' });
+    assert.equal(athRes.statusCode, 200);
+    const ath = athRes.json();
+    assert.ok(ath.rollingWindows && ath.rollingWindows.provenance === 'computed_from_verified_gamelog');
+    assert.ok(ath.playerDna && ath.playerDna.provenance === 'derived_estimate_from_season_stats');
+    assert.ok(Array.isArray(ath.playerDna.axes) && ath.playerDna.axes.length === 6);
+  });
+
   await server.close();
 });
 

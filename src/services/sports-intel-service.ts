@@ -169,6 +169,15 @@ export interface AthleteProfileDetails {
   rotowire?: { headline?: string; story?: string; description?: string; published?: string };
   awards?: string[];
   fantasy?: { draftRank?: string; positionRank?: string; percentOwned?: string };
+  rollingWindows?: {
+    provenance: 'computed_from_verified_gamelog';
+    last5?: { games: number; metrics: Record<string, number> };
+    last10?: { games: number; metrics: Record<string, number> };
+  };
+  playerDna?: {
+    provenance: 'derived_estimate_from_season_stats';
+    axes: Array<{ label: string; score: number; rawLabel: string }>;
+  };
 }
 
 class SportsIntelService {
@@ -458,6 +467,66 @@ class SportsIntelService {
 
       const draftText = a.draft?.displayText || (a.debutYear ? `Debuted ${a.debutYear}` : undefined);
 
+      // Compute genuine Rolling Last-5 & Last-10 game-log averages directly from live ESPN gameLog rows
+      const computeWindowAvg = (sliceGames: typeof parsedGames) => {
+        if (!sliceGames.length || !glLabels.length) return undefined;
+        const sums: Record<string, number> = {};
+        const counts: Record<string, number> = {};
+        for (const g of sliceGames) {
+          glLabels.forEach((lbl, idx) => {
+            const raw = g.stats[idx];
+            if (raw === undefined || String(raw).includes('-')) return;
+            const n = parseFloat(String(raw));
+            if (Number.isFinite(n)) {
+              sums[lbl] = (sums[lbl] || 0) + n;
+              counts[lbl] = (counts[lbl] || 0) + 1;
+            }
+          });
+        }
+        const metrics: Record<string, number> = {};
+        for (const [k, sum] of Object.entries(sums)) {
+          metrics[k] = Number((sum / (counts[k] || 1)).toFixed(1));
+        }
+        return { games: sliceGames.length, metrics };
+      };
+
+      const rollingWindows: AthleteProfileDetails['rollingWindows'] | undefined = parsedGames.length >= 2
+        ? {
+            provenance: 'computed_from_verified_gamelog',
+            last5: computeWindowAvg(parsedGames.slice(0, 5)),
+            last10: parsedGames.length >= 6 ? computeWindowAvg(parsedGames.slice(0, 10)) : undefined,
+          }
+        : undefined;
+
+      // Compute Player DNA fingerprint for basketball when season averages exist (explicitly marked derived estimate)
+      let playerDna: AthleteProfileDetails['playerDna'] | undefined;
+      if (cleanSport === 'basketball' && ovRegSplit?.stats?.length) {
+        const num = (lbl: string) => {
+          const i = ovLabels.indexOf(lbl);
+          return i >= 0 ? parseFloat(String(ovRegSplit.stats[i] || '0')) || 0 : 0;
+        };
+        const clamp100 = (v: number) => Math.max(12, Math.min(99, Math.round(v)));
+        const pts = num('PTS');
+        const reb = num('REB');
+        const ast = num('AST');
+        const fg = num('FG%');
+        const tp = num('3P%');
+        const stl = num('STL');
+        const blk = num('BLK');
+        const min = num('MIN');
+        playerDna = {
+          provenance: 'derived_estimate_from_season_stats',
+          axes: [
+            { label: 'Scoring Volume', score: clamp100((pts / 32) * 95), rawLabel: `${pts} PPG` },
+            { label: 'Shooting Touch', score: clamp100(((fg * 0.55 + tp * 0.45) / 55) * 90), rawLabel: `${fg}% FG • ${tp}% 3P` },
+            { label: 'Playmaking', score: clamp100((ast / 9.5) * 95), rawLabel: `${ast} APG` },
+            { label: 'Glass / Rebounding', score: clamp100((reb / 12) * 95), rawLabel: `${reb} RPG` },
+            { label: 'Two-Way Stocks', score: clamp100(((stl + blk) / 3.0) * 92), rawLabel: `${(stl + blk).toFixed(1)} STL+BLK` },
+            { label: 'Rotation Load', score: clamp100((min / 36) * 95), rawLabel: `${min} MPG` },
+          ],
+        };
+      }
+
       const profile: AthleteProfileDetails = {
         id: athleteId,
         name: a.displayName || `${a.firstName || ''} ${a.lastName || ''}`.trim() || curatedNba?.name || 'Player Profile',
@@ -498,6 +567,8 @@ class SportsIntelService {
         rotowire,
         awards,
         fantasy,
+        rollingWindows,
+        playerDna,
       };
 
       return profile;
