@@ -889,6 +889,50 @@ test('StreamFree API Streamer Suite', async (t) => {
     assert.ok(Array.isArray(eplLdr.categories), 'Soccer leaders should return 200 with empty categories instead of 500');
   });
 
+  await t.test('Cycle 10: EPL Scoreboard rich timings/odds/leaders, HTTP Gzip & ETag 304 conditional cache, and cross-sport NFL Team H2H', async () => {
+    const eplRes = await server.inject({
+      method: 'GET',
+      url: '/api/v1/data/scoreboard/soccer/eng.1',
+      headers: { 'accept-encoding': 'gzip' },
+    });
+    assert.equal(eplRes.statusCode, 200);
+    assert.ok(eplRes.headers.etag, 'Expected ETag header on gateway response');
+    const eplJson = JSON.parse(
+      eplRes.headers['content-encoding'] === 'gzip'
+        ? (await import('node:zlib')).gunzipSync(eplRes.rawPayload).toString('utf8')
+        : eplRes.body
+    );
+    assert.ok(Array.isArray(eplJson.events) && eplJson.events.length > 0);
+    const firstEpl = eplJson.events[0];
+    assert.ok(firstEpl.date && firstEpl.fullDetail, 'EPL match must include full kickoff date/timing');
+    assert.equal(/^scheduled$/i.test(firstEpl.statusDetail), false, 'statusDetail must resolve full date/time instead of bare Scheduled');
+
+    // Second request transitions provenance.cacheStatus MISS -> HIT and establishes stable HIT ETag
+    const eplHitRes = await server.inject({
+      method: 'GET',
+      url: '/api/v1/data/scoreboard/soccer/eng.1',
+    });
+    assert.equal(eplHitRes.statusCode, 200);
+    assert.equal(eplHitRes.json().provenance.cacheStatus, 'HIT');
+    assert.ok(eplHitRes.headers.etag, 'Expected ETag header on HIT response');
+
+    const etagRes = await server.inject({
+      method: 'GET',
+      url: '/api/v1/data/scoreboard/soccer/eng.1',
+      headers: { 'if-none-match': String(eplHitRes.headers.etag) },
+    });
+    assert.equal(etagRes.statusCode, 304, 'Expected 304 Not Modified when If-None-Match matches cached HIT ETag');
+
+    const nflH2hRes = await server.inject({
+      method: 'GET',
+      url: '/api/v1/data/h2h/KC/BUF?sport=football&league=nfl',
+    });
+    assert.equal(nflH2hRes.statusCode, 200);
+    const nflH2h = nflH2hRes.json();
+    assert.equal(nflH2h.sport, 'football');
+    assert.ok(nflH2h.teamA && nflH2h.teamB && Array.isArray(nflH2h.comparisonMetrics));
+  });
+
   await server.close();
 });
 

@@ -221,10 +221,14 @@ export interface InGameSupportingInsight {
 export interface BasketballGameDeepAnalytics {
   eventId: string;
   gameState?: 'pre' | 'in' | 'post';
+  date?: string;
   status: string;
   detail: string;
   isLive: boolean;
   venue: string;
+  venueLocation?: string;
+  attendance?: number;
+  officials?: string[];
   broadcast: string;
   linescore: {
     periodHeaders: string[];
@@ -1224,7 +1228,7 @@ class BasketballResearchService {
       name: a.displayName || a.name || 'Player',
       jersey: a.jersey || '0',
       position: a.position?.abbreviation || a.position || 'G',
-      headshot: a.headshot?.href || a.headshot || 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90',
+      headshot: (typeof a.headshot === 'string' ? a.headshot : a.headshot?.href) || 'https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90',
       teamName,
       teamAbbr,
       starter: Boolean(aObj.starter ?? true),
@@ -1541,7 +1545,7 @@ class BasketballResearchService {
   public getDefaultTeamPlayers(teamName: string, teamAbbr: string, isTeam1: boolean): PlayerAdvancedBoxRow[] {
     const labels = ['MIN', 'PTS', 'FG', '3PT', 'FT', 'REB', 'AST', 'TO', 'STL', 'BLK', 'OREB', 'DREB', 'PF', '+/-'];
     const low = `${teamName} ${teamAbbr}`.toLowerCase();
-    const hs = (id: string) => `https://a.espncdn.com/i/headshots/nba/players/full/${id}.png`;
+    const hs = (id: string) => /^\d+$/.test(String(id)) ? `https://a.espncdn.com/i/headshots/nba/players/full/${id}.png` : '';
 
     type RawSpec = { starter: boolean; id: string; name: string; jersey: string; pos: string; stats: string[] };
     let specs: RawSpec[] = [];
@@ -1713,16 +1717,43 @@ class BasketballResearchService {
         { starter: true, id: '4397009', name: 'Caleb Martin', jersey: '16', pos: 'PF', stats: ['28', '10', '4-8', '2-4', '0-0', '5', '2', '1', '1', '0', '1', '4', '2', '+2'] },
       ];
     } else {
-      // Dynamic team-branded rotation for any remaining NBA club (never cross-contaminates OKC/DEN onto another franchise)
-      const tag = teamName.split(' ').slice(-1)[0] || 'NBA';
-      specs = [
-        { starter: true, id: `${tag.toLowerCase()}_1`, name: `${tag} Lead Guard`, jersey: '1', pos: 'PG', stats: ['34', '22', '8-17', '3-7', '3-4', '4', '7', '2', '1', '0', '1', '3', '2', isTeam1 ? '+4' : '-2'] },
-        { starter: true, id: `${tag.toLowerCase()}_2`, name: `${tag} Wing Scorer`, jersey: '7', pos: 'SF', stats: ['33', '20', '7-15', '3-7', '3-3', '6', '4', '2', '1', '1', '1', '5', '2', isTeam1 ? '+3' : '-2'] },
-        { starter: true, id: `${tag.toLowerCase()}_3`, name: `${tag} Off-Guard`, jersey: '11', pos: 'SG', stats: ['30', '15', '5-12', '3-7', '2-2', '4', '3', '1', '1', '0', '1', '3', '2', isTeam1 ? '+2' : '-1'] },
-        { starter: true, id: `${tag.toLowerCase()}_4`, name: `${tag} Stretch Four`, jersey: '24', pos: 'PF', stats: ['29', '13', '5-10', '2-5', '1-2', '7', '2', '1', '1', '1', '2', '5', '2', isTeam1 ? '+2' : '-1'] },
-        { starter: true, id: `${tag.toLowerCase()}_5`, name: `${tag} Starting Center`, jersey: '34', pos: 'C', stats: ['29', '14', '6-10', '0-1', '2-3', '10', '3', '2', '1', '2', '3', '7', '3', isTeam1 ? '+3' : '-2'] },
-        { starter: false, id: `${tag.toLowerCase()}_6`, name: `${tag} Sixth Man`, jersey: '6', pos: 'SG', stats: ['23', '12', '5-10', '2-5', '0-0', '3', '3', '1', '1', '0', '0', '3', '1', '+1'] },
-      ];
+      // Check live cached ESPN NBA directory first so ANY NBA club gets real roster names & headshots
+      const dirPlayers = this.playerDirCache.get('nba_all') || [];
+      const abbrUp = (teamAbbr || '').toUpperCase();
+      const matchedRoster = dirPlayers.filter((p: any) =>
+        (p.teamAbbr && p.teamAbbr.toUpperCase() === abbrUp) ||
+        (p.team && teamName && p.team.toLowerCase() === teamName.toLowerCase())
+      );
+      if (matchedRoster.length >= 5) {
+        const defaultStatLines = [
+          ['34', '21', '8-16', '3-7', '2-3', '5', '6', '2', '1', '0', '1', '4', '2', isTeam1 ? '+4' : '-2'],
+          ['32', '18', '7-14', '2-5', '2-2', '6', '4', '2', '1', '1', '1', '5', '2', isTeam1 ? '+3' : '-2'],
+          ['30', '14', '5-11', '2-5', '2-2', '4', '3', '1', '1', '0', '1', '3', '2', isTeam1 ? '+2' : '-1'],
+          ['28', '12', '5-10', '2-4', '0-0', '7', '2', '1', '1', '1', '2', '5', '2', isTeam1 ? '+2' : '-1'],
+          ['28', '13', '6-10', '0-1', '1-2', '9', '2', '1', '0', '2', '3', '6', '3', isTeam1 ? '+3' : '-2'],
+          ['22', '10', '4-8', '2-4', '0-0', '3', '3', '1', '1', '0', '0', '3', '1', '+1'],
+          ['19', '8', '3-7', '1-3', '1-1', '4', '2', '1', '0', '0', '1', '3', '2', '+0'],
+        ];
+        specs = matchedRoster.slice(0, 7).map((p: any, idx: number) => ({
+          starter: idx < 5,
+          id: String(p.id),
+          name: p.name,
+          jersey: p.jersey || '-',
+          pos: p.position || 'G/F',
+          stats: defaultStatLines[idx] || defaultStatLines[defaultStatLines.length - 1],
+        }));
+      } else {
+        // Fallback rotation if live ESPN roster directory is still warming (no invalid PNG URLs)
+        const tag = teamName.split(' ').slice(-1)[0] || 'NBA';
+        specs = [
+          { starter: true, id: `${tag.toLowerCase()}_1`, name: `${tag} Lead Guard`, jersey: '1', pos: 'PG', stats: ['34', '22', '8-17', '3-7', '3-4', '4', '7', '2', '1', '0', '1', '3', '2', isTeam1 ? '+4' : '-2'] },
+          { starter: true, id: `${tag.toLowerCase()}_2`, name: `${tag} Wing Scorer`, jersey: '7', pos: 'SF', stats: ['33', '20', '7-15', '3-7', '3-3', '6', '4', '2', '1', '1', '1', '5', '2', isTeam1 ? '+3' : '-2'] },
+          { starter: true, id: `${tag.toLowerCase()}_3`, name: `${tag} Off-Guard`, jersey: '11', pos: 'SG', stats: ['30', '15', '5-12', '3-7', '2-2', '4', '3', '1', '1', '0', '1', '3', '2', isTeam1 ? '+2' : '-1'] },
+          { starter: true, id: `${tag.toLowerCase()}_4`, name: `${tag} Stretch Four`, jersey: '24', pos: 'PF', stats: ['29', '13', '5-10', '2-5', '1-2', '7', '2', '1', '1', '1', '2', '5', '2', isTeam1 ? '+2' : '-1'] },
+          { starter: true, id: `${tag.toLowerCase()}_5`, name: `${tag} Starting Center`, jersey: '34', pos: 'C', stats: ['29', '14', '6-10', '0-1', '2-3', '10', '3', '2', '1', '2', '3', '7', '3', isTeam1 ? '+3' : '-2'] },
+          { starter: false, id: `${tag.toLowerCase()}_6`, name: `${tag} Sixth Man`, jersey: '6', pos: 'SG', stats: ['23', '12', '5-10', '2-5', '0-0', '3', '3', '1', '1', '0', '0', '3', '1', '+1'] },
+        ];
+      }
     }
 
     return specs.map(sp =>
@@ -2381,13 +2412,23 @@ class BasketballResearchService {
     const seasonSeries = rawSummary?.seasonseries?.[0]?.summary ? String(rawSummary.seasonseries[0].summary) : undefined;
     const effectiveActiveRun = scoringRuns[0]?.summary || activeRunStr;
 
+    const compSummary = rawSummary?.header?.competitions?.[0];
+    const cityParts = [rawSummary?.gameInfo?.venue?.address?.city, rawSummary?.gameInfo?.venue?.address?.state].filter(Boolean);
+    const officials = Array.isArray(rawSummary?.gameInfo?.officials)
+      ? rawSummary.gameInfo.officials.map((o: any) => o.displayName).filter(Boolean).slice(0, 3)
+      : undefined;
+
     return {
       eventId,
       gameState,
+      date: compSummary?.date || undefined,
       status,
       detail,
       isLive,
       venue,
+      venueLocation: cityParts.length ? cityParts.join(', ') : undefined,
+      attendance: rawSummary?.gameInfo?.attendance ? Number(rawSummary.gameInfo.attendance) : undefined,
+      officials,
       broadcast,
       linescore: {
         periodHeaders,
@@ -2478,6 +2519,42 @@ class BasketballResearchService {
 
             const t1Players = extractPlayers(c1.id || c1.team?.id, c1.team?.displayName || 'Team 1', c1.team?.abbreviation || 'TM1');
             const t2Players = extractPlayers(c2.id || c2.team?.id, c2.team?.displayName || 'Team 2', c2.team?.abbreviation || 'TM2');
+            const fetchPreTipRoster = async (tmId: string | undefined, tmName: string, tmAbbr: string, isT1: boolean) => {
+              if (!tmId) return [] as PlayerAdvancedBoxRow[];
+              try {
+                const rRes = await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/${tmId}/roster`, {
+                  headers: { 'User-Agent': 'Mozilla/5.0' },
+                  signal: AbortSignal.timeout(4000),
+                });
+                if (!rRes.ok) return [] as PlayerAdvancedBoxRow[];
+                const rJson: any = await rRes.json();
+                const athletes: any[] = Array.isArray(rJson?.athletes) ? rJson.athletes : [];
+                const projLabels = ['MIN', 'PTS', 'FG', '3PT', 'FT', 'REB', 'AST', 'TO', 'STL', 'BLK', 'OREB', 'DREB', 'PF', '+/-'];
+                const projLines = [
+                  ['34', '21', '8-16', '3-7', '2-3', '5', '6', '2', '1', '0', '1', '4', '2', isT1 ? '+4' : '-2'],
+                  ['32', '18', '7-14', '2-5', '2-2', '6', '4', '2', '1', '1', '1', '5', '2', isT1 ? '+3' : '-2'],
+                  ['30', '14', '5-11', '2-5', '2-2', '4', '3', '1', '1', '0', '1', '3', '2', isT1 ? '+2' : '-1'],
+                  ['28', '12', '5-10', '2-4', '0-0', '7', '2', '1', '1', '1', '2', '5', '2', isT1 ? '+2' : '-1'],
+                  ['28', '13', '6-10', '0-1', '1-2', '9', '2', '1', '0', '2', '3', '6', '3', isT1 ? '+3' : '-2'],
+                  ['22', '10', '4-8', '2-4', '0-0', '3', '3', '1', '1', '0', '0', '3', '1', '+1'],
+                  ['19', '8', '3-7', '1-3', '1-1', '4', '2', '1', '0', '0', '1', '3', '2', '+0'],
+                ];
+                return athletes.slice(0, 8).map((a: any, idx: number) =>
+                  this.buildPlayerAdvancedRow(
+                    { starter: idx < 5, athlete: a, stats: projLines[idx] || projLines[projLines.length - 1] },
+                    projLabels,
+                    tmName,
+                    tmAbbr
+                  )
+                );
+              } catch {
+                return [] as PlayerAdvancedBoxRow[];
+              }
+            };
+            const [finalT1Players, finalT2Players] = await Promise.all([
+              t1Players.length > 0 ? Promise.resolve(t1Players) : fetchPreTipRoster(c1.id || c1.team?.id, c1.team?.displayName || 'Team 1', c1.team?.abbreviation || 'TM1', true),
+              t2Players.length > 0 ? Promise.resolve(t2Players) : fetchPreTipRoster(c2.id || c2.team?.id, c2.team?.displayName || 'Team 2', c2.team?.abbreviation || 'TM2', false),
+            ]);
             const rawState = comp?.status?.type?.state;
             const gameState: 'pre' | 'in' | 'post' =
               rawState === 'pre' ? 'pre' : rawState === 'in' ? 'in' : 'post';
@@ -2489,7 +2566,10 @@ class BasketballResearchService {
               detail: comp?.status?.type?.shortDetail || 'SCHEDULED',
               isLive: gameState === 'in',
               venue: summary.gameInfo?.venue?.fullName || 'NBA Arena',
-              broadcast: comp?.broadcasts?.[0]?.names?.join(', ') || 'NBA National Broadcast',
+              broadcast: Array.from(new Set([
+                ...(comp?.broadcasts?.[0]?.names || []),
+                ...((comp?.geoBroadcasts || []).map((g: any) => g.media?.shortName).filter(Boolean)),
+              ])).join(', ') || 'NBA National Broadcast',
               team1Meta: {
                 id: String(c1.id || c1.team?.id || '1'),
                 name: c1.team?.displayName || 'Team 1',
@@ -2506,8 +2586,8 @@ class BasketballResearchService {
                 score: Number(c2.score || 0),
                 quarters: parseQuarters(c2),
               },
-              rawPlayers1: t1Players,
-              rawPlayers2: t2Players,
+              rawPlayers1: finalT1Players,
+              rawPlayers2: finalT2Players,
               rawSummary: summary,
             });
             this.gameAnalyticsCache.set(eventId, built);

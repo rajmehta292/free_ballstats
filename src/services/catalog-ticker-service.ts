@@ -79,6 +79,7 @@ async function fetchJsonSafe(url: string): Promise<any | null> {
 
 class CatalogTickerService {
   private cache: LRUCache<string, CatalogLiveContextPayload>;
+  private lastKnownGood: CatalogLiveContextPayload | null = null;
   private inFlight: Promise<CatalogLiveContextPayload> | null = null;
 
   constructor() {
@@ -96,12 +97,13 @@ class CatalogTickerService {
     this.inFlight = this.buildLiveContext(streams)
       .then((res) => {
         this.cache.set('global', res);
+        this.lastKnownGood = res;
         this.inFlight = null;
         return res;
       })
       .catch(() => {
         this.inFlight = null;
-        return {
+        return this.lastKnownGood || {
           updatedAt: new Date().toISOString(),
           tickers: {},
           sportHighlights: {},
@@ -112,6 +114,17 @@ class CatalogTickerService {
   }
 
   private async buildLiveContext(streams: StreamItem[]): Promise<CatalogLiveContextPayload> {
+    // Demand-driven category detection for heavy team-sport scoreboards; UFC/F1/ATP highlights always stay hydrated
+    const cats = new Set(streams.map((s) => (s.category || '').toLowerCase()));
+    const textAll = streams.map((s) => `${s.name} ${s.league}`.toLowerCase()).join(' | ');
+    const needsBasketball = cats.has('basketball') || textAll.includes('nba') || textAll.includes('ncaa');
+    const needsFootball = cats.has('football') || textAll.includes('nfl') || textAll.includes('redzone');
+    const needsHockey = cats.has('hockey') || textAll.includes('nhl');
+    const needsBaseball = cats.has('baseball') || textAll.includes('mlb');
+    const needsSoccer = cats.has('soccer') || textAll.includes('premier') || textAll.includes('champions');
+
+    const optFetch = (cond: boolean, url: string) => cond ? fetchJsonSafe(url) : Promise.resolve(null);
+
     const [
       nbaSb,
       nflSb,
@@ -127,15 +140,15 @@ class CatalogTickerService {
       f1Standings,
       atpSb,
     ] = await Promise.all([
-      fetchJsonSafe('https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard'),
-      fetchJsonSafe('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard'),
-      fetchJsonSafe('https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard'),
-      fetchJsonSafe('https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard'),
-      fetchJsonSafe('https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard'),
-      fetchJsonSafe('https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard'),
-      fetchJsonSafe('https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard'),
-      fetchJsonSafe('https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.champions/scoreboard'),
-      fetchJsonSafe('https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/scoreboard'),
+      optFetch(needsBasketball, 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard'),
+      optFetch(needsFootball, 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard'),
+      optFetch(needsHockey, 'https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard'),
+      optFetch(needsBaseball, 'https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard'),
+      optFetch(needsBasketball, 'https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard'),
+      optFetch(needsFootball, 'https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard'),
+      optFetch(needsSoccer, 'https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard'),
+      optFetch(needsSoccer, 'https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.champions/scoreboard'),
+      optFetch(needsSoccer, 'https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/scoreboard'),
       fetchJsonSafe('https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard'),
       fetchJsonSafe('https://site.api.espn.com/apis/site/v2/sports/racing/f1/scoreboard'),
       fetchJsonSafe('https://site.api.espn.com/apis/v2/sports/racing/f1/standings'),
@@ -337,7 +350,14 @@ class CatalogTickerService {
 
         const rawState = ev.status?.type?.state;
         const st: 'pre' | 'in' | 'post' = rawState === 'pre' ? 'pre' : rawState === 'in' ? 'in' : 'post';
-        const shortDetail = ev.status?.type?.shortDetail || 'Scheduled';
+        const rawShort = ev.status?.type?.shortDetail || 'Scheduled';
+        const shortDetail = /^scheduled$/i.test(rawShort.trim())
+          ? (ev.status?.type?.detail || rawShort)
+          : rawShort;
+        const bcNames = Array.from(new Set([
+          ...(comp.broadcasts?.[0]?.names || []),
+          ...((comp.geoBroadcasts || []).map((g: any) => g.media?.shortName).filter(Boolean)),
+        ])).slice(0, 2).join(', ');
 
         const a1 = c1?.team?.abbreviation || 'TM1';
         const a2 = c2?.team?.abbreviation || 'TM2';
@@ -356,7 +376,7 @@ class CatalogTickerService {
           : st === 'in' && sit.downDistanceText
           ? `${shortDetail} • ${sit.downDistanceText}`
           : st === 'pre'
-          ? `Tipoff / Kickoff: ${shortDetail}${comp.odds?.[0]?.details ? ` • ${comp.odds[0].details}` : ''}`
+          ? `🕒 ${shortDetail}${comp.odds?.[0]?.details ? ` • ${comp.odds[0].details}` : ''}${bcNames ? ` • 📺 ${bcNames}` : ''}`
           : `${shortDetail}${comp.venue?.address?.city ? ` • ${comp.venue.address.city}` : ''}`;
 
         tickers[s.stream_key] = {

@@ -469,6 +469,11 @@ function renderStreams() {
             <a href="/player.html?key=${encodeURIComponent(stream.stream_key)}&category=${encodeURIComponent(stream.category)}" class="btn btn-outline" style="font-size: 12px; padding: 7px 11px;">
               Pro Player
             </a>
+            ${['basketball', 'football', 'hockey', 'baseball', 'soccer'].includes((stream.category || '').toLowerCase()) ? `
+              <a href="/basketball.html#${(stream.category || '').toLowerCase() === 'basketball' ? 'ingame-lab' : 'multisport-lab'}" class="btn btn-outline" style="font-size: 12px; padding: 7px 10px;" title="Open deep live telemetry & standings">
+                📊 Stats
+              </a>
+            ` : ''}
             <button class="btn btn-outline" style="font-size: 12px; padding: 7px 11px;" onclick="openEmbedForStream('${escapeHtml(stream.stream_key)}')">
               Embed
             </button>
@@ -1548,15 +1553,23 @@ async function fetchMirrorStatus() {
 
 // Utilities
 function formatTimestamp(ts) {
-  if (!ts) return 'Live Now';
+  if (!ts) return 'Live Window';
   const d = new Date(ts * 1000);
   const now = new Date();
-  const diffHours = (d.getTime() - now.getTime()) / (1000 * 60 * 60);
+  const diffMs = d.getTime() - now.getTime();
+  const diffHours = diffMs / (1000 * 60 * 60);
 
-  if (diffHours < 0 && diffHours > -4) {
-    return 'In Progress';
+  if (diffHours <= 0 && diffHours > -4.5) {
+    return '● Live Window';
   }
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const dayStr = d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  const timeStr = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (diffMs > 0) {
+    const mins = Math.round(diffMs / 60000);
+    const cd = mins < 60 ? `In ${mins}m` : mins < 1440 ? `In ${Math.floor(mins / 60)}h ${mins % 60}m` : `In ${Math.floor(mins / 1440)}d`;
+    return `${dayStr} • ${timeStr} (${cd})`;
+  }
+  return `${dayStr} • ${timeStr}`;
 }
 
 function escapeHtml(str) {

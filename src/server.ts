@@ -1,5 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import fastifyCompress from '@fastify/compress';
+import fastifyEtag from '@fastify/etag';
 import fastifyStatic from '@fastify/static';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
@@ -29,6 +31,31 @@ export async function buildServer() {
   await server.register(cors, {
     origin: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  });
+
+  // Enable conditional ETag (304 Not Modified) BEFORE compression so ETags hash raw payloads cleanly
+  await server.register(fastifyEtag, {
+    algorithm: 'sha1',
+  });
+
+  // Enable Brotli & Gzip response compression for payloads >= 1KB
+  await server.register(fastifyCompress, {
+    global: true,
+    encodings: ['br', 'gzip'],
+    threshold: 1024,
+  });
+
+  // Smart Cache-Control headers on read-only federated sports telemetry endpoints
+  server.addHook('onSend', async (request, reply, payload) => {
+    if (request.method === 'GET' && !reply.getHeader('Cache-Control')) {
+      const url = request.url || '';
+      if (url.startsWith('/api/v1/data/standings') || url.startsWith('/api/v1/data/capabilities')) {
+        reply.header('Cache-Control', 'public, max-age=120, stale-while-revalidate=300');
+      } else if (url.startsWith('/api/v1/data/') || url.startsWith('/api/v1/basketball/hub')) {
+        reply.header('Cache-Control', 'public, max-age=10, stale-while-revalidate=30');
+      }
+    }
+    return payload;
   });
 
   // Register OpenAPI / Swagger documentation

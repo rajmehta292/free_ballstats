@@ -447,8 +447,12 @@
       setupProfileModal();
       await initIntel();
 
-      // Auto-poll gamecast intelligence every 15 seconds
-      setInterval(initIntel, 15000);
+      // Visibility-aware polling (skip when tab hidden or match already Final) + ETag 304 caching
+      setInterval(() => {
+        if (document.hidden) return;
+        if (proIntel && /\bfinal\b/i.test(proIntel.scoreboard?.status || '')) return;
+        initIntel(true);
+      }, 15000);
     });
 
     function setupTabs() {
@@ -471,13 +475,15 @@
       if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('show'); });
     }
 
-    async function initIntel() {
+    async function initIntel(isPoll = false) {
       try {
         const ss = window.proSmartScreen;
-        const pinQs =
-          (ss?.rzManualPinId ? `&pinnedEventId=${encodeURIComponent(ss.rzManualPinId)}` : '') +
-          (ss?.rzSecondaryPinId ? `&pinnedB=${encodeURIComponent(ss.rzSecondaryPinId)}` : '');
-        const res = await fetch('/api/v1/intel/' + encodeURIComponent(streamKey) + '?t=' + Date.now() + pinQs);
+        const params = [];
+        if (ss?.rzManualPinId) params.push(`pinnedEventId=${encodeURIComponent(ss.rzManualPinId)}`);
+        if (ss?.rzSecondaryPinId) params.push(`pinnedB=${encodeURIComponent(ss.rzSecondaryPinId)}`);
+        if (!isPoll) params.push(`t=${Date.now()}`);
+        const qs = params.length ? `?${params.join('&')}` : '';
+        const res = await fetch('/api/v1/intel/' + encodeURIComponent(streamKey) + qs);
         if (res.ok) {
           proIntel = await res.json();
           renderProIntel(proIntel);

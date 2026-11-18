@@ -132,29 +132,46 @@ function createTileElement(index, stream) {
 }
 
 async function refreshAllTilesTelemetry() {
+  if (document.hidden) return;
   let maxLi = -1;
   let maxTileIdx = -1;
+
+  // Deduplicate active tile streams and fetch concurrently instead of sequentially
+  const uniqueStreams = [];
+  const seenKeys = new Set();
+  for (let i = 0; i < currentLayout; i++) {
+    const stream = tileStreams[i] || allStreams[i % Math.max(1, allStreams.length)];
+    if (stream && !seenKeys.has(stream.stream_key)) {
+      seenKeys.add(stream.stream_key);
+      uniqueStreams.push(stream);
+    }
+  }
+
+  await Promise.allSettled(
+    uniqueStreams.map(async (stream) => {
+      try {
+        const res = await fetch(`/api/v1/basketball/smart-hud/${encodeURIComponent(stream.stream_key)}`);
+        if (!res.ok) return;
+        tileTelemetry[stream.stream_key] = await res.json();
+      } catch {}
+    })
+  );
 
   for (let i = 0; i < currentLayout; i++) {
     const stream = tileStreams[i] || allStreams[i % Math.max(1, allStreams.length)];
     if (!stream) continue;
-    try {
-      const res = await fetch(`/api/v1/basketball/smart-hud/${encodeURIComponent(stream.stream_key)}`);
-      if (!res.ok) continue;
-      const hud = await res.json();
-      tileTelemetry[stream.stream_key] = hud;
-
-      const badge = document.getElementById(`tile-hud-${i}`);
-      if (badge && hud.team1 && hud.team2) {
-        const li = hud.leverageIndex || 1.0;
-        badge.textContent = `${hud.team1.abbreviation} ${hud.team1.score}-${hud.team2.score} ${hud.team2.abbreviation} • LI ${li}x`;
-        badge.classList.toggle('crunch', li >= 1.8 || Boolean(hud.isClutchTime));
-        if (li > maxLi) {
-          maxLi = li;
-          maxTileIdx = i;
-        }
+    const hud = tileTelemetry[stream.stream_key];
+    const badge = document.getElementById(`tile-hud-${i}`);
+    if (badge && hud && hud.team1 && hud.team2) {
+      const li = hud.leverageIndex || 1.0;
+      const stDetail = hud.detail ? ` • ${hud.detail}` : '';
+      badge.textContent = `${hud.team1.abbreviation} ${hud.team1.score}-${hud.team2.score} ${hud.team2.abbreviation}${stDetail} • LI ${li}x`;
+      badge.classList.toggle('crunch', li >= 1.8 || Boolean(hud.isClutchTime));
+      if (li > maxLi) {
+        maxLi = li;
+        maxTileIdx = i;
       }
-    } catch (err) {}
+    }
   }
 
   document.querySelectorAll('.multiview-tile').forEach((tileEl, idx) => {

@@ -79,10 +79,11 @@
         </div>
 
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
-          <div style="display:flex;gap:10px;align-items:center;font-size:12px;color:#94a3b8;">
+          <div style="display:flex;gap:10px;align-items:center;font-size:12px;color:#94a3b8;flex-wrap:wrap;">
             <span>Status: <strong id="api-status-lbl" style="color:#10b981;">Ready</strong></span>
             <span>Latency: <strong id="api-latency-lbl">-</strong></span>
             <span>Size: <strong id="api-size-lbl">-</strong></span>
+            <span>Cache / ETag: <strong id="api-cache-lbl" style="color:#c4b5fd;">-</strong></span>
           </div>
           <div class="snippet-tabs">
             <button type="button" class="preset-pill snippet-btn" data-lang="curl">Copy cURL</button>
@@ -168,16 +169,22 @@
         const statusEl = document.getElementById('api-status-lbl');
         const latEl = document.getElementById('api-latency-lbl');
         const sizeEl = document.getElementById('api-size-lbl');
+        const cacheEl = document.getElementById('api-cache-lbl');
         const outEl = document.getElementById('json-output');
         statusEl.textContent = 'Fetching...';
         statusEl.style.color = '#fbbf24';
         const t0 = performance.now();
         try {
-          const res = await fetch(path, { cache: 'no-store' });
+          const res = await fetch(path);
           const ms = Math.round(performance.now() - t0);
           const txt = await res.text();
           latEl.textContent = `${ms} ms`;
           sizeEl.textContent = `${(txt.length / 1024).toFixed(1)} KB`;
+          if (cacheEl) {
+            const etag = res.headers.get('etag');
+            const cc = res.headers.get('cache-control');
+            cacheEl.textContent = etag ? `${etag.slice(0, 12)}… (${cc || 'etag'})` : (cc || 'dynamic');
+          }
           statusEl.textContent = `HTTP ${res.status}`;
           statusEl.style.color = res.ok ? '#10b981' : '#f87171';
           try {

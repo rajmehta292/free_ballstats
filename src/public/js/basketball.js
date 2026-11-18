@@ -74,7 +74,10 @@
       renderActiveGameLab();
       renderMultiSportLab();
       initComparisonSelectors(hubData.players || []);
-      initTeamH2HSelectors();
+      initTeamH2HSelectors().then(() => {
+        // Hydrate Live Team 360 Hub after H2H warms Celtics in gateway cache
+        loadTeam360Hub('BOS');
+      });
       renderLeaderboardMatrix(hubData.players || []);
       renderStandingsTable();
       renderGlossary(hubData.glossary || []);
@@ -86,8 +89,7 @@
       if (qInput && urlQ) qInput.value = urlQ;
       await executeNaturalLanguageQuery(initQ);
 
-      // Hydrate Live Team 360 Hub & League Injury Wire in parallel
-      loadTeam360Hub('BOS');
+      // Hydrate League Injury Wire
       loadInjuryWire();
     } catch (err) {
       console.error('Error initializing Basketball Research Lab:', err);
@@ -296,9 +298,10 @@
             </div>
 
             <div class="ingame-vs-center">
-              <span class="ingame-status-pill">${escapeHtml(game.status)}</span>
-              <span class="ingame-venue-sub">${escapeHtml(game.venue)} • ${escapeHtml(game.broadcast)}</span>
+              <span class="ingame-status-pill">${escapeHtml(game.date ? formatMatchTiming({ state: game.gameState || (game.isLive ? 'in' : 'post'), statusDetail: game.detail, date: game.date }).label : game.status)}</span>
+              <span class="ingame-venue-sub">${escapeHtml(game.venue)}${game.venueLocation ? ` (${escapeHtml(game.venueLocation)})` : ''}${game.attendance ? ` • ${game.attendance.toLocaleString()} att.` : ''} • ${escapeHtml(game.broadcast)}</span>
               <span class="ingame-run-badge">🔥 ${escapeHtml(game.projectedPaceScore.activeRun)}</span>
+              ${Array.isArray(game.officials) && game.officials.length ? `<small style="font-size:10px;color:var(--text-dim);">Refs: ${escapeHtml(game.officials.join(', '))}</small>` : ''}
             </div>
 
             <div class="ingame-team-block right">
@@ -799,8 +802,72 @@
   ];
   let activeMsLeagueKey = 'nfl';
   let activeMsSubTab = 'standings';
+  let activeMsStateFilter = 'all';
+  let showAllMsLeaders = false;
   let selectedMsEventId = null;
   let msLeagueCache = null;
+
+  function formatMatchTiming(ev) {
+    const state = ev.state || 'pre';
+    const rawDetail = String(ev.statusDetail || '').trim();
+    const fullDetail = String(ev.fullDetail || '').trim();
+    const iso = ev.date ? new Date(ev.date) : null;
+    const validDate = iso && !Number.isNaN(iso.getTime());
+
+    if (state === 'in') {
+      return {
+        cls: 'live',
+        label: `● LIVE • ${rawDetail || (ev.clock ? `${ev.clock} P${ev.period}` : 'In Progress')}`,
+        countdown: ev.situation?.downDistance || '',
+      };
+    }
+
+    if (state === 'post') {
+      const dateStr = validDate
+        ? iso.toLocaleDateString([], { month: 'short', day: 'numeric' })
+        : '';
+      return {
+        cls: 'post',
+        label: rawDetail && !/^scheduled$/i.test(rawDetail) ? rawDetail : 'Final',
+        countdown: dateStr,
+      };
+    }
+
+    // Pre-game: always show clear local date & kickoff time + relative countdown
+    if (validDate) {
+      const nowMs = Date.now();
+      const diffMs = iso.getTime() - nowMs;
+      const localDay = iso.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+      const localTime = iso.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      let countdown = '';
+      if (diffMs > 0) {
+        const mins = Math.round(diffMs / 60000);
+        if (mins < 60) countdown = `In ${mins}m`;
+        else if (mins < 1440) countdown = `In ${Math.floor(mins / 60)}h ${mins % 60}m`;
+        else countdown = `In ${Math.floor(mins / 1440)}d ${Math.floor((mins % 1440) / 60)}h`;
+      }
+      return {
+        cls: 'pre',
+        label: `🕒 ${localDay} • ${localTime}`,
+        countdown,
+      };
+    }
+
+    return {
+      cls: 'pre',
+      label: fullDetail || (rawDetail && !/^scheduled$/i.test(rawDetail) ? rawDetail : 'Upcoming'),
+      countdown: '',
+    };
+  }
+
+  function renderFormDotsHtml(formStr) {
+    if (!formStr) return '';
+    return `<span class="ms-form-dots" title="Recent Form: ${escapeHtml(formStr)}">${String(formStr).slice(-5).split('').map((ch) => {
+      const c = ch.toUpperCase();
+      const cls = c === 'W' ? 'w' : c === 'D' ? 'd' : 'l';
+      return `<span class="ms-form-dot ${cls}">${c}</span>`;
+    }).join('')}</span>`;
+  }
 
   async function renderMultiSportLab() {
     const sportFiltersWrap = document.getElementById('multisport-sport-filters');
@@ -815,13 +882,15 @@
         btn.addEventListener('click', () => {
           activeMsLeagueKey = btn.getAttribute('data-ms-league') || 'nfl';
           selectedMsEventId = null;
+          activeMsStateFilter = 'all';
+          showAllMsLeaders = false;
           renderMultiSportLab();
         });
       });
     }
 
     const cfg = MULTISPORT_LEAGUES.find((l) => l.key === activeMsLeagueKey) || MULTISPORT_LEAGUES[0];
-    contentWrap.innerHTML = `<div style="padding:1.5rem;color:var(--text-secondary);">Pulling real live <strong>${escapeHtml(cfg.label)}</strong> scoreboard, standings, leaders &amp; injuries via Federated Gateway...</div>`;
+    contentWrap.innerHTML = `<div style="padding:1.5rem;color:var(--text-secondary);">Pulling real live <strong>${escapeHtml(cfg.label)}</strong> scoreboard, timings, odds, standings, leaders &amp; injuries via Federated Gateway...</div>`;
 
     try {
       const baseQs = `${encodeURIComponent(cfg.sport)}/${encodeURIComponent(cfg.league)}`;
@@ -849,47 +918,100 @@
     if (!contentWrap || !msLeagueCache) return;
     const { cfg, sb, st, ld, inj } = msLeagueCache;
     const prov = sb.provenance || {};
-    const events = sb.events || [];
+    const allEvents = sb.events || [];
     const standingsRows = st.teams || st.standings || [];
     const leaderCats = ld.categories || [];
     const injuryRows = inj.injuries || [];
 
-    const scoreboardHtml = events.length === 0
+    const liveCnt = allEvents.filter((e) => e.state === 'in').length;
+    const preCnt = allEvents.filter((e) => e.state === 'pre').length;
+    const postCnt = allEvents.filter((e) => e.state === 'post').length;
+    const events = activeMsStateFilter === 'all' ? allEvents : allEvents.filter((e) => e.state === activeMsStateFilter);
+
+    const stateFiltersHtml = allEvents.length > 0
+      ? `
+        <div class="segmented-control" id="ms-state-filters">
+          <button type="button" class="seg-btn ${activeMsStateFilter === 'all' ? 'active' : ''}" data-ms-state="all">All (${allEvents.length})</button>
+          ${liveCnt ? `<button type="button" class="seg-btn ${activeMsStateFilter === 'in' ? 'active' : ''}" data-ms-state="in">🔴 Live (${liveCnt})</button>` : ''}
+          ${preCnt ? `<button type="button" class="seg-btn ${activeMsStateFilter === 'pre' ? 'active' : ''}" data-ms-state="pre">🕒 Upcoming (${preCnt})</button>` : ''}
+          ${postCnt ? `<button type="button" class="seg-btn ${activeMsStateFilter === 'post' ? 'active' : ''}" data-ms-state="post">✓ Final (${postCnt})</button>` : ''}
+        </div>
+      `
+      : '';
+
+    const scoreboardHtml = allEvents.length === 0
       ? `<div style="padding:14px 16px;background:rgba(255,255,255,0.03);border:1px solid var(--border-color);border-radius:10px;color:var(--text-muted);margin-bottom:16px;">No ${escapeHtml(cfg.label)} games are on today's active slate — browse live Standings, Statistical Leaders, and Injury Reports below.</div>`
       : `
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+          ${stateFiltersHtml}
+          <span style="font-size:11.5px;color:var(--text-dim);">Times shown in your local timezone • Click any card for Stats, Scoring Summary &amp; Play-by-Play</span>
+        </div>
         <div class="ms-scoreboard-grid">
-          ${events.slice(0, 16).map((ev) => {
+          ${events.slice(0, 20).map((ev) => {
             const isSelected = selectedMsEventId === ev.eventId;
-            const statusColor = ev.state === 'in' ? '#34d399' : ev.state === 'post' ? '#94a3b8' : '#67e8f9';
+            const timing = formatMatchTiming(ev);
+            const hasProb = ev.awayWinProb !== null && ev.homeWinProb !== null && ev.awayWinProb !== undefined;
+            const leadersCombined = [...(ev.awayLeaders || []).slice(0, 1).map((l) => ({ ...l, sideAbbr: ev.awayAbbr })), ...(ev.homeLeaders || []).slice(0, 1).map((l) => ({ ...l, sideAbbr: ev.homeAbbr }))].filter((l) => l.player);
+            const awayQuarters = Array.isArray(ev.awayLinescores) && ev.awayLinescores.length ? ` <small style="color:#64748b;font-weight:600;">(${ev.awayLinescores.join('·')})</small>` : '';
+            const homeQuarters = Array.isArray(ev.homeLinescores) && ev.homeLinescores.length ? ` <small style="color:#64748b;font-weight:600;">(${ev.homeLinescores.join('·')})</small>` : '';
             return `
-              <div class="ms-game-card ${isSelected ? 'selected' : ''}" data-ms-event-id="${escapeHtml(ev.eventId)}">
-                <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;font-weight:800;">
-                  <span style="color:${statusColor};">${ev.state === 'in' ? '● LIVE • ' : ''}${escapeHtml(ev.shortDetail || ev.status || '')}</span>
-                  <span style="color:var(--text-dim);">${escapeHtml(ev.broadcast || '')}</span>
+              <div class="ms-game-card ${isSelected ? 'selected' : ''} ${ev.state === 'in' ? 'is-live-card' : ''}" data-ms-event-id="${escapeHtml(ev.eventId)}">
+                <div class="ms-card-top">
+                  <span class="ms-time-pill ${timing.cls}">
+                    <span>${escapeHtml(timing.label)}</span>
+                    ${timing.countdown ? `<span style="opacity:0.85;">• ${escapeHtml(timing.countdown)}</span>` : ''}
+                  </span>
+                  ${ev.broadcast ? `<span class="ms-broadcast-tag">📺 ${escapeHtml(ev.broadcast)}</span>` : ''}
                 </div>
+
                 <div class="ms-team-line">
                   <div class="ms-team-id">
                     ${ev.awayLogo ? `<img src="${escapeHtml(ev.awayLogo)}" alt="${escapeHtml(ev.awayAbbr)}" onerror="this.style.display='none'" />` : ''}
-                    <div>
-                      <div class="font-bold" style="font-size:13px;">${escapeHtml(ev.awayTeam || ev.awayAbbr)}</div>
-                      <small style="color:var(--text-dim);font-size:10.5px;">${escapeHtml(ev.awayRecord || '')}</small>
+                    <div style="min-width:0;">
+                      <div class="font-bold" style="font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(ev.awayTeam || ev.awayAbbr)} ${renderFormDotsHtml(ev.awayForm)}</div>
+                      <small style="color:var(--text-dim);font-size:10.5px;">${escapeHtml(ev.awayRecord || 'Away')}${awayQuarters}</small>
                     </div>
                   </div>
-                  <div class="mono-cell font-bold" style="font-size:18px;">${ev.state === 'pre' ? '-' : escapeHtml(String(ev.awayScore ?? 0))}</div>
+                  <div class="mono-cell font-bold" style="font-size:19px;">${ev.state === 'pre' ? '–' : escapeHtml(String(ev.awayScore ?? 0))}</div>
                 </div>
+
                 <div class="ms-team-line">
                   <div class="ms-team-id">
                     ${ev.homeLogo ? `<img src="${escapeHtml(ev.homeLogo)}" alt="${escapeHtml(ev.homeAbbr)}" onerror="this.style.display='none'" />` : ''}
-                    <div>
-                      <div class="font-bold" style="font-size:13px;">${escapeHtml(ev.homeTeam || ev.homeAbbr)}</div>
-                      <small style="color:var(--text-dim);font-size:10.5px;">${escapeHtml(ev.homeRecord || '')}</small>
+                    <div style="min-width:0;">
+                      <div class="font-bold" style="font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(ev.homeTeam || ev.homeAbbr)} ${renderFormDotsHtml(ev.homeForm)}</div>
+                      <small style="color:var(--text-dim);font-size:10.5px;">${escapeHtml(ev.homeRecord || 'Home')}${homeQuarters}</small>
                     </div>
                   </div>
-                  <div class="mono-cell font-bold" style="font-size:18px;">${ev.state === 'pre' ? '-' : escapeHtml(String(ev.homeScore ?? 0))}</div>
+                  <div class="mono-cell font-bold" style="font-size:19px;">${ev.state === 'pre' ? '–' : escapeHtml(String(ev.homeScore ?? 0))}</div>
                 </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;padding-top:6px;border-top:1px solid rgba(255,255,255,0.06);font-size:10.5px;color:#94a3b8;">
-                  <span>${ev.spread ? `Line: ${escapeHtml(ev.spread)}${ev.overUnder ? ` • O/U ${ev.overUnder}` : ''}` : escapeHtml(ev.venue || 'Official Feed')}</span>
-                  <span style="color:#00f2fe;font-weight:700;">🔍 Inspect Plays →</span>
+
+                ${ev.situation?.lastPlay ? `<div style="font-size:10.5px;color:#fcd34d;background:rgba(245,158,11,0.1);border-radius:6px;padding:4px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">⚡ ${ev.situation.isRedZone ? '🔴 RED ZONE • ' : ''}${escapeHtml(ev.situation.lastPlay)}</div>` : ''}
+
+                ${hasProb ? `
+                  <div class="ms-prob-bar-wrap">
+                    <div style="display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;font-weight:700;">
+                      <span>${escapeHtml(ev.awayAbbr)} ${ev.awayWinProb}%</span>
+                      ${ev.drawWinProb != null ? `<span>Draw ${ev.drawWinProb}%</span>` : '<span>Win Prob</span>'}
+                      <span>${escapeHtml(ev.homeAbbr)} ${ev.homeWinProb}%</span>
+                    </div>
+                    <div class="ms-prob-track">
+                      <div style="width:${ev.awayWinProb}%;background:#00f2fe;"></div>
+                      ${ev.drawWinProb != null ? `<div style="width:${ev.drawWinProb}%;background:#64748b;"></div>` : ''}
+                      <div style="width:${ev.homeWinProb}%;background:#9146ff;"></div>
+                    </div>
+                  </div>
+                ` : ''}
+
+                ${leadersCombined.length ? `
+                  <div class="ms-leaders-mini">
+                    ${leadersCombined.map((l) => `<span class="ms-leader-chip" data-ms-card-athlete="${escapeHtml(l.athleteId)}" title="Open player profile">🌟 ${escapeHtml(l.player)} (${escapeHtml(l.sideAbbr)}): <strong>${escapeHtml(l.value)} ${escapeHtml(l.stat)}</strong></span>`).join('')}
+                  </div>
+                ` : ''}
+
+                <div style="display:flex;justify-content:space-between;align-items:center;padding-top:6px;border-top:1px solid rgba(255,255,255,0.06);font-size:10.5px;color:#94a3b8;gap:8px;flex-wrap:wrap;">
+                  <span>${ev.venue ? `🏟 ${escapeHtml(ev.venue)}${ev.venueLocation ? `, ${escapeHtml(ev.venueLocation)}` : ''}` : ''}${ev.weather ? ` • ⛅ ${escapeHtml(ev.weather)}` : ''}</span>
+                  <span>${ev.spread ? `📊 ${escapeHtml(ev.spread)}${ev.overUnder ? ` • O/U ${ev.overUnder}` : ''}` : ''} <strong style="color:#00f2fe;margin-left:4px;">Inspect →</strong></span>
                 </div>
               </div>
             `;
@@ -941,11 +1063,13 @@
           </div>
         `;
     } else if (activeMsSubTab === 'leaders') {
+      const visibleCats = showAllMsLeaders ? leaderCats : leaderCats.slice(0, 6);
       subPanelHtml = leaderCats.length === 0
-        ? `<div style="padding:1rem;color:var(--text-muted);">League statistical leaders unavailable right now for ${escapeHtml(cfg.label)}.</div>`
+        ? `<div style="padding:1rem;color:var(--text-muted);">League statistical leaders are not provided upstream for ${escapeHtml(cfg.label)}. Click any individual game card or Team Roster to inspect players.</div>`
         : `
+          ${leaderCats.length > 6 ? `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button type="button" class="nl-collapse-btn" id="ms-toggle-all-leaders">${showAllMsLeaders ? `Show Top 6 Categories` : `Show All ${leaderCats.length} Categories`}</button></div>` : ''}
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:12px;">
-            ${leaderCats.slice(0, 6).map((cat) => `
+            ${visibleCats.map((cat) => `
               <div class="analytics-panel" style="padding:12px;">
                 <div class="panel-title-row" style="margin-bottom:8px;">
                   <h4 style="font-size:13px;font-weight:800;color:#00f2fe;">${escapeHtml(cat.displayName || cat.name || cat.category || 'Leaders')}</h4>
@@ -1024,6 +1148,26 @@
       </div>
     `;
 
+    contentWrap.querySelectorAll('[data-ms-state]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        activeMsStateFilter = btn.getAttribute('data-ms-state') || 'all';
+        drawMultiSportExplorer();
+      });
+    });
+
+    document.getElementById('ms-toggle-all-leaders')?.addEventListener('click', () => {
+      showAllMsLeaders = !showAllMsLeaders;
+      drawMultiSportExplorer();
+    });
+
+    contentWrap.querySelectorAll('[data-ms-card-athlete]').forEach((chip) => {
+      chip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const aid = chip.getAttribute('data-ms-card-athlete');
+        if (aid) openPlayerModal(aid, `${cfg.sport}/${cfg.league}`);
+      });
+    });
+
     contentWrap.querySelectorAll('[data-ms-event-id]').forEach((card) => {
       card.addEventListener('click', () => {
         const eid = card.getAttribute('data-ms-event-id');
@@ -1057,28 +1201,87 @@
   async function loadMultiSportGamePbp(sport, league, eventId) {
     const drawer = document.getElementById('ms-selected-pbp-drawer');
     if (!drawer) return;
-    drawer.innerHTML = `<div class="ms-pbp-drawer" style="color:var(--text-secondary);">Fetching official play-by-play feed for event <strong>${escapeHtml(eventId)}</strong>...</div>`;
+    drawer.innerHTML = `<div class="ms-pbp-drawer" style="color:var(--text-secondary);">Fetching official Box Stats, Scoring Summary &amp; Play-by-Play feed for event <strong>${escapeHtml(eventId)}</strong>...</div>`;
     try {
       const res = await fetch(`/api/v1/data/pbp/${encodeURIComponent(sport)}/${encodeURIComponent(league)}/${encodeURIComponent(eventId)}?t=${Date.now()}`);
       const d = await res.json();
       const plays = d.recentPlays || d.plays || [];
       const runs = d.scoringRuns || [];
+      const teamStats = d.teamStats || [];
+      const scoringSummary = d.scoringSummary || [];
+      const gameLeaders = d.gameLeaders || [];
+
+      const leadersStrip = gameLeaders.length
+        ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+             ${gameLeaders.slice(0, 6).map((l) => `<span class="ms-leader-chip" data-pbp-aid="${escapeHtml(l.athleteId)}">🌟 <strong>${escapeHtml(l.player)}</strong> (${escapeHtml(l.team)} • ${escapeHtml(l.category)}): ${escapeHtml(l.value)}</span>`).join('')}
+           </div>`
+        : '';
+
+      const teamStatsHtml = teamStats.length
+        ? `<div style="margin-bottom:14px;">
+             <div style="font-size:11px;font-weight:800;color:#00f2fe;margin-bottom:8px;">📊 TEAM BOX COMPARISON (${escapeHtml(d.team1Abbr || 'AWAY')} vs ${escapeHtml(d.team2Abbr || 'HOME')})</div>
+             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;">
+               ${teamStats.map((ts) => `
+                 <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:7px 10px;">
+                   <div style="font-size:10.5px;color:#94a3b8;text-align:center;font-weight:700;margin-bottom:3px;">${escapeHtml(ts.label)}</div>
+                   <div style="display:flex;justify-content:space-between;font-family:monospace;font-size:12.5px;font-weight:800;">
+                     <span style="color:#00f2fe;">${escapeHtml(ts.team1Value)}</span>
+                     <span style="color:#fb923c;">${escapeHtml(ts.team2Value)}</span>
+                   </div>
+                 </div>
+               `).join('')}
+             </div>
+           </div>`
+        : '';
+
+      const scoringHtml = scoringSummary.length
+        ? `<div style="margin-bottom:14px;">
+             <div style="font-size:11px;font-weight:800;color:#fbbf24;margin-bottom:6px;">🔥 SCORING SUMMARY (${scoringSummary.length})</div>
+             <div class="table-responsive dark-scroll-box" style="max-height:190px;">
+               <table class="bball-table compact-table">
+                 <thead><tr><th>TIME</th><th>TEAM</th><th>SCORE</th><th>SCORING PLAY</th></tr></thead>
+                 <tbody>
+                   ${scoringSummary.map((sp) => `
+                     <tr>
+                       <td class="mono-cell">${escapeHtml(sp.period)} ${escapeHtml(sp.clock)}</td>
+                       <td class="mono-cell font-bold">${escapeHtml(sp.team || '-')}</td>
+                       <td class="mono-cell font-bold accent-text">${escapeHtml(sp.score)}</td>
+                       <td><span style="white-space:normal;display:block;min-width:240px;">${escapeHtml(sp.text)}</span></td>
+                     </tr>
+                   `).join('')}
+                 </tbody>
+               </table>
+             </div>
+           </div>`
+        : '';
+
       drawer.innerHTML = `
         <div class="ms-pbp-drawer">
           <div class="panel-title-row">
             <div>
-              <h3>🔍 Matchup Play-by-Play Feed — ${escapeHtml(d.matchup || `Event ${eventId}`)}</h3>
-              <p class="text-muted" style="font-size:12px;">${escapeHtml(d.status || '')} • Total Recorded Plays: ${d.totalPlays ?? plays.length}${d.shotCount ? ` • XY Shots: ${d.shotCount}` : ''}</p>
+              <h3>🔍 Matchup Gamecast — ${escapeHtml(d.matchup || `Event ${eventId}`)}</h3>
+              <p class="text-muted" style="font-size:12px;">
+                ${escapeHtml(d.status || '')}${d.venue ? ` • 🏟 ${escapeHtml(d.venue)}` : ''}${d.attendance ? ` (${d.attendance.toLocaleString()} att.)` : ''}${d.bettingOdds?.spread ? ` • 📊 ${escapeHtml(d.bettingOdds.spread)}` : ''} • Recorded Plays: ${d.totalPlays ?? plays.length}
+              </p>
             </div>
             <div style="display:flex;gap:8px;align-items:center;">
               <a href="/api/v1/data/pbp/${encodeURIComponent(sport)}/${encodeURIComponent(league)}/${encodeURIComponent(eventId)}" target="_blank" class="btn btn-outline btn-sm">JSON PBP</a>
               <button type="button" class="nl-collapse-btn" id="ms-close-pbp-drawer">✕ Close</button>
             </div>
           </div>
-          ${runs.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">${runs.slice(0, 4).map((r) => `<span class="inj-kpi-pill">⚡ ${escapeHtml(r.teamAbbr || '')} ${escapeHtml(r.run || r.summary || '')}</span>`).join('')}</div>` : ''}
+          ${leadersStrip}
+          ${runs.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">${runs.slice(0, 4).map((r) => {
+            const runText = String(r.run || r.summary || '');
+            const abbr = String(r.teamAbbr || '');
+            const label = abbr && !runText.toUpperCase().startsWith(abbr.toUpperCase()) ? `${abbr} ${runText}` : runText;
+            return `<span class="inj-kpi-pill">⚡ ${escapeHtml(label)}</span>`;
+          }).join('')}</div>` : ''}
+          ${teamStatsHtml}
+          ${scoringHtml}
           ${plays.length === 0
-            ? `<div style="color:var(--text-muted);font-size:12.5px;">No live play-by-play events recorded yet (pre-game or feed pending).</div>`
-            : `<div class="table-responsive dark-scroll-box" style="max-height:280px;">
+            ? `<div style="color:var(--text-muted);font-size:12.5px;">Pre-game or play-by-play feed pending kickoff/puck drop. Official match timing, venue, broadcast, and odds are displayed on the card above.</div>`
+            : `<div style="font-size:11px;font-weight:800;color:#cbd5e1;margin-bottom:6px;">📋 RECENT PLAY-BY-PLAY (${plays.length})</div>
+               <div class="table-responsive dark-scroll-box" style="max-height:260px;">
                 <table class="bball-table compact-table">
                   <thead><tr><th>PERIOD / TIME</th><th>TEAM</th><th>SCORE</th><th>PLAY DESCRIPTION</th></tr></thead>
                   <tbody>
@@ -1095,6 +1298,10 @@
               </div>`}
         </div>
       `;
+      drawer.querySelectorAll('[data-pbp-aid]').forEach((el) => {
+        const aid = el.getAttribute('data-pbp-aid');
+        if (aid) el.addEventListener('click', () => openPlayerModal(aid, `${sport}/${league}`));
+      });
       document.getElementById('ms-close-pbp-drawer')?.addEventListener('click', () => {
         selectedMsEventId = null;
         drawer.innerHTML = '';
@@ -1270,29 +1477,70 @@
   // =========================================================================
   // 3B. FRANCHISE HEAD-TO-HEAD INTELLIGENCE MATRIX (/api/v1/data/h2h)
   // =========================================================================
-  function initTeamH2HSelectors() {
+  const leagueTeamOptionsCache = new Map();
+
+  async function fetchLeagueTeamOptions(leaguePath) {
+    if (leaguePath === 'basketball/nba') {
+      return NBA_FRANCHISES.map(([abbr, name]) => ({ abbr, name }));
+    }
+    if (leagueTeamOptionsCache.has(leaguePath)) {
+      return leagueTeamOptionsCache.get(leaguePath);
+    }
+    const [sport, league] = leaguePath.split('/');
+    try {
+      const res = await fetch(`/api/v1/data/standings/${encodeURIComponent(sport)}/${encodeURIComponent(league)}`);
+      if (res.ok) {
+        const d = await res.json();
+        const rows = (d.teams || [])
+          .filter((t) => t.abbr || t.teamId || t.team)
+          .map((t) => ({ abbr: t.abbr || t.teamId || t.team, name: t.team || t.abbr }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+        if (rows.length > 0) {
+          leagueTeamOptionsCache.set(leaguePath, rows);
+          return rows;
+        }
+      }
+    } catch {}
+    return [];
+  }
+
+  async function initTeamH2HSelectors() {
+    const sLeague = document.getElementById('team-h2h-league-select');
     const sA = document.getElementById('team-h2h-a-select');
     const sB = document.getElementById('team-h2h-b-select');
     if (!sA || !sB) return;
 
-    const optsHtml = NBA_FRANCHISES.map(([abbr, name]) => `<option value="${abbr}">${escapeHtml(name)} (${abbr})</option>`).join('');
-    sA.innerHTML = optsHtml;
-    sB.innerHTML = optsHtml;
-    sA.value = 'BOS';
-    sB.value = 'CLE';
+    const populateForLeague = async (lp) => {
+      const list = await fetchLeagueTeamOptions(lp);
+      if (list.length === 0) return;
+      const optsHtml = list.map((t) => `<option value="${escapeHtml(t.abbr)}">${escapeHtml(t.name)} (${escapeHtml(t.abbr)})</option>`).join('');
+      sA.innerHTML = optsHtml;
+      sB.innerHTML = optsHtml;
+      if (lp === 'basketball/nba') {
+        sA.value = 'BOS';
+        sB.value = 'CLE';
+      } else {
+        sA.selectedIndex = 0;
+        if (list.length > 1) sB.selectedIndex = 1;
+      }
+      loadTeamH2H(sA.value, sB.value, lp);
+    };
 
-    const trigger = () => loadTeamH2H(sA.value, sB.value);
+    const trigger = () => loadTeamH2H(sA.value, sB.value, sLeague?.value || 'basketball/nba');
     sA.addEventListener('change', trigger);
     sB.addEventListener('change', trigger);
-    trigger();
+    sLeague?.addEventListener('change', () => populateForLeague(sLeague.value));
+
+    await populateForLeague(sLeague?.value || 'basketball/nba');
   }
 
-  async function loadTeamH2H(teamA, teamB) {
+  async function loadTeamH2H(teamA, teamB, leaguePath = 'basketball/nba') {
     const wrap = document.getElementById('team-h2h-result');
     if (!wrap) return;
-    wrap.innerHTML = `<div style="padding:1.25rem;color:var(--text-secondary);">Synthesizing live H2H matchup matrix for <strong>${escapeHtml(teamA)} vs ${escapeHtml(teamB)}</strong>...</div>`;
+    const [sport, league] = leaguePath.split('/');
+    wrap.innerHTML = `<div style="padding:1.25rem;color:var(--text-secondary);">Synthesizing live ${escapeHtml(league.toUpperCase())} H2H matchup matrix for <strong>${escapeHtml(teamA)} vs ${escapeHtml(teamB)}</strong>...</div>`;
     try {
-      const res = await fetch(`/api/v1/data/h2h/${encodeURIComponent(teamA)}/${encodeURIComponent(teamB)}?t=${Date.now()}`);
+      const res = await fetch(`/api/v1/data/h2h/${encodeURIComponent(teamA)}/${encodeURIComponent(teamB)}?sport=${encodeURIComponent(sport)}&league=${encodeURIComponent(league)}`);
       const d = await res.json();
       const tA = d.teamA || {};
       const tB = d.teamB || {};
@@ -1302,15 +1550,15 @@
           <div class="compare-player-card p1-border">
             ${tA.logo ? `<img src="${escapeHtml(tA.logo)}" alt="${escapeHtml(tA.abbreviation)}" style="width:56px;height:56px;border-radius:10px;object-fit:contain;" />` : ''}
             <div>
-              <span class="badge-mini">${escapeHtml(tA.standingSummary || 'NBA')}</span>
+              <span class="badge-mini">${escapeHtml(tA.standingSummary || league.toUpperCase())}</span>
               <h3>${escapeHtml(tA.name || teamA)} (${escapeHtml(tA.record || '-')})</h3>
-              <small class="text-muted">${(tA.injuries || []).length} Listed Injuries • Click Team 360° for full roster</small>
+              <small class="text-muted">${(tA.injuries || []).length} Listed Injuries • Switch to Team 360° for full roster</small>
             </div>
           </div>
           <div class="compare-player-card p2-border">
             ${tB.logo ? `<img src="${escapeHtml(tB.logo)}" alt="${escapeHtml(tB.abbreviation)}" style="width:56px;height:56px;border-radius:10px;object-fit:contain;" />` : ''}
             <div>
-              <span class="badge-mini" style="background:rgba(0,242,254,0.16);color:#67e8f9;">${escapeHtml(tB.standingSummary || 'NBA')}</span>
+              <span class="badge-mini" style="background:rgba(0,242,254,0.16);color:#67e8f9;">${escapeHtml(tB.standingSummary || league.toUpperCase())}</span>
               <h3>${escapeHtml(tB.name || teamB)} (${escapeHtml(tB.record || '-')})</h3>
               <small class="text-muted">${(tB.injuries || []).length} Listed Injuries • Provenance: ${escapeHtml(d.provenance?.confidence || 'estimated')}</small>
             </div>
@@ -1341,7 +1589,7 @@
         </div>
       `;
     } catch (e) {
-      wrap.innerHTML = `<div style="padding:1rem;color:var(--danger);">Unable to load H2H matchup matrix.</div>`;
+      wrap.innerHTML = `<div style="padding:1rem;color:var(--danger);">Unable to load H2H matchup matrix for this selection.</div>`;
     }
   }
 
@@ -1589,14 +1837,27 @@
       e.currentTarget.textContent = showAllWorkspaces ? '◫ Focused Tabs' : '⊞ Stacked View';
     });
 
-    document.getElementById('team360-h2h-btn')?.addEventListener('click', () => {
+    document.getElementById('team360-h2h-btn')?.addEventListener('click', async () => {
+      const lp = document.getElementById('team360-league-select')?.value || 'basketball/nba';
       const chosen = document.getElementById('team360-select')?.value || 'BOS';
+      const sLeague = document.getElementById('team-h2h-league-select');
       const sA = document.getElementById('team-h2h-a-select');
       const sB = document.getElementById('team-h2h-b-select');
       if (sA && sB) {
+        if (sLeague && sLeague.value !== lp) {
+          sLeague.value = lp;
+          const list = await fetchLeagueTeamOptions(lp);
+          if (list.length > 0) {
+            const optsHtml = list.map((t) => `<option value="${escapeHtml(t.abbr)}">${escapeHtml(t.name)} (${escapeHtml(t.abbr)})</option>`).join('');
+            sA.innerHTML = optsHtml;
+            sB.innerHTML = optsHtml;
+          }
+        }
         sA.value = chosen;
-        if (sB.value === chosen) sB.value = chosen === 'BOS' ? 'CLE' : 'BOS';
-        loadTeamH2H(sA.value, sB.value);
+        if (sB.value === chosen && sB.options.length > 1) {
+          sB.selectedIndex = sA.selectedIndex === 0 ? 1 : 0;
+        }
+        loadTeamH2H(sA.value, sB.value, lp);
       }
       switchWorkspace('compare');
       document.getElementById('team-h2h-lab')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1666,11 +1927,27 @@
     });
 
     // Team 360 & Injury Wire controls
+    document.getElementById('team360-league-select')?.addEventListener('change', async (e) => {
+      const lp = e.target.value || 'basketball/nba';
+      const teamSel = document.getElementById('team360-select');
+      const list = await fetchLeagueTeamOptions(lp);
+      if (teamSel && list.length > 0) {
+        teamSel.innerHTML = list.map((t) => `<option value="${escapeHtml(t.abbr)}">${escapeHtml(t.name)} (${escapeHtml(t.abbr)})</option>`).join('');
+        if (lp === 'basketball/nba') teamSel.value = 'BOS';
+      }
+      const chosen = teamSel?.value || 'BOS';
+      const [sp, lg] = lp.split('/');
+      const link = document.getElementById('team360-api-link');
+      if (link) link.href = `/api/v1/data/team/${encodeURIComponent(sp)}/${encodeURIComponent(lg)}/${encodeURIComponent(chosen)}`;
+      loadTeam360Hub(chosen, lp);
+    });
     document.getElementById('team360-select')?.addEventListener('change', (e) => {
+      const lp = document.getElementById('team360-league-select')?.value || 'basketball/nba';
+      const [sp, lg] = lp.split('/');
       const val = e.target.value;
       const link = document.getElementById('team360-api-link');
-      if (link) link.href = `/api/v1/data/team/basketball/nba/${encodeURIComponent(val)}`;
-      loadTeam360Hub(val);
+      if (link) link.href = `/api/v1/data/team/${encodeURIComponent(sp)}/${encodeURIComponent(lg)}/${encodeURIComponent(val)}`;
+      loadTeam360Hub(val, lp);
     });
     document.getElementById('injury-search-input')?.addEventListener('input', (e) => {
       renderInjuryWireTable(e.target.value || '');
@@ -1682,12 +1959,13 @@
   // =========================================================================
   let cachedInjuryList = [];
 
-  async function loadTeam360Hub(teamAbbr) {
+  async function loadTeam360Hub(teamAbbr, leaguePath = 'basketball/nba') {
     const wrap = document.getElementById('team360-content');
     if (!wrap) return;
-    wrap.innerHTML = `<div style="padding:1.5rem;color:var(--text-secondary);">Pulling live Depth Chart, Roster &amp; Schedule for <strong>${escapeHtml(teamAbbr)}</strong>...</div>`;
+    const [sport, league] = leaguePath.split('/');
+    wrap.innerHTML = `<div style="padding:1.5rem;color:var(--text-secondary);">Pulling live ${escapeHtml(league.toUpperCase())} Depth Chart, Roster &amp; Schedule for <strong>${escapeHtml(teamAbbr)}</strong>...</div>`;
     try {
-      const res = await fetch(`/api/v1/data/team/basketball/nba/${encodeURIComponent(teamAbbr)}?t=${Date.now()}`);
+      const res = await fetch(`/api/v1/data/team/${encodeURIComponent(sport)}/${encodeURIComponent(league)}/${encodeURIComponent(teamAbbr)}`);
       const d = await res.json();
       const tm = d.team || {};
       const dcEntries = Object.entries(d.depthChart || {});
@@ -1773,7 +2051,7 @@
 
       wrap.querySelectorAll('[data-player-id]').forEach(el => {
         const pid = el.getAttribute('data-player-id');
-        if (pid) el.addEventListener('click', () => openPlayerModal(pid));
+        if (pid) el.addEventListener('click', () => openPlayerModal(pid, leaguePath));
       });
     } catch (e) {
       wrap.innerHTML = `<div style="padding:1rem;color:var(--danger);">Failed to load Team 360 Hub.</div>`;

@@ -1926,27 +1926,138 @@ footer {
 
 .ms-scoreboard-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(335px, 1fr));
+  gap: 14px;
   margin-bottom: 16px;
 }
 
 .ms-game-card {
-  background: var(--bg-card);
+  background: linear-gradient(160deg, rgba(24, 27, 38, 0.96), rgba(14, 16, 26, 0.96));
   border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 13px 14px;
+  border-radius: 13px;
+  padding: 14px 15px;
   cursor: pointer;
   transition: all 0.16s ease;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 9px;
+}
+
+.ms-game-card.is-live-card {
+  border-color: rgba(16, 185, 129, 0.42);
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.1);
 }
 
 .ms-game-card:hover, .ms-game-card.selected {
   border-color: #00f2fe;
   background: rgba(0, 242, 254, 0.06);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+}
+
+.ms-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ms-time-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ms-time-pill.live {
+  background: rgba(16, 185, 129, 0.18);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.ms-time-pill.pre {
+  background: rgba(56, 189, 248, 0.14);
+  color: #7dd3fc;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.ms-time-pill.post {
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.ms-broadcast-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #e2e8f0;
+  background: rgba(145, 70, 255, 0.18);
+  border: 1px solid rgba(145, 70, 255, 0.35);
+  padding: 2px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.ms-form-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.ms-form-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  font-size: 8.5px;
+  font-weight: 900;
+  color: #0b0d14;
+}
+
+.ms-form-dot.w { background: #34d399; }
+.ms-form-dot.d { background: #fbbf24; }
+.ms-form-dot.l { background: #f87171; }
+
+.ms-prob-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ms-prob-track {
+  height: 5px;
+  border-radius: 99px;
+  background: #1e293b;
+  overflow: hidden;
+  display: flex;
+}
+
+.ms-leaders-mini {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 10.5px;
+  color: #cbd5e1;
+}
+
+.ms-leader-chip {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 2px 7px;
+  cursor: pointer;
+}
+
+.ms-leader-chip:hover {
+  border-color: #00f2fe;
+  color: #fff;
 }
 
 .ms-team-line {
@@ -1954,26 +2065,27 @@ footer {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  font-variant-numeric: tabular-nums;
 }
 
 .ms-team-id {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   min-width: 0;
 }
 
 .ms-team-id img {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   object-fit: contain;
   flex-shrink: 0;
 }
 
 .ms-pbp-drawer {
-  background: rgba(10, 12, 20, 0.9);
-  border: 1px solid rgba(0, 242, 254, 0.35);
-  border-radius: 12px;
+  background: rgba(10, 12, 20, 0.94);
+  border: 1px solid rgba(0, 242, 254, 0.38);
+  border-radius: 13px;
   padding: 16px;
   margin-bottom: 18px;
 }
