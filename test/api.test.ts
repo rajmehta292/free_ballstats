@@ -877,6 +877,16 @@ test('StreamFree API Streamer Suite', async (t) => {
     assert.ok(ath.rollingWindows && ath.rollingWindows.provenance === 'computed_from_verified_gamelog');
     assert.ok(ath.playerDna && ath.playerDna.provenance === 'derived_estimate_from_season_stats');
     assert.ok(Array.isArray(ath.playerDna.axes) && ath.playerDna.axes.length === 6);
+
+    const nflStRes = await server.inject({ method: 'GET', url: '/api/v1/data/standings/football/nfl' });
+    assert.equal(nflStRes.statusCode, 200);
+    const nflSt = nflStRes.json();
+    assert.ok(Array.isArray(nflSt.teams) && nflSt.teams.length >= 30, 'Expected 32 NFL standings teams');
+
+    const eplLdrRes = await server.inject({ method: 'GET', url: '/api/v1/data/leaders/soccer/eng.1' });
+    assert.equal(eplLdrRes.statusCode, 200);
+    const eplLdr = eplLdrRes.json();
+    assert.ok(Array.isArray(eplLdr.categories), 'Soccer leaders should return 200 with empty categories instead of 500');
   });
 
   await server.close();

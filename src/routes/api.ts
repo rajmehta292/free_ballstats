@@ -1037,6 +1037,22 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   fastify.get<{
+    Params: { sport: string; league: string; event_id: string };
+    Querystring: { format?: string; fields?: string; limit?: string; offset?: string };
+  }>('/data/pbp/:sport/:league/:event_id', {
+    schema: {
+      description: 'Live Play-by-Play scoped by sport/league/event_id (?format=csv)',
+      tags: ['Open Sports Data API'],
+    },
+  }, async (request, reply) => {
+    const { sport, league, event_id } = request.params;
+    const { format, fields, limit, offset } = request.query;
+    const payload = await sportsDataGateway.getPlayByPlayAnalytics(event_id, sport, league);
+    const listKey = payload.shotCoordinates.length ? 'shotCoordinates' : 'recentPlays';
+    return sendCsvOrJson(request, reply, payload, (payload as any)[listKey], listKey, `pbp_${event_id}`, { format, fields, limit, offset });
+  });
+
+  fastify.get<{
     Querystring: { q?: string; sport?: string };
   }>('/data/search', {
     schema: {

@@ -850,7 +850,7 @@
     const { cfg, sb, st, ld, inj } = msLeagueCache;
     const prov = sb.provenance || {};
     const events = sb.events || [];
-    const standingsRows = st.standings || [];
+    const standingsRows = st.teams || st.standings || [];
     const leaderCats = ld.categories || [];
     const injuryRows = inj.injuries || [];
 
@@ -923,16 +923,16 @@
                     <td class="mono-cell font-bold">${r.rank || idx + 1}</td>
                     <td>
                       <div class="player-cell">
-                        ${r.logo ? `<img src="${escapeHtml(r.logo)}" alt="${escapeHtml(r.abbreviation)}" style="width:22px;height:22px;" onerror="this.style.display='none'" />` : ''}
+                        ${r.logo ? `<img src="${escapeHtml(r.logo)}" alt="${escapeHtml(r.abbr || r.abbreviation || '')}" style="width:22px;height:22px;" onerror="this.style.display='none'" />` : ''}
                         <span class="font-bold">${escapeHtml(r.team)}</span>
                       </div>
                     </td>
-                    <td><small style="color:#94a3b8;">${escapeHtml(r.group || '-')}</small></td>
+                    <td><small style="color:#94a3b8;">${escapeHtml(r.conference || r.group || '-')}</small></td>
                     <td class="mono-cell font-bold">${r.wins}-${r.losses}${r.ties ? `-${r.ties}` : ''}</td>
                     <td class="mono-cell">${r.winPct ?? '-'}</td>
                     <td class="mono-cell">${r.pointsFor ?? '-'}</td>
                     <td class="mono-cell">${r.pointsAgainst ?? '-'}</td>
-                    <td class="mono-cell ${Number(r.diff) >= 0 ? 'pos-val' : 'neg-val'}">${r.diff !== undefined ? (Number(r.diff) > 0 ? `+${r.diff}` : r.diff) : '-'}</td>
+                    <td class="mono-cell ${Number(r.diff) >= 0 ? 'pos-val' : 'neg-val'}">${r.diff !== undefined ? (Number(r.diff) > 0 && !String(r.diff).startsWith('+') ? `+${r.diff}` : r.diff) : '-'}</td>
                     <td class="mono-cell">${escapeHtml(r.streak || '-')}</td>
                   </tr>
                 `).join('')}
@@ -948,7 +948,7 @@
             ${leaderCats.slice(0, 6).map((cat) => `
               <div class="analytics-panel" style="padding:12px;">
                 <div class="panel-title-row" style="margin-bottom:8px;">
-                  <h4 style="font-size:13px;font-weight:800;color:#00f2fe;">${escapeHtml(cat.category)}</h4>
+                  <h4 style="font-size:13px;font-weight:800;color:#00f2fe;">${escapeHtml(cat.displayName || cat.name || cat.category || 'Leaders')}</h4>
                 </div>
                 <div style="display:flex;flex-direction:column;gap:6px;">
                   ${(cat.leaders || []).slice(0, 5).map((p, idx) => `
@@ -1080,13 +1080,14 @@
             ? `<div style="color:var(--text-muted);font-size:12.5px;">No live play-by-play events recorded yet (pre-game or feed pending).</div>`
             : `<div class="table-responsive dark-scroll-box" style="max-height:280px;">
                 <table class="bball-table compact-table">
-                  <thead><tr><th>PERIOD / TIME</th><th>SCORE</th><th>PLAY DESCRIPTION</th></tr></thead>
+                  <thead><tr><th>PERIOD / TIME</th><th>TEAM</th><th>SCORE</th><th>PLAY DESCRIPTION</th></tr></thead>
                   <tbody>
-                    ${plays.slice(-30).reverse().map((p) => `
+                    ${plays.slice(0, 40).map((p) => `
                       <tr>
                         <td class="mono-cell">${escapeHtml(String(p.period || '-'))} • ${escapeHtml(String(p.clock || '-'))}</td>
-                        <td class="mono-cell font-bold">${p.awayScore ?? '-'} - ${p.homeScore ?? '-'}</td>
-                        <td><span style="white-space:normal;display:block;min-width:260px;line-height:1.35;">${escapeHtml(p.text || p.description || '')}</span></td>
+                        <td class="mono-cell">${escapeHtml(String(p.team || '-'))}</td>
+                        <td class="mono-cell font-bold">${escapeHtml(String(p.score || `${p.awayScore ?? '-'} - ${p.homeScore ?? '-'}`))}</td>
+                        <td><span style="white-space:normal;display:block;min-width:260px;line-height:1.35;">${p.scoringPlay ? '🔥 ' : ''}${escapeHtml(p.text || p.description || '')}</span></td>
                       </tr>
                     `).join('')}
                   </tbody>

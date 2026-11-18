@@ -591,7 +591,20 @@ class SportsDataGateway {
     const cached = this.burstCache.get(key);
     if (cached) return cached;
 
-    const raw = await this.fetchJson(`https://site.api.espn.com/apis/site/v3/sports/${sport}/${league}/leaders`);
+    let raw: any = null;
+    try {
+      raw = await this.fetchJson(`https://site.api.espn.com/apis/site/v3/sports/${sport}/${league}/leaders`);
+    } catch {
+      return {
+        sport,
+        league,
+        fetchedAt: new Date().toISOString(),
+        source: 'Live ESPN Stat Leaders API',
+        count: 0,
+        categories: [],
+        note: `League leaders feed is not provided upstream for ${sport}/${league}.`,
+      };
+    }
     const categories = (raw?.leaders?.categories || []).map((c: any) => ({
       name: String(c.name || ''),
       displayName: String(c.displayName || c.name || ''),
@@ -862,7 +875,14 @@ class SportsDataGateway {
     const t1Name = c1.team?.displayName || 'Team 1';
     const t2Name = c2.team?.displayName || 'Team 2';
 
-    const plays: any[] = summary?.plays || [];
+    const directPlays: any[] = Array.isArray(summary?.plays) ? summary.plays : [];
+    const drivePlays: any[] = !directPlays.length && Array.isArray(summary?.drives?.previous)
+      ? summary.drives.previous.flatMap((d: any) => Array.isArray(d.plays) ? d.plays : [])
+      : [];
+    const scoringPlaysFallback: any[] = !directPlays.length && !drivePlays.length && Array.isArray(summary?.scoringPlays)
+      ? summary.scoringPlays
+      : [];
+    const plays: any[] = directPlays.length ? directPlays : (drivePlays.length ? drivePlays : scoringPlaysFallback);
     const shotCoordinates: RealShotEvent[] = sport === 'basketball'
       ? plays.map((p) => this.parseRealBasketballShot(p, t1Id, t1Abbr, t2Abbr)).filter(Boolean) as RealShotEvent[]
       : [];
