@@ -35,7 +35,8 @@
         <a href="/" class="nav-link">Live Streams</a>
         <a href="/basketball.html" class="nav-link active nav-link-bball">🏀 Basketball Research Lab</a>
         <a href="/multiview.html" class="nav-link">Multi-View <span class="badge-mini">4x</span></a>
-        <a href="/docs" target="_blank" class="nav-link">API Docs</a>
+        <a href="/api-explorer.html" class="nav-link">🚀 API Data Hub</a>
+        <a href="/docs" target="_blank" class="nav-link">Swagger Docs</a>
       </nav>
     </div>
 
@@ -100,10 +101,12 @@
     <!-- Navigation Sub-Tabs for Research Modules -->
     <div class="bball-section-nav">
       <a href="#ingame-lab" class="bball-sec-pill active">🏀 NBA In-Game &amp; CourtOptix Lab</a>
-      <a href="#multisport-lab" class="bball-sec-pill">🌐 All-Sports Deep Telemetry (Soccer • NFL • CFB • NHL • NCAAB)</a>
-      <a href="#comparison-lab" class="bball-sec-pill">⚔️ Head-to-Head Player Comparison &amp; Radar</a>
-      <a href="#leaderboard-matrix" class="bball-sec-pill">📊 Advanced Reference Leaderboard Matrix</a>
-      <a href="#standings-glossary" class="bball-sec-pill">🏆 Conference Standings &amp; Math Glossary</a>
+      <a href="#team-hub" class="bball-sec-pill">🏢 Team 360° Depth Charts &amp; Schedules</a>
+      <a href="#injury-wire" class="bball-sec-pill">🏥 Live League Injury Wire</a>
+      <a href="#multisport-lab" class="bball-sec-pill">🌐 All-Sports Deep Telemetry</a>
+      <a href="#comparison-lab" class="bball-sec-pill">⚔️ Head-to-Head Player Comparison</a>
+      <a href="#leaderboard-matrix" class="bball-sec-pill">📊 Reference Leaderboard</a>
+      <a href="#standings-glossary" class="bball-sec-pill">🏆 Standings &amp; Glossary</a>
     </div>
 
     <!-- SECTION 1: LIVE IN-GAME & SUPPORTING STATS LAB -->
@@ -257,6 +260,59 @@
           <div id="glossary-grid" class="glossary-cards-list"></div>
         </div>
       </div>
+    </section>
+
+    <!-- SECTION 5: LIVE 360 TEAM INTELLIGENCE HUB (DEPTH CHART, ROSTER, SCHEDULE) -->
+    <section id="team-hub" class="bball-card-section">
+      <div class="section-header-row">
+        <div>
+          <h2 class="section-heading">🏢 Team 360° Intelligence Hub — Depth Charts, Rosters &amp; Schedules</h2>
+          <p class="section-desc">Live on-demand ESPN feed across any franchise. Click any athlete in the Depth Chart or Roster to launch their full Career &amp; Game Log Explorer.</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select id="team360-select" class="select-input">
+            <option value="BOS">Boston Celtics (BOS)</option>
+            <option value="CLE">Cleveland Cavaliers (CLE)</option>
+            <option value="OKC">Oklahoma City Thunder (OKC)</option>
+            <option value="NYK">New York Knicks (NYK)</option>
+            <option value="LAL">Los Angeles Lakers (LAL)</option>
+            <option value="DEN">Denver Nuggets (DEN)</option>
+            <option value="GSW">Golden State Warriors (GSW)</option>
+            <option value="HOU">Houston Rockets (HOU)</option>
+            <option value="PHI">Philadelphia 76ers (PHI)</option>
+            <option value="BKN">Brooklyn Nets (BKN)</option>
+            <option value="DAL">Dallas Mavericks (DAL)</option>
+            <option value="MIN">Minnesota Timberwolves (MIN)</option>
+            <option value="MIL">Milwaukee Bucks (MIL)</option>
+            <option value="SAS">San Antonio Spurs (SAS)</option>
+            <option value="ORL">Orlando Magic (ORL)</option>
+            <option value="MIA">Miami Heat (MIA)</option>
+            <option value="CHI">Chicago Bulls (CHI)</option>
+            <option value="IND">Indiana Pacers (IND)</option>
+            <option value="DET">Detroit Pistons (DET)</option>
+            <option value="PHX">Phoenix Suns (PHX)</option>
+            <option value="TOR">Toronto Raptors (TOR)</option>
+            <option value="ATL">Atlanta Hawks (ATL)</option>
+          </select>
+          <a id="team360-api-link" href="/api/v1/data/team/basketball/nba/BOS" target="_blank" class="btn btn-outline btn-sm">JSON API</a>
+        </div>
+      </div>
+      <div id="team360-content"></div>
+    </section>
+
+    <!-- SECTION 6: REAL-TIME NBA INJURY WIRE -->
+    <section id="injury-wire" class="bball-card-section">
+      <div class="section-header-row">
+        <div>
+          <h2 class="section-heading">🏥 Live League Injury Wire &amp; Availability Tracker</h2>
+          <p class="section-desc">Real-time official ESPN NBA injury report across all 30 franchises. Click any player name to open their full Live Stats Explorer.</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input type="text" id="injury-search-input" class="select-input" placeholder="Filter by player, team, or Out/Questionable..." style="min-width:230px;" />
+          <a href="/api/v1/data/injuries/basketball/nba?format=csv" download="nba_injuries.csv" class="btn btn-outline btn-sm">⬇ Export CSV</a>
+        </div>
+      </div>
+      <div id="injury-wire-grid" class="table-responsive" style="max-height:420px;overflow:auto;"></div>
     </section>
   </main>
 

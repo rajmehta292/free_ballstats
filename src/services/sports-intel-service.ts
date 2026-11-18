@@ -1410,6 +1410,11 @@ class SportsIntelService {
     const c = (statCatName || '').toLowerCase();
     if (!c) return undefined;
     if (c.includes('passing')) return 'QB';
+    if (c.includes('rushing')) return 'RB';
+    if (c.includes('receiving')) return 'WR';
+    if (c.includes('defensive') || c.includes('tackle') || c.includes('interception') || c.includes('sack')) return 'DEF';
+    if (c.includes('kickreturn')) return 'KR';
+    if (c.includes('puntreturn')) return 'PR';
     if (c.includes('kicking')) return 'K';
     if (c.includes('punting')) return 'P';
     if (c.includes('goalie')) return 'G';
@@ -1419,9 +1424,9 @@ class SportsIntelService {
   private inferUnitFromPosition(pos?: string, sportPath = ''): string | undefined {
     const p = (pos || '').toUpperCase().trim();
     if (!p) return undefined;
-    if (sportPath.includes('football') || ['QB', 'RB', 'FB', 'WR', 'TE', 'OT', 'OG', 'OC', 'OL', 'DE', 'DT', 'NT', 'DL', 'LB', 'OLB', 'ILB', 'MLB', 'EDGE', 'CB', 'FS', 'SS', 'DB', 'PK', 'LS'].includes(p)) {
+    if (sportPath.includes('football') || ['QB', 'RB', 'FB', 'WR', 'TE', 'OT', 'OG', 'OC', 'OL', 'DE', 'DT', 'NT', 'DL', 'DEF', 'LB', 'OLB', 'ILB', 'MLB', 'EDGE', 'CB', 'FS', 'SS', 'DB', 'PK', 'LS'].includes(p)) {
       if (['QB', 'RB', 'FB', 'WR', 'TE', 'OT', 'OG', 'OC', 'C', 'G', 'T', 'OL'].includes(p)) return 'Offense';
-      if (['DE', 'DT', 'NT', 'DL', 'LB', 'OLB', 'ILB', 'MLB', 'EDGE', 'CB', 'S', 'FS', 'SS', 'DB'].includes(p)) return 'Defense';
+      if (['DE', 'DT', 'NT', 'DL', 'DEF', 'LB', 'OLB', 'ILB', 'MLB', 'EDGE', 'CB', 'S', 'FS', 'SS', 'DB'].includes(p)) return 'Defense';
       if (['K', 'PK', 'P', 'LS', 'KR', 'PR'].includes(p)) return 'Special Teams';
     }
     if (sportPath.includes('basketball') || ['PG', 'SG', 'SF', 'PF'].includes(p)) {
@@ -1886,6 +1891,15 @@ class SportsIntelService {
       ],
       linescore: fallbackLinescore,
       basketballAnalytics: fallbackBasketballAnalytics,
+      sportAnalytics: multiSportAnalyticsService.buildSportDeepAnalytics(stream, {
+        team1Score: fallbackBasketballAnalytics?.team1Analytics?.score ?? 108,
+        team2Score: fallbackBasketballAnalytics?.team2Analytics?.score ?? 102,
+        gameState: 'in',
+        status: 'In Progress • Projected Pace',
+        detail: 'LIVE TELEMETRY',
+        team1Logo: stream.team1?.logo,
+        team2Logo: stream.team2?.logo,
+      }),
     };
   }
 

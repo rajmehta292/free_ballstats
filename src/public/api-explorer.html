@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Free_BallStats — Federated Open Sports Data API Hub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+  <style>
+    .api-hub-wrap { max-width: 1420px; margin: 22px auto 60px; padding: 0 24px; display: flex; flex-direction: column; gap: 18px; }
+    .api-hero { background: linear-gradient(135deg, rgba(145, 70, 255, 0.2), rgba(0, 242, 254, 0.1)), #111420; border: 1px solid rgba(145, 70, 255, 0.35); border-radius: 16px; padding: 22px 24px; display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .api-grid { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 18px; align-items: start; }
+    @media (max-width: 980px) { .api-grid { grid-template-columns: 1fr; } }
+    .api-card { background: #10131e; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 14px; padding: 16px; }
+    .endpoint-btn { width: 100%; text-align: left; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 10px 12px; color: #e2e8f0; cursor: pointer; margin-bottom: 8px; transition: all 0.18s; display: flex; flex-direction: column; gap: 3px; }
+    .endpoint-btn:hover, .endpoint-btn.active { border-color: #9146ff; background: rgba(145, 70, 255, 0.16); color: #fff; }
+    .method-pill { display: inline-block; font-family: monospace; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; background: rgba(16, 185, 129, 0.2); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.35); }
+    .json-pre { background: #07090f; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px; padding: 14px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #cbd5e1; max-height: 490px; overflow: auto; white-space: pre-wrap; word-break: break-word; line-height: 1.45; }
+    .snippet-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+    .snippet-box { background: #07090f; border: 1px solid rgba(0, 242, 254, 0.22); border-radius: 8px; padding: 10px 12px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #67e8f9; white-space: pre-wrap; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <header class="navbar">
+    <div class="nav-left">
+      <a href="/" class="brand">
+        <span class="brand-title">FREE_<span class="accent">BALLSTATS</span></span>
+        <span class="badge-pro">OPEN DATA API HUB</span>
+      </a>
+      <nav class="nav-links">
+        <a href="/" class="nav-link">Live Streams</a>
+        <a href="/basketball.html" class="nav-link">🏀 Basketball Lab</a>
+        <a href="/multiview.html" class="nav-link">Multi-View <span class="badge-mini">4x</span></a>
+        <a href="/api-explorer.html" class="nav-link active">🚀 API Data Hub</a>
+        <a href="/docs" target="_blank" class="nav-link">Swagger / OpenAPI</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="api-hub-wrap">
+    <section class="api-hero">
+      <div>
+        <div style="font-size:11px;font-weight:800;letter-spacing:0.08em;color:#00f2fe;text-transform:uppercase;">ZERO-DATABASE FEDERATED SPORTS GATEWAY • JSON &amp; CSV • LIVE ESPN NORMALIZATION</div>
+        <h1 style="font-size:1.65rem;font-weight:900;margin:4px 0 6px;">Unified Open Sports Data API &amp; CSV Portal</h1>
+        <p style="color:#94a3b8;font-size:0.9rem;max-width:780px;margin:0;">
+          Access clean, normalized live scores, betting lines, play-by-play shot XY coordinates, scoring runs, team depth charts, injury wires, career game logs, and StatMuse NLP analytics without hosting a database or wrestling blocked upstream scrapers.
+        </p>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <a href="/docs" target="_blank" class="btn btn-primary btn-sm">📚 Full Swagger /docs</a>
+        <a href="/basketball.html" class="btn btn-outline btn-sm">🏀 Back to Research Lab</a>
+      </div>
+    </section>
+
+    <section class="api-grid">
+      <div class="api-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <h3 style="margin:0;font-size:0.95rem;">📡 Federated Endpoints</h3>
+          <select id="hub-league-select" class="select-input" style="padding:5px 8px;font-size:12px;">
+            <option value="basketball/nba">🏀 NBA (basketball/nba)</option>
+            <option value="basketball/mens-college-basketball">🏀 NCAAM (mens-college-basketball)</option>
+            <option value="football/nfl">🏈 NFL (football/nfl)</option>
+            <option value="hockey/nhl">🏒 NHL (hockey/nhl)</option>
+            <option value="baseball/mlb">⚾ MLB (baseball/mlb)</option>
+            <option value="soccer/eng.1">⚽ Premier League (soccer/eng.1)</option>
+          </select>
+        </div>
+        <div id="endpoint-list"></div>
+      </div>
+
+      <div class="api-card">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+          <span class="method-pill">GET</span>
+          <input type="text" id="api-url-input" class="select-input" style="flex:1;min-width:220px;font-family:'JetBrains Mono',monospace;font-size:12.5px;" />
+          <button type="button" id="run-api-btn" class="btn btn-primary btn-sm">▶ Execute Live</button>
+          <button type="button" id="download-csv-btn" class="btn btn-outline btn-sm" style="border-color:rgba(16,185,129,0.45);color:#6ee7b7;">⬇ CSV Export</button>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+          <div style="display:flex;gap:10px;align-items:center;font-size:12px;color:#94a3b8;">
+            <span>Status: <strong id="api-status-lbl" style="color:#10b981;">Ready</strong></span>
+            <span>Latency: <strong id="api-latency-lbl">-</strong></span>
+            <span>Size: <strong id="api-size-lbl">-</strong></span>
+          </div>
+          <div class="snippet-tabs">
+            <button type="button" class="preset-pill snippet-btn" data-lang="curl">Copy cURL</button>
+            <button type="button" class="preset-pill snippet-btn" data-lang="js">Copy JS fetch</button>
+            <button type="button" class="preset-pill snippet-btn" data-lang="py">Copy Python</button>
+            <button type="button" class="preset-pill" id="copy-json-btn">Copy JSON</button>
+          </div>
+        </div>
+
+        <div id="code-snippet-box" class="snippet-box" style="margin-bottom:12px;"></div>
+        <pre id="json-output" class="json-pre">Select an endpoint or click "Execute Live" to inspect normalized sports telemetry...</pre>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const endpoints = [
+        { id: 'scoreboard', title: 'Live Scoreboard + Spreads/O/U', desc: 'Games, live scores, broadcasts & betting odds', csv: true, build: (s, l) => `/api/v1/data/scoreboard/${s}/${l}` },
+        { id: 'standings', title: 'Conference & League Standings', desc: 'W-L, PCT, Diff, Home/Away, L10, Streak', csv: true, build: (s, l) => `/api/v1/data/standings/${s}/${l}` },
+        { id: 'injuries', title: 'Real-Time League Injury Wire', desc: 'Out / Questionable / Day-to-Day & comments', csv: true, build: (s, l) => `/api/v1/data/injuries/${s}/${l}` },
+        { id: 'leaders', title: 'Statistical Leaders Across Categories', desc: 'PPG, APG, RPG, 3P%, Passing/Goals/HR', csv: true, build: (s, l) => `/api/v1/data/leaders/${s}/${l}` },
+        { id: 'team', title: '360° Team Hub (Depth Chart + Schedule)', desc: 'Roster, Depth Chart, Results & Injuries', csv: false, build: (s, l) => `/api/v1/data/team/${s}/${l}/${s === 'basketball' ? 'BOS' : s === 'football' ? 'PHI' : s === 'hockey' ? 'EDM' : s === 'baseball' ? 'LAD' : 'ARS'}` },
+        { id: 'athlete', title: 'On-Demand Athlete Explorer API', desc: 'Career year-by-year, full game log & splits', csv: false, build: (s, l) => `/api/v1/athlete/${s}/${l}/${s === 'basketball' ? '5175643' : s === 'football' ? '4361579' : '3112335'}` },
+        { id: 'query', title: 'StatMuse Natural Language Query', desc: 'MVP Race, fuzzy names, H2H & leaders', csv: false, build: () => `/api/v1/basketball/query?q=${encodeURIComponent('who leads the mvp race')}` },
+        { id: 'search', title: 'Cross-Sport Global Search', desc: 'Resolve any athlete or team ID live', csv: false, build: (s) => `/api/v1/data/search?q=${encodeURIComponent(s === 'football' ? 'Mahomes' : 'Buddy Hield')}&sport=${s}` },
+      ];
+
+      let activeEp = endpoints[0];
+      let activeSnippetLang = 'curl';
+      let lastRawJson = '';
+
+      const listEl = document.getElementById('endpoint-list');
+      const leagueSel = document.getElementById('hub-league-select');
+      const urlInput = document.getElementById('api-url-input');
+      const csvBtn = document.getElementById('download-csv-btn');
+
+      function updateSnippet() {
+        const origin = window.location.origin;
+        const fullUrl = origin + (urlInput.value || '');
+        const box = document.getElementById('code-snippet-box');
+        if (activeSnippetLang === 'curl') {
+          box.textContent = `curl -s "${fullUrl}" | jq .`;
+        } else if (activeSnippetLang === 'js') {
+          box.textContent = `const res = await fetch("${fullUrl}");\nconst data = await res.json();\nconsole.log(data);`;
+        } else {
+          box.textContent = `import requests\ndata = requests.get("${fullUrl}").json()\nprint(data)`;
+        }
+      }
+
+      function renderEndpointList() {
+        const [sport, league] = leagueSel.value.split('/');
+        listEl.innerHTML = endpoints.map((ep) => `
+          <button type="button" class="endpoint-btn ${ep.id === activeEp.id ? 'active' : ''}" data-ep="${ep.id}">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <strong style="font-size:12.5px;">${ep.title}</strong>
+              ${ep.csv ? '<span style="font-size:10px;color:#6ee7b7;font-family:monospace;">JSON+CSV</span>' : '<span style="font-size:10px;color:#a78bfa;font-family:monospace;">JSON</span>'}
+            </div>
+            <small style="color:#94a3b8;font-size:11px;">${ep.desc}</small>
+          </button>
+        `).join('');
+
+        urlInput.value = activeEp.build(sport, league);
+        csvBtn.style.display = activeEp.csv ? 'inline-flex' : 'none';
+        updateSnippet();
+
+        listEl.querySelectorAll('.endpoint-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            activeEp = endpoints.find((e) => e.id === btn.dataset.ep) || endpoints[0];
+            renderEndpointList();
+            executeRequest();
+          });
+        });
+      }
+
+      async function executeRequest() {
+        const path = urlInput.value.trim();
+        if (!path) return;
+        updateSnippet();
+        const statusEl = document.getElementById('api-status-lbl');
+        const latEl = document.getElementById('api-latency-lbl');
+        const sizeEl = document.getElementById('api-size-lbl');
+        const outEl = document.getElementById('json-output');
+        statusEl.textContent = 'Fetching...';
+        statusEl.style.color = '#fbbf24';
+        const t0 = performance.now();
+        try {
+          const res = await fetch(path, { cache: 'no-store' });
+          const ms = Math.round(performance.now() - t0);
+          const txt = await res.text();
+          latEl.textContent = `${ms} ms`;
+          sizeEl.textContent = `${(txt.length / 1024).toFixed(1)} KB`;
+          statusEl.textContent = `HTTP ${res.status}`;
+          statusEl.style.color = res.ok ? '#10b981' : '#f87171';
+          try {
+            const parsed = JSON.parse(txt);
+            lastRawJson = JSON.stringify(parsed, null, 2);
+            outEl.textContent = lastRawJson;
+          } catch {
+            lastRawJson = txt;
+            outEl.textContent = txt;
+          }
+        } catch (err) {
+          statusEl.textContent = 'Error';
+          statusEl.style.color = '#f87171';
+          outEl.textContent = String(err);
+        }
+      }
+
+      leagueSel.addEventListener('change', () => { renderEndpointList(); executeRequest(); });
+      document.getElementById('run-api-btn').addEventListener('click', executeRequest);
+      urlInput.addEventListener('input', updateSnippet);
+      csvBtn.addEventListener('click', () => {
+        const path = urlInput.value.trim();
+        const sep = path.includes('?') ? '&' : '?';
+        window.open(`${path}${sep}format=csv`, '_blank');
+      });
+      document.querySelectorAll('.snippet-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          activeSnippetLang = btn.dataset.lang || 'curl';
+          updateSnippet();
+          navigator.clipboard?.writeText(document.getElementById('code-snippet-box').textContent || '');
+        });
+      });
+      document.getElementById('copy-json-btn').addEventListener('click', () => {
+        if (lastRawJson) navigator.clipboard?.writeText(lastRawJson);
+      });
+
+      renderEndpointList();
+      executeRequest();
+    })();
+  </script>
+</body>
+</html>

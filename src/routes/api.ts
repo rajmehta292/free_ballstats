@@ -6,6 +6,7 @@ import { sportsIntelService } from '../services/sports-intel-service.js';
 import { basketballResearchService } from '../services/basketball-research-service.js';
 import { multiSportAnalyticsService } from '../services/multi-sport-analytics-service.js';
 import { catalogTickerService } from '../services/catalog-ticker-service.js';
+import { sportsDataGateway } from '../services/sports-data-gateway.js';
 import type { FeedbackInput, StreamItem } from '../types/stream.js';
 
 export const apiRoutes: FastifyPluginAsync = async (fastify) => {
@@ -858,6 +859,126 @@ export const apiRoutes: FastifyPluginAsync = async (fastify) => {
 
     fastify.log.info({ feedback: { message, stream_key, category } }, 'User feedback received');
     return reply.send({ ok: true, message: 'Thanks! Your feedback was received.' });
+  });
+
+  // ===========================================================================
+  // OPEN FEDERATED SPORTS DATA GATEWAY (Zero-DB Live Normalization + CSV/JSON)
+  // ===========================================================================
+  const sendCsvOrJson = (reply: any, payload: any, rows: any[], filename: string, format?: string) => {
+    if ((format || '').toLowerCase() === 'csv') {
+      reply.header('Content-Type', 'text/csv; charset=utf-8');
+      reply.header('Content-Disposition', `attachment; filename="${filename}.csv"`);
+      return reply.send(sportsDataGateway.toCsv(rows));
+    }
+    return reply.send(payload);
+  };
+
+  fastify.get<{
+    Params: { sport: string; league: string };
+    Querystring: { date?: string; format?: string };
+  }>('/data/scoreboard/:sport/:league', {
+    schema: {
+      description: 'Live multi-sport scoreboard with odds/spreads, venue, broadcast, and optional CSV export (?format=csv)',
+      tags: ['Open Sports Data API'],
+    },
+  }, async (request, reply) => {
+    const { sport, league } = request.params;
+    const { date, format } = request.query;
+    const payload = await sportsDataGateway.getScoreboard(sport, league, date);
+    return sendCsvOrJson(reply, payload, payload.events, `${league}_scoreboard`, format);
+  });
+
+  fastify.get<{
+    Params: { sport: string; league: string };
+    Querystring: { format?: string };
+  }>('/data/standings/:sport/:league', {
+    schema: {
+      description: 'Normalized live conference & league standings across NBA, WNBA, NFL, NHL, MLB, Soccer (?format=csv supported)',
+      tags: ['Open Sports Data API'],
+    },
+  }, async (request, reply) => {
+    const { sport, league } = request.params;
+    const payload = await sportsDataGateway.getStandings(sport, league);
+    return sendCsvOrJson(reply, payload, payload.teams, `${league}_standings`, request.query.format);
+  });
+
+  fastify.get<{
+    Params: { sport: string; league: string };
+    Querystring: { team?: string; format?: string };
+  }>('/data/injuries/:sport/:league', {
+    schema: {
+      description: 'Real-time league injury wire with team/player filter and CSV export (?team=BOS&format=csv)',
+      tags: ['Open Sports Data API'],
+    },
+  }, async (request, reply) => {
+    const { sport, league } = request.params;
+    const { team, format } = request.query;
+    const payload = await sportsDataGateway.getInjuries(sport, league, team);
+    return sendCsvOrJson(reply, payload, payload.injuries, `${league}_injuries`, format);
+  });
+
+  fastify.get<{
+    Params: { sport: string; league: string };
+    Querystring: { category?: string; format?: string };
+  }>('/data/leaders/:sport/:league', {
+    schema: {
+      description: 'Live multi-sport league statistical leaders across all categories (?format=csv flattens all leaders)',
+      tags: ['Open Sports Data API'],
+    },
+  }, async (request, reply) => {
+    const { sport, league } = request.params;
+    const { category, format } = request.query;
+    const payload = await sportsDataGateway.getLeaders(sport, league);
+    const cats = category
+      ? payload.categories.filter((c: any) => c.name.toLowerCase().includes(category.toLowerCase()) || c.abbreviation.toLowerCase() === category.toLowerCase())
+      : payload.categories;
+    const flatRows = cats.flatMap((c: any) => c.leaders.map((l: any) => ({ category: c.displayName, stat: c.abbreviation, ...l })));
+    return sendCsvOrJson(reply, { ...payload, categories: cats }, flatRows, `${league}_leaders`, format);
+  });
+
+  fastify.get<{
+    Params: { sport: string; league: string; team_query: string };
+  }>('/data/team/:sport/:league/:team_query', {
+    schema: {
+      description: 'Live 360-degree Team Intelligence Hub (Standings, Positional Depth Chart, Active Roster, Schedule & Injuries)',
+      tags: ['Open Sports Data API'],
+    },
+  }, async (request, reply) => {
+    const { sport, league, team_query } = request.params;
+    try {
+      const payload = await sportsDataGateway.getTeamHub(sport, league, team_query);
+      return reply.send(payload);
+    } catch (err: any) {
+      return reply.status(404).send({ error: 'Not Found', message: err.message });
+    }
+  });
+
+  fastify.get<{
+    Params: { event_id: string };
+    Querystring: { sport?: string; league?: string; format?: string };
+  }>('/data/pbp/:event_id', {
+    schema: {
+      description: 'Live Play-by-Play, Real XY Shot Coordinates, PBPStats Scoring Runs (>=8-0) & Win Probability Swings (?format=csv)',
+      tags: ['Open Sports Data API'],
+    },
+  }, async (request, reply) => {
+    const { event_id } = request.params;
+    const { sport, league, format } = request.query;
+    const payload = await sportsDataGateway.getPlayByPlayAnalytics(event_id, sport, league);
+    return sendCsvOrJson(reply, payload, payload.shotCoordinates.length ? payload.shotCoordinates : payload.recentPlays, `pbp_${event_id}`, format);
+  });
+
+  fastify.get<{
+    Querystring: { q?: string; sport?: string };
+  }>('/data/search', {
+    schema: {
+      description: 'Universal cross-sport athlete & team search returning resolved IDs and deep API endpoints',
+      tags: ['Open Sports Data API'],
+    },
+  }, async (request, reply) => {
+    const { q, sport } = request.query;
+    const payload = await sportsDataGateway.searchAll(q || '', sport);
+    return reply.send(payload);
   });
 };
 

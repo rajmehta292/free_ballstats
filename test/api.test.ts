@@ -795,6 +795,35 @@ test('StreamFree API Streamer Suite', async (t) => {
     assert.ok(Array.isArray(data.splitCategories) && data.splitCategories.length >= 1, 'Expected situational splitCategories');
   });
 
+  await t.test('Open Federated Sports Data Gateway serves live scoreboard, standings, injury wire (JSON+CSV), Team 360 hub & API Portal', async () => {
+    const sbRes = await server.inject({ method: 'GET', url: '/api/v1/data/scoreboard/basketball/nba' });
+    assert.equal(sbRes.statusCode, 200);
+    const sb = sbRes.json();
+    assert.equal(sb.league, 'nba');
+    assert.ok(Array.isArray(sb.events));
+
+    const injRes = await server.inject({ method: 'GET', url: '/api/v1/data/injuries/basketball/nba' });
+    assert.equal(injRes.statusCode, 200);
+    const inj = injRes.json();
+    assert.ok(Array.isArray(inj.injuries) && inj.injuries.length > 0, 'Expected live league injury wire items');
+
+    const csvRes = await server.inject({ method: 'GET', url: '/api/v1/data/standings/basketball/nba?format=csv' });
+    assert.equal(csvRes.statusCode, 200);
+    assert.match(csvRes.headers['content-type'] || '', /text\/csv/);
+    assert.ok(csvRes.body.includes('teamId,team,abbr'), 'Expected RFC-4180 CSV header row');
+
+    const teamRes = await server.inject({ method: 'GET', url: '/api/v1/data/team/basketball/nba/BOS' });
+    assert.equal(teamRes.statusCode, 200);
+    const team = teamRes.json();
+    assert.equal(team.team.abbreviation, 'BOS');
+    assert.ok(Object.keys(team.depthChart || {}).length >= 3, 'Expected positional depth chart');
+    assert.ok(Array.isArray(team.roster) && team.roster.length >= 8, 'Expected active Celtics roster');
+
+    const hubPage = await server.inject({ method: 'GET', url: '/api-explorer.html' });
+    assert.equal(hubPage.statusCode, 200);
+    assert.ok(hubPage.body.includes('Unified Open Sports Data API'));
+  });
+
   await server.close();
 });
 

@@ -35,6 +35,10 @@
       const qInput = document.getElementById('nl-query-input');
       if (qInput && urlQ) qInput.value = urlQ;
       await executeNaturalLanguageQuery(initQ);
+
+      // Hydrate Live Team 360 Hub & League Injury Wire in parallel
+      loadTeam360Hub('BOS');
+      loadInjuryWire();
     } catch (err) {
       console.error('Error initializing Basketball Research Lab:', err);
     }
@@ -262,17 +266,28 @@
             </div>
 
             <div class="pace-projection-box">
-              <div class="pace-box-title">⏱️ 48-MIN PACE &amp; EFFICIENCY PROJECTION</div>
+              <div class="pace-box-title">⏱️ 48-MIN PACE, ODDS &amp; LIVE CONTEXT</div>
               <div class="pace-metrics-grid">
                 <div><span>Active Pace</span><strong>${game.projectedPaceScore.pace48} poss/48</strong></div>
                 <div><span>Projected Score</span><strong>${escapeHtml(t1.abbreviation)} ${game.projectedPaceScore.team1Projected} - ${game.projectedPaceScore.team2Projected} ${escapeHtml(t2.abbreviation)}</strong></div>
-                <div><span>3PT Attempt Rate</span><strong>${t1.abbreviation} ${t1.threePar}% | ${t2.abbreviation} ${t2.threePar}%</strong></div>
+                <div><span>${game.bettingOdds ? escapeHtml(game.bettingOdds.provider) : '3PT Attempt Rate'}</span><strong>${game.bettingOdds ? `${escapeHtml(game.bettingOdds.spread)}${game.bettingOdds.overUnder ? ` • O/U ${game.bettingOdds.overUnder}` : ''}` : `${t1.abbreviation} ${t1.threePar}% | ${t2.abbreviation} ${t2.threePar}%`}</strong></div>
                 <div><span>Peak GmSc MVP</span><strong>${game.mvpPerformer ? `${escapeHtml(game.mvpPerformer.name)} (${game.mvpPerformer.gameScore})` : 'N/A'}</strong></div>
               </div>
+              ${(game.seasonSeries || game.realShotCount || (game.gameInjuries && game.gameInjuries.length)) ? `
+                <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08);display:flex;gap:8px;flex-wrap:wrap;font-size:11px;color:#cbd5e1;">
+                  ${game.seasonSeries ? `<span style="padding:2px 7px;border-radius:5px;background:rgba(145,70,255,0.16);color:#c4b5fd;">📅 ${escapeHtml(game.seasonSeries)}</span>` : ''}
+                  ${game.realShotCount ? `<span style="padding:2px 7px;border-radius:5px;background:rgba(0,242,254,0.14);color:#67e8f9;">🎯 ${game.realShotCount} Live PBP XY Shots</span>` : ''}
+                  ${(game.gameInjuries || []).slice(0, 4).map(inj => `<span class="clickable-inj" data-athlete-id="${escapeHtml(inj.athleteId || '')}" style="padding:2px 7px;border-radius:5px;background:rgba(239,68,68,0.14);color:#fca5a5;cursor:${inj.athleteId ? 'pointer' : 'default'};">🏥 ${escapeHtml(inj.teamAbbr)} ${escapeHtml(inj.player)} (${escapeHtml(inj.status)})</span>`).join('')}
+                </div>
+              ` : ''}
             </div>
           </div>
         </div>
       `;
+      overviewEl.querySelectorAll('.clickable-inj').forEach(el => {
+        const aid = el.getAttribute('data-athlete-id');
+        if (aid) el.addEventListener('click', () => openPlayerModal(aid));
+      });
     }
 
     // 2. Dean Oliver's Four Factors Panel
@@ -1246,6 +1261,174 @@
     });
     document.getElementById('player-modal-backdrop')?.addEventListener('click', () => {
       document.getElementById('player-profile-modal')?.classList.add('hidden');
+    });
+
+    // Team 360 & Injury Wire controls
+    document.getElementById('team360-select')?.addEventListener('change', (e) => {
+      const val = e.target.value;
+      const link = document.getElementById('team360-api-link');
+      if (link) link.href = `/api/v1/data/team/basketball/nba/${encodeURIComponent(val)}`;
+      loadTeam360Hub(val);
+    });
+    document.getElementById('injury-search-input')?.addEventListener('input', (e) => {
+      renderInjuryWireTable(e.target.value || '');
+    });
+  }
+
+  // =========================================================================
+  // 7. TEAM 360 HUB (DEPTH CHART, ROSTER, SCHEDULE) & LIVE INJURY WIRE
+  // =========================================================================
+  let cachedInjuryList = [];
+
+  async function loadTeam360Hub(teamAbbr) {
+    const wrap = document.getElementById('team360-content');
+    if (!wrap) return;
+    wrap.innerHTML = `<div style="padding:1.5rem;color:var(--text-secondary);">Pulling live Depth Chart, Roster &amp; Schedule for <strong>${escapeHtml(teamAbbr)}</strong>...</div>`;
+    try {
+      const res = await fetch(`/api/v1/data/team/basketball/nba/${encodeURIComponent(teamAbbr)}?t=${Date.now()}`);
+      const d = await res.json();
+      const tm = d.team || {};
+      const dcEntries = Object.entries(d.depthChart || {});
+
+      wrap.innerHTML = `
+        <div style="display:flex;align-items:center;gap:14px;padding:12px 14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:10px;margin-bottom:14px;flex-wrap:wrap;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            ${tm.logo ? `<img src="${escapeHtml(tm.logo)}" alt="${escapeHtml(tm.abbreviation)}" style="width:44px;height:44px;object-fit:contain;" />` : ''}
+            <div>
+              <div style="font-size:1.1rem;font-weight:900;">${escapeHtml(tm.name || teamAbbr)} <span style="color:#00f2fe;">(${escapeHtml(tm.record || '-')})</span></div>
+              <div style="font-size:0.8rem;color:#94a3b8;">${escapeHtml(tm.standingSummary || '')} • ${d.rosterCount || 0} Active Roster Players</div>
+            </div>
+          </div>
+          <span style="font-size:11px;padding:4px 9px;border-radius:999px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.35);color:#6ee7b7;font-weight:700;">● Live ESPN Team API</span>
+        </div>
+
+        <div class="ingame-two-col">
+          <div class="analytics-panel">
+            <div class="panel-title-row"><h3>🗺️ Positional Depth Chart</h3><span class="badge-mini">CLICK PLAYER FOR STATS</span></div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px;">
+              ${dcEntries.length ? dcEntries.map(([pos, list]) => `
+                <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:8px;">
+                  <div style="font-size:11px;font-weight:800;color:#00f2fe;margin-bottom:5px;">${escapeHtml(pos)}</div>
+                  ${(list || []).slice(0, 4).map((p, idx) => `
+                    <div class="team360-player-link" data-player-id="${escapeHtml(p.id)}" style="font-size:12px;padding:3px 0;cursor:pointer;color:${idx === 0 ? '#fff' : '#94a3b8'};font-weight:${idx === 0 ? '700' : '500'};">
+                      ${idx + 1}. ${escapeHtml(p.name)}
+                    </div>
+                  `).join('')}
+                </div>
+              `).join('') : '<div style="color:#94a3b8;font-size:12px;">Depth chart data unavailable.</div>'}
+            </div>
+
+            <div class="panel-title-row" style="margin-top:14px;"><h3>📅 Recent &amp; Upcoming Schedule</h3><span class="badge-mini">LAST 5 / NEXT 5</span></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div>
+                <div style="font-size:11px;font-weight:800;color:#c4b5fd;margin-bottom:5px;">RECENT RESULTS</div>
+                ${(d.recentGames || []).slice(0, 5).map(g => `
+                  <div style="font-size:11.5px;padding:4px 6px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;">
+                    <span>${escapeHtml(g.homeAway)} ${escapeHtml(g.opponentAbbr)}</span>
+                    <strong class="${g.result === 'W' ? 'pos-val' : 'neg-val'}">${escapeHtml(g.result)} ${escapeHtml(g.score)}</strong>
+                  </div>
+                `).join('')}
+              </div>
+              <div>
+                <div style="font-size:11px;font-weight:800;color:#67e8f9;margin-bottom:5px;">UPCOMING</div>
+                ${(d.upcomingGames || []).slice(0, 5).map(g => `
+                  <div style="font-size:11.5px;padding:4px 6px;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;">
+                    <span>${escapeHtml(g.homeAway)} ${escapeHtml(g.opponentAbbr)}</span>
+                    <small style="color:#94a3b8;">${escapeHtml(g.status)}</small>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+
+          <div class="analytics-panel">
+            <div class="panel-title-row"><h3>👥 Active Roster &amp; Physicals</h3><span class="badge-mini">LIVE STATS EXPLORER</span></div>
+            <div class="table-responsive" style="max-height:360px;overflow:auto;">
+              <table class="bball-table compact-table">
+                <thead><tr><th>PLAYER</th><th>POS</th><th>#</th><th>AGE</th><th>HT</th><th>ORIGIN</th></tr></thead>
+                <tbody>
+                  ${(d.roster || []).map(p => `
+                    <tr class="clickable-row" data-player-id="${escapeHtml(p.id)}">
+                      <td>
+                        <div class="player-cell">
+                          <img src="${escapeHtml(p.headshot)}" alt="${escapeHtml(p.name)}" onerror="this.src='https://a.espncdn.com/combiner/i?img=/i/headshots/nophoto.png&w=120&h=90'" />
+                          <span class="font-bold">${escapeHtml(p.name)}</span>
+                        </div>
+                      </td>
+                      <td><span class="badge-mini">${escapeHtml(p.position)}</span></td>
+                      <td class="mono-cell">#${escapeHtml(p.jersey)}</td>
+                      <td class="mono-cell">${escapeHtml(p.age ?? '-')}</td>
+                      <td class="mono-cell">${escapeHtml(p.height || '-')}</td>
+                      <td><small style="color:#94a3b8;">${escapeHtml(p.college || '-')}</small></td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+
+      wrap.querySelectorAll('[data-player-id]').forEach(el => {
+        const pid = el.getAttribute('data-player-id');
+        if (pid) el.addEventListener('click', () => openPlayerModal(pid));
+      });
+    } catch (e) {
+      wrap.innerHTML = `<div style="padding:1rem;color:var(--danger);">Failed to load Team 360 Hub.</div>`;
+    }
+  }
+
+  async function loadInjuryWire() {
+    const wrap = document.getElementById('injury-wire-grid');
+    if (!wrap) return;
+    wrap.innerHTML = `<div style="padding:1.25rem;color:var(--text-secondary);">Syncing league-wide official ESPN injury wire...</div>`;
+    try {
+      const res = await fetch(`/api/v1/data/injuries/basketball/nba?t=${Date.now()}`);
+      const d = await res.json();
+      cachedInjuryList = d.injuries || [];
+      renderInjuryWireTable('');
+    } catch (e) {
+      wrap.innerHTML = `<div style="padding:1rem;color:var(--danger);">Unable to load NBA Injury Wire.</div>`;
+    }
+  }
+
+  function renderInjuryWireTable(filterText) {
+    const wrap = document.getElementById('injury-wire-grid');
+    if (!wrap) return;
+    const f = (filterText || '').trim().toLowerCase();
+    const list = f
+      ? cachedInjuryList.filter(i => `${i.player} ${i.teamName} ${i.teamAbbr} ${i.status} ${i.comment}`.toLowerCase().includes(f))
+      : cachedInjuryList;
+
+    if (list.length === 0) {
+      wrap.innerHTML = `<div style="padding:1rem;color:var(--text-muted);">No matching injuries found.</div>`;
+      return;
+    }
+
+    wrap.innerHTML = `
+      <table class="bball-table compact-table">
+        <thead><tr><th>PLAYER</th><th>TEAM</th><th>POS</th><th>STATUS</th><th>RETURN EST</th><th>LATEST REPORT</th></tr></thead>
+        <tbody>
+          ${list.slice(0, 60).map(i => {
+            const isOut = /out/i.test(i.status);
+            return `
+              <tr class="${i.athleteId ? 'clickable-row' : ''}" data-player-id="${escapeHtml(i.athleteId || '')}">
+                <td class="font-bold" style="color:${i.athleteId ? '#67e8f9' : '#fff'};">${escapeHtml(i.player)}</td>
+                <td class="mono-cell">${escapeHtml(i.teamAbbr || i.teamName)}</td>
+                <td><span class="badge-mini">${escapeHtml(i.position)}</span></td>
+                <td><span style="padding:2px 7px;border-radius:999px;font-size:11px;font-weight:700;background:${isOut ? 'rgba(239,68,68,0.18)' : 'rgba(251,191,36,0.18)'};color:${isOut ? '#fca5a5' : '#fde68a'};">${escapeHtml(i.status)}</span></td>
+                <td class="mono-cell">${escapeHtml(i.returnDate || '-')}</td>
+                <td><small style="color:#94a3b8;">${escapeHtml(i.comment)}</small></td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
+
+    wrap.querySelectorAll('[data-player-id]').forEach(row => {
+      const pid = row.getAttribute('data-player-id');
+      if (pid) row.addEventListener('click', () => openPlayerModal(pid));
     });
   }
 

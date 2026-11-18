@@ -1,4 +1,5 @@
 import { LRUCache } from 'lru-cache';
+import { sportsDataGateway } from './sports-data-gateway.js';
 
 export interface FourFactorsMetrics {
   efgPct: number;       // (FGM + 0.5 * 3PM) / FGA * 100
@@ -267,6 +268,11 @@ export interface BasketballGameDeepAnalytics {
   playersTeam2: PlayerAdvancedBoxRow[];
   mvpPerformer: PlayerAdvancedBoxRow | null;
   inGameInsights: InGameSupportingInsight[];
+  bettingOdds?: { provider: string; spread: string; overUnder: number | null; homeMoneyLine?: number; awayMoneyLine?: number } | null;
+  gameInjuries?: Array<{ player: string; position: string; teamAbbr: string; status: string; comment: string; athleteId?: string }>;
+  seasonSeries?: string;
+  scoringRuns?: Array<{ teamAbbr: string; pointsFor: number; summary: string }>;
+  realShotCount?: number;
 }
 
 export interface NBAPlayerSeasonProfile {
@@ -1754,8 +1760,9 @@ class BasketballResearchService {
     team2Meta: { id: string; name: string; abbr: string; logo: string; score: number; quarters?: number[] };
     rawPlayers1: PlayerAdvancedBoxRow[];
     rawPlayers2: PlayerAdvancedBoxRow[];
+    rawSummary?: any;
   }): BasketballGameDeepAnalytics {
-    const { eventId, status, detail, isLive, venue, broadcast, team1Meta, team2Meta, rawPlayers1, rawPlayers2 } = params;
+    const { eventId, status, detail, isLive, venue, broadcast, team1Meta, team2Meta, rawPlayers1, rawPlayers2, rawSummary } = params;
 
     const score1 = Math.max(0, Number(team1Meta.score || 0));
     const score2 = Math.max(0, Number(team2Meta.score || 0));
@@ -2283,6 +2290,83 @@ class BasketballResearchService {
       });
     }
 
+    // Hydrate real ESPN PBP XY coordinates, Win Probability curve, Vegas odds, scoring runs & injuries when live summary is present
+    let finalShots = spatial.shots;
+    let realShotCount = 0;
+    if (!isPreGame && Array.isArray(rawSummary?.plays) && rawSummary.plays.length > 0) {
+      const parsedShots = rawSummary.plays
+        .map((pl: any) => sportsDataGateway.parseRealBasketballShot(pl, team1Meta.id, team1Meta.abbr, team2Meta.abbr))
+        .filter(Boolean);
+      if (parsedShots.length >= 6) {
+        finalShots = parsedShots.slice(-80);
+        realShotCount = parsedShots.length;
+      }
+    }
+
+    if (!isPreGame && Array.isArray(rawSummary?.winprobability) && rawSummary.winprobability.length >= 5) {
+      const wpList: any[] = rawSummary.winprobability;
+      const playById = new Map<string, any>();
+      for (const pl of (rawSummary.plays || [])) {
+        if (pl?.id) playById.set(String(pl.id), pl);
+      }
+      const step = Math.max(1, Math.floor(wpList.length / 22));
+      const sampled: WinProbTimelinePoint[] = [];
+      for (let i = 0; i < wpList.length; i += step) {
+        const w = wpList[i];
+        const pl = playById.get(String(w.playId || ''));
+        const pct = Math.max(2, Math.min(98, Math.round(Number(w.homeWinPercentage ?? 0.5) * 100)));
+        const hS = Number(pl?.homeScore ?? team1Meta.score ?? 0);
+        const aS = Number(pl?.awayScore ?? team2Meta.score ?? 0);
+        sampled.push({
+          idx: sampled.length,
+          period: pl?.period?.number ? `Q${pl.period.number}` : 'LIVE',
+          clock: pl?.clock?.displayValue || '',
+          team1WinPct: pct,
+          scoreMargin: hS - aS,
+          scoreStr: `${hS}-${aS}`,
+          eventNote: pl?.text ? String(pl.text).slice(0, 72) : undefined,
+          isKeyPlay: Boolean(pl?.scoringPlay),
+        });
+      }
+      if (sampled.length >= 4) {
+        winProbTimeline = sampled;
+      }
+    }
+
+    const pick = rawSummary?.pickcenter?.[0];
+    const bettingOdds = pick
+      ? {
+          provider: String(pick.provider?.name || 'DraftKings'),
+          spread: String(pick.details || 'EVEN'),
+          overUnder: pick.overUnder !== undefined ? Number(pick.overUnder) : null,
+          homeMoneyLine: pick.homeTeamOdds?.moneyLine,
+          awayMoneyLine: pick.awayTeamOdds?.moneyLine,
+        }
+      : null;
+
+    const scoringRuns = Array.isArray(rawSummary?.plays) && rawSummary.plays.length > 0
+      ? sportsDataGateway.computeScoringRuns(rawSummary.plays, team1Meta.id, team1Meta.abbr, team1Meta.name, team2Meta.abbr, team2Meta.name)
+      : [];
+
+    const gameInjuries: Array<{ player: string; position: string; teamAbbr: string; status: string; comment: string; athleteId?: string }> = [];
+    for (const tmInj of (rawSummary?.injuries || [])) {
+      const tAbbr = tmInj?.team?.abbreviation || '';
+      for (const inj of (tmInj?.injuries || []).slice(0, 6)) {
+        const linkHref = inj?.athlete?.links?.[0]?.href || '';
+        const idMatch = String(linkHref).match(/\/id\/(\d+)/);
+        gameInjuries.push({
+          player: inj?.athlete?.displayName || 'Player',
+          position: inj?.athlete?.position?.abbreviation || '-',
+          teamAbbr: tAbbr,
+          status: inj?.status || 'Out',
+          comment: inj?.shortComment || '',
+          athleteId: inj?.athlete?.id ? String(inj.athlete.id) : (idMatch ? idMatch[1] : undefined),
+        });
+      }
+    }
+    const seasonSeries = rawSummary?.seasonseries?.[0]?.summary ? String(rawSummary.seasonseries[0].summary) : undefined;
+    const effectiveActiveRun = scoringRuns[0]?.summary || activeRunStr;
+
     return {
       eventId,
       gameState,
@@ -2312,7 +2396,7 @@ class BasketballResearchService {
         pace48: pace,
         team1Projected: t1Proj,
         team2Projected: t2Proj,
-        activeRun: activeRunStr,
+        activeRun: effectiveActiveRun,
       },
       leverageIndex: rawLeverage,
       leverageTier,
@@ -2320,7 +2404,7 @@ class BasketballResearchService {
       bonusState,
       onCourtLineup,
       shotChart: {
-        shots: spatial.shots,
+        shots: finalShots,
         team1Zones: spatial.team1Zones,
         team2Zones: spatial.team2Zones,
       },
@@ -2333,6 +2417,11 @@ class BasketballResearchService {
       playersTeam2: effectivePlayers2,
       mvpPerformer,
       inGameInsights: insights,
+      bettingOdds,
+      gameInjuries,
+      seasonSeries,
+      scoringRuns: scoringRuns.map((r) => ({ teamAbbr: r.teamAbbr, pointsFor: r.pointsFor, summary: r.summary })),
+      realShotCount,
     };
   }
 
@@ -2405,6 +2494,7 @@ class BasketballResearchService {
               },
               rawPlayers1: t1Players,
               rawPlayers2: t2Players,
+              rawSummary: summary,
             });
             this.gameAnalyticsCache.set(eventId, built);
             return built;
