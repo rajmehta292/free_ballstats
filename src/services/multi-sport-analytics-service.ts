@@ -968,6 +968,26 @@ class MultiSportAnalyticsService {
         base.linescore.team2Quarters = splitTotal(s2, liveOverride.team2Quarters);
         base.linescore.team1Total = s1;
         base.linescore.team2Total = s2;
+
+        // Clear synthetic showcase events & sync period scoring flow to actual ESPN quarter scores
+        if (base.spatialMap) {
+          base.spatialMap.events = [];
+          base.spatialMap.subtitle = 'Live matchup telemetry synced from official scoreboard & play-by-play feed';
+        }
+        if (base.activeUnit && Array.isArray(base.linescore.team1Quarters)) {
+          base.activeUnit.stintTimeline = base.linescore.periodHeaders.map((hdr, idx) => {
+            const p1 = base.linescore.team1Quarters[idx] ?? 0;
+            const p2 = base.linescore.team2Quarters[idx] ?? 0;
+            return {
+              periodLabel: hdr,
+              timeRange: hdr,
+              team1Score: p1,
+              team2Score: p2,
+              netDiff: p1 - p2,
+              headline: p1 === p2 ? `Tied ${p1}-${p2} in ${hdr}` : `${p1 > p2 ? base.team1Meta.abbreviation : base.team2Meta.abbreviation} +${Math.abs(p1 - p2)} in ${hdr} (${p1}-${p2})`,
+            };
+          });
+        }
         if (liveOverride.situationBanner) {
           base.situationBanner = liveOverride.situationBanner;
         }
@@ -1707,10 +1727,10 @@ class MultiSportAnalyticsService {
           isHot: idx === 0,
         })),
         stintTimeline: [
-          { periodLabel: 'Q1', timeRange: 'Opening Script', team1Score: 7, team2Score: 7, netDiff: 1.2, headline: 'Both QBs go 100% on scripted opening TD drives' },
-          { periodLabel: 'Q2', timeRange: '2-Minute Drill', team1Score: 10, team2Score: 7, netDiff: 3.4, headline: `${t1Template.abbr} 75-yd TD drive + FG before half` },
-          { periodLabel: 'Q3', timeRange: 'Defensive Clamp', team1Score: 7, team2Score: 3, netDiff: 4.1, headline: `${def1_a.name} strip-sack sets up short-field TD` },
-          { periodLabel: 'Q4', timeRange: 'Crunch Time', team1Score: 7, team2Score: 7, netDiff: 2.8, headline: `${t1Template.abbr} advancing inside Red Zone to ice game` },
+          { periodLabel: 'Q1', timeRange: '1st Quarter', team1Score: 7, team2Score: 7, netDiff: 0, headline: 'Tied 7-7 after opening drives' },
+          { periodLabel: 'Q2', timeRange: '2nd Quarter', team1Score: 10, team2Score: 7, netDiff: 3, headline: `${t1Template.abbr} outscores ${t2Template.abbr} 10-7 before halftime` },
+          { periodLabel: 'Q3', timeRange: '3rd Quarter', team1Score: 7, team2Score: 3, netDiff: 4, headline: `${t1Template.abbr} defense holds ${t2Template.abbr} to a field goal` },
+          { periodLabel: 'Q4', timeRange: '4th Quarter', team1Score: 7, team2Score: 7, netDiff: 0, headline: 'Split 7-7 fourth-quarter execution' },
         ],
       },
       winProbTimeline: [

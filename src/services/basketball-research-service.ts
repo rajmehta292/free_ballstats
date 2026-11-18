@@ -2072,46 +2072,60 @@ class BasketballResearchService {
         { idx: 8, period: 'Q4', clock: isLive ? 'Live' : '0:00', team1WinPct: toWinPct(final1 - final2, 4.6), scoreMargin: final1 - final2, scoreStr: `${final1}-${final2}`, eventNote: mvpPerformer ? `${mvpPerformer.name} Impact (${mvpPerformer.pts} PTS)` : 'Closing Execution', isKeyPlay: true },
       ];
 
+      const q1P1 = q1Arr[0] ?? Math.round(t1Raw.pts * 0.25);
+      const q1P2 = q2Arr[0] ?? Math.round(t2Raw.pts * 0.25);
+      const q2P1 = q1Arr[1] ?? Math.round(t1Raw.pts * 0.25);
+      const q2P2 = q2Arr[1] ?? Math.round(t2Raw.pts * 0.25);
+      const q3P1 = q1Arr[2] ?? Math.round(t1Raw.pts * 0.25);
+      const q3P2 = q2Arr[2] ?? Math.round(t2Raw.pts * 0.25);
+      const q4P1 = q1Arr[3] ?? Math.max(0, t1Raw.pts - q1P1 - q2P1 - q3P1);
+      const q4P2 = q2Arr[3] ?? Math.max(0, t2Raw.pts - q1P2 - q2P2 - q3P2);
+
+      const q1Diff = q1P1 - q1P2;
+      const q2Diff = q2P1 - q2P2;
+      const q3Diff = q3P1 - q3P2;
+      const q4Diff = q4P1 - q4P2;
+
       stintTimeline = [
         {
-          label: 'Stint 1 • Opening Starters',
+          label: 'Q1 • Opening Period',
           startMark: 'Q1 12:00',
-          endMark: 'Q1 4:30',
-          team1Score: Math.round(q1Cum1 * 0.68),
-          team2Score: Math.round(q1Cum2 * 0.65),
-          netSwing: Math.round(q1Cum1 * 0.68) - Math.round(q1Cum2 * 0.65),
-          dominantTeam: q1Cum1 >= q1Cum2 ? team1Meta.abbr : team2Meta.abbr,
-          summary: `Primary starters establish pace (${pace} poss/48) and early paint pressure.`,
+          endMark: 'Q1 0:00',
+          team1Score: q1P1,
+          team2Score: q1P2,
+          netSwing: q1Diff,
+          dominantTeam: q1Diff >= 0 ? team1Meta.abbr : team2Meta.abbr,
+          summary: `1st quarter scoring split (${team1Meta.abbr} ${q1P1} - ${q1P2} ${team2Meta.abbr}) at ${pace} pace.`,
         },
         {
-          label: 'Stint 2 • Second-Unit Rotation',
-          startMark: 'Q1 4:30',
-          endMark: 'Q2 6:15',
-          team1Score: Math.max(0, Math.round(q2Cum1 * 0.55) - Math.round(q1Cum1 * 0.68)),
-          team2Score: Math.max(0, Math.round(q2Cum2 * 0.58) - Math.round(q1Cum2 * 0.65)),
-          netSwing: (Math.round(q2Cum1 * 0.55) - Math.round(q1Cum1 * 0.68)) - (Math.round(q2Cum2 * 0.58) - Math.round(q1Cum2 * 0.65)),
-          dominantTeam: team1Analytics.unitSplits.benchPts >= team2Analytics.unitSplits.benchPts ? team1Meta.abbr : team2Meta.abbr,
-          summary: `Bench units trade perimeter 3s (${team1Analytics.unitSplits.benchPts}-${team2Analytics.unitSplits.benchPts} bench scoring battle).`,
+          label: 'Q2 • Rotation & Bench Stretch',
+          startMark: 'Q2 12:00',
+          endMark: 'Q2 0:00',
+          team1Score: q2P1,
+          team2Score: q2P2,
+          netSwing: q2Diff,
+          dominantTeam: q2Diff >= 0 ? team1Meta.abbr : team2Meta.abbr,
+          summary: `2nd quarter scoring split (${team1Meta.abbr} ${q2P1} - ${q2P2} ${team2Meta.abbr}); bench scoring ${team1Analytics.unitSplits.benchPts}-${team2Analytics.unitSplits.benchPts}.`,
         },
         {
-          label: 'Stint 3 • Third-Quarter Adjustment',
+          label: 'Q3 • Halftime Adjustment',
           startMark: 'Q3 12:00',
-          endMark: 'Q3 2:00',
-          team1Score: q1Arr[2] || 0,
-          team2Score: q2Arr[2] || 0,
-          netSwing: (q1Arr[2] || 0) - (q2Arr[2] || 0),
-          dominantTeam: (q1Arr[2] || 0) >= (q2Arr[2] || 0) ? team1Meta.abbr : team2Meta.abbr,
-          summary: `Half-court PnR adjustments generate ${Math.max(team1Analytics.efgPct, team2Analytics.efgPct)}% eFG%.`,
+          endMark: 'Q3 0:00',
+          team1Score: q3P1,
+          team2Score: q3P2,
+          netSwing: q3Diff,
+          dominantTeam: q3Diff >= 0 ? team1Meta.abbr : team2Meta.abbr,
+          summary: `3rd quarter scoring (${team1Meta.abbr} ${q3P1} - ${q3P2} ${team2Meta.abbr}); peak eFG% ${Math.max(team1Analytics.efgPct, team2Analytics.efgPct)}%.`,
         },
         {
-          label: 'Stint 4 • Closing 5v5 Lineup',
-          startMark: 'Q4 7:30',
-          endMark: isLive ? detail : 'Q4 0:00',
-          team1Score: q1Arr[3] || 0,
-          team2Score: q2Arr[3] || 0,
-          netSwing: (q1Arr[3] || 0) - (q2Arr[3] || 0),
-          dominantTeam: final1 >= final2 ? team1Meta.abbr : team2Meta.abbr,
-          summary: `High-leverage closing 5 (${rawLeverage}x LI) led by ${mvpPerformer?.name || 'primary creators'}.`,
+          label: 'Q4 • Closing Stretch',
+          startMark: 'Q4 12:00',
+          endMark: isLive ? detail : 'Final',
+          team1Score: q4P1,
+          team2Score: q4P2,
+          netSwing: q4Diff,
+          dominantTeam: q4Diff >= 0 ? team1Meta.abbr : team2Meta.abbr,
+          summary: `4th quarter execution (${team1Meta.abbr} ${q4P1} - ${q4P2} ${team2Meta.abbr}) led by ${mvpPerformer?.name || 'primary scorers'}.`,
         },
       ];
     }
@@ -2729,10 +2743,10 @@ class BasketballResearchService {
       }
     } catch (e) {}
 
-    // Always append curated showcase games if ESPN has fewer than 2 active/recent games with full boxscores
-    const curated = this.getCuratedShowcaseGames();
-    for (const cg of curated) {
-      if (!games.some(g => g.eventId === cg.eventId)) {
+    // Only fall back to showcase games if live ESPN scoreboard returned zero games
+    if (games.length === 0) {
+      const curated = this.getCuratedShowcaseGames();
+      for (const cg of curated) {
         games.push(cg);
       }
     }

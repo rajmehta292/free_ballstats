@@ -1909,6 +1909,75 @@ footer {
   color: #e2e8f0;
 }
 
+/* Live Multi-Sport Hub */
+.ms-provenance-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  margin-bottom: 14px;
+  font-size: 12px;
+}
+
+.ms-scoreboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.ms-game-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 13px 14px;
+  cursor: pointer;
+  transition: all 0.16s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ms-game-card:hover, .ms-game-card.selected {
+  border-color: #00f2fe;
+  background: rgba(0, 242, 254, 0.06);
+  transform: translateY(-1px);
+}
+
+.ms-team-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ms-team-id {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ms-team-id img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.ms-pbp-drawer {
+  background: rgba(10, 12, 20, 0.9);
+  border: 1px solid rgba(0, 242, 254, 0.35);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 18px;
+}
+
 .bball-card-section {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);

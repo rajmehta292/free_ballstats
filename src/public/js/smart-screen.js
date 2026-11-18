@@ -708,7 +708,9 @@
                 const lbl = st.label || st.periodLabel || '';
                 const subRange = st.startMark ? `${st.startMark} → ${st.endMark}` : (st.timeRange || '');
                 const summaryTxt = st.summary || st.headline || '';
-                const swingTxt = st.dominantTeam ? `${st.dominantTeam} ${st.netSwing}` : (st.netDiff >= 0 ? `${t1Abbr} +${st.netDiff}` : `${t2Abbr} ${st.netDiff}`);
+                const swingTxt = st.dominantTeam
+                  ? (st.netSwing === 0 ? 'EVEN' : `${st.dominantTeam} ${st.netSwing > 0 ? '+' : ''}${st.netSwing}`)
+                  : (st.netDiff === 0 ? 'EVEN' : st.netDiff > 0 ? `${t1Abbr} +${st.netDiff}` : `${t2Abbr} +${Math.abs(st.netDiff)}`);
                 return `
                   <div style="background:rgba(0,0,0,0.45);border-left:3px solid #00f2fe;padding:6px 8px;border-radius:4px;font-size:10.5px;">
                     <div style="display:flex;justify-content:space-between;font-weight:800;color:#e2e8f0;">
@@ -787,14 +789,14 @@
       : `
         <div style="margin-top:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:8px;">
           <div style="font-size:10px;font-weight:800;color:#a78bfa;margin-bottom:6px;text-transform:uppercase;">
-            🔄 PopcornMachine Rotation Stint GameFlow • ${esc(oc.activeStintMargin || '')}
+            🔄 Quarter Scoring Splits &amp; Rotation Flow • ${esc(oc.activeStintMargin || '')}
           </div>
           <div style="display:grid;grid-template-columns:${(hudData.stintTimeline || []).length === 4 ? 'repeat(2,minmax(0,1fr))' : 'repeat(auto-fit,minmax(190px,1fr))'};gap:6px;">
             ${(hudData.stintTimeline || []).map((st) => `
               <div style="background:rgba(0,0,0,0.45);border-left:3px solid ${st.netSwing >= 0 ? '#00f2fe' : '#f97316'};padding:6px 8px;border-radius:4px;font-size:10.5px;">
                 <div style="display:flex;justify-content:space-between;font-weight:800;color:#e2e8f0;">
                   <span>${esc(st.label)}</span>
-                  <span style="color:${st.netSwing >= 0 ? '#00f2fe' : '#fb923c'};">${esc(st.dominantTeam)} ${st.netSwing >= 0 ? '+' : ''}${st.netSwing}</span>
+                  <span style="color:${st.netSwing >= 0 ? '#00f2fe' : '#fb923c'};">${st.netSwing === 0 ? 'EVEN' : `${esc(st.dominantTeam)} ${st.netSwing > 0 ? '+' : ''}${st.netSwing}`}</span>
                 </div>
                 <div style="font-size:9.5px;color:#94a3b8;margin-top:2px;">${esc(st.startMark)} → ${esc(st.endMark)} (${st.team1Score}-${st.team2Score})</div>
                 <div style="font-size:9.5px;color:#cbd5e1;margin-top:2px;">${esc(st.summary)}</div>

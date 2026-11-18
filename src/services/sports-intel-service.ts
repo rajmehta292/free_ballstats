@@ -1320,6 +1320,43 @@ class SportsIntelService {
       ];
     }
 
+    // Replace showcase stats/scoring/mvp on non-NBA live ESPN games with verified ESPN telemetry
+    if (sportAnalyticsObj && (!basketballAnalytics || sportAnalyticsObj.sportType === 'ncaab')) {
+      if (statsList.length > 0) {
+        sportAnalyticsObj.teamStatsComparison = statsList;
+      }
+      if (scoringPlaysList.length > 0) {
+        sportAnalyticsObj.scoringTimeline = scoringPlaysList.map((sp) => ({
+          ...sp,
+          teamLogo: sp.teamLogo || sportAnalyticsObj.team1Meta.logo || '',
+        }));
+      } else if (espnGameState !== 'pre') {
+        sportAnalyticsObj.scoringTimeline = [];
+      }
+      if (leadersList.length > 0 && leadersList[0]?.athlete) {
+        const l0 = leadersList[0];
+        sportAnalyticsObj.mvpPerformer = {
+          id: l0.athlete.id,
+          name: l0.athlete.name,
+          teamAbbr: l0.teamName || sportAnalyticsObj.team1Meta.abbreviation,
+          position: l0.athlete.position || '',
+          jersey: l0.athlete.jersey || '',
+          headshot: l0.athlete.headshot || sportAnalyticsObj.mvpPerformer.headshot,
+          primaryLine: l0.statline || '',
+          efficiencyLine: l0.category || 'ESPN Statistical Leader',
+          impactBadge: 'LIVE ESPN LEADER',
+        };
+      }
+      if (winProb && Array.isArray(sportAnalyticsObj.winProbTimeline) && sportAnalyticsObj.winProbTimeline.length > 0) {
+        const lastIdx = sportAnalyticsObj.winProbTimeline.length - 1;
+        sportAnalyticsObj.winProbTimeline[lastIdx] = {
+          ...sportAnalyticsObj.winProbTimeline[lastIdx],
+          team1WinPct: winProb.team1Percentage,
+          keyPlay: matchedEvent.status?.type?.shortDetail || 'Live Win Prob',
+        };
+      }
+    }
+
     return {
       stream_key: stream.stream_key,
       source: 'espn',
